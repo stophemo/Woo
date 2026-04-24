@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('path')
 
 // 禁用应用数据目录的默认行为
@@ -50,6 +50,11 @@ function createWindow() {
   // 应用版本信息
   ipcMain.handle('app:getVersion', () => {
     return app.getVersion()
+  })
+
+  // 在外部浏览器打开链接
+  ipcMain.on('open-external-link', (event, url) => {
+    shell.openExternal(url)
   })
 }
 

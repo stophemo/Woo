@@ -120,6 +120,13 @@ const closeWindow = () => {
 // 菜单操作处理
 const handleMenuAction = (action: string) => {
   console.log('Menu action:', action)
+  // 处理 GitHub 链接
+  if (action === 'github') {
+    if (window.electronAPI) {
+      window.electronAPI.openExternalLink('https://github.com/stophemo/Non-ego-Notes')
+    }
+    return
+  }
   // 这里可以根据不同的 action 执行不同的操作
   // 例如：
   // if (action === 'new-document') { ... }

@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  // 打开外部链接
+  openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
   // 其他API
   getAppVersion: () => ipcRenderer.invoke('app:getVersion')
 })

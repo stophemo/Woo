@@ -3,6 +3,7 @@ declare interface Window {
     minimize: () => void;
     maximize: () => void;
     close: () => void;
+    openExternalLink: (url: string) => void;
     getAppVersion: () => Promise<string>;
   };
 }
