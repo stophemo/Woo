@@ -1,6 +1,6 @@
 <template>
   <div class="dropdown" @click.stop>
-    <div class="dropdown-trigger" @click="toggle">
+    <div class="dropdown-trigger" @click="handleTriggerClick">
       <slot name="trigger"></slot>
     </div>
     <transition name="dropdown">
@@ -15,13 +15,22 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 const isOpen = ref(false)
+const emit = defineEmits<{
+  'open-change': [value: boolean]
+}>()
 
 const toggle = () => {
   isOpen.value = !isOpen.value
+  emit('open-change', isOpen.value)
+}
+
+const handleTriggerClick = () => {
+  toggle()
 }
 
 const close = () => {
   isOpen.value = false
+  emit('open-change', false)
 }
 
 // 点击外部关闭下拉菜单
@@ -40,7 +49,7 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-defineExpose({ close })
+defineExpose({ close, toggle })
 </script>
 
 <style scoped>
