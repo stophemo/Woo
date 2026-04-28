@@ -43,18 +43,4 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
 </script>
 
 <style scoped>
-.folder-tree {
-       padding: 8px 8px;
-    margin: 2px 0;
-    cursor: pointer;
-    border-radius: 6px;
-    font-size: 13px;
-    color: #333;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    transition: all 0.2s;
-    height: 36px;
-    width: 100%;
-}
 </style>
