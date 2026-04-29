@@ -1,4 +1,4 @@
-# Woo / 无我笔记 (Non-ego-Notes)
+# Woo（无我笔记）
 
 Woo（无我笔记）是一款专注写作的 Markdown 桌面笔记软件。
 
@@ -47,7 +47,7 @@ mvn clean install
 ## 项目结构
 
 ```
-Non-ego-Notes/
+Woo/
 ├── app/                    # 前端应用（Vue 3 + Electron）
 │   ├── electron/           # Electron 主进程和预加载脚本
 │   ├── src/                # Vue 3 源码（components / stores / types 等）

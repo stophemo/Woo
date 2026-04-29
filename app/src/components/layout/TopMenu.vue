@@ -132,7 +132,7 @@ const handleMenuAction = (action: string) => {
   console.log('Menu action:', action)
   if (action === 'github') {
     if (window.electronAPI) {
-      window.electronAPI.openExternalLink('https://github.com/stophemo/Non-ego-Notes')
+      window.electronAPI.openExternalLink('https://github.com/stophemo/Woo')
     }
     return
   }
