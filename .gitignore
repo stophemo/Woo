@@ -1,29 +1,29 @@
-# ============ Frontend ============
+# ============ App (Frontend) ============
 # Dependencies
-frontend/node_modules
+app/node_modules
 
 # Build output
-frontend/dist
-frontend/dist-electron
-frontend/dist-ssr
+app/dist
+app/dist-electron
+app/dist-ssr
 
 # Electron userData (cache, local storage, etc.)
-frontend/electron/userData
+app/electron/userData
 
-# ============ Backend ============
+# ============ Services (Backend) ============
 # Maven
-backend/target/
-backend/**/target/
-!backend/.mvn/wrapper/maven-wrapper.jar
+services/target/
+services/**/target/
+!services/.mvn/wrapper/maven-wrapper.jar
 
 # IDE
-backend/.idea/
-backend/*.iml
-backend/**/*.iml
+services/.idea/
+services/*.iml
+services/**/*.iml
 
 # Logs
-backend/logs/
-backend/**/*.log
+services/logs/
+services/**/*.log
 
 # ============ Common ============
 # Logs
