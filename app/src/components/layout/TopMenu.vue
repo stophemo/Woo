@@ -1,5 +1,5 @@
 <template>
-  <header class="top-menu">
+  <header class="top-menu" :class="{ collapsed: !isOpen }">
     <div class="menu-left">
       <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
         <template #trigger>
@@ -9,18 +9,29 @@
       </Dropdown>
     </div>
     <div class="menu-right">
-      <button class="window-control-btn" @click="$emit('toggle-left-sidebar')" title="收起左侧菜单">
+      <button
+        class="window-control-btn"
+        :class="{ 'is-active': !isOpen }"
+        @click="$emit('toggle-top-menu')"
+        title="显示/隐藏菜单栏 (Ctrl+`)"
+      >
+        <IconTopMenu />
+      </button>
+      <button class="window-control-btn" @click="$emit('toggle-left-sidebar')" title="显示/隐藏左侧菜单 (Ctrl+1)">
         <IconLeftSidebar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" title="收起缩略图栏">
+      <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" title="显示/隐藏缩略图栏 (Ctrl+2)">
         <IconThumbnailSidebar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" title="收起AI聊天">
+      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" title="显示/隐藏AI聊天 (Ctrl+3)">
         <IconRightSidebar />
       </button>
       <div class="menu-divider"></div>
       <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
         <IconThemeToggle :mode="themeStore.theme" />
+      </button>
+      <button class="window-control-btn account-btn" @click="$emit('open-login')" title="账户">
+        <IconAccount />
       </button>
       <div class="menu-divider"></div>
       <button class="window-control-btn minimize-btn" @click="minimizeWindow" title="最小化">
@@ -45,6 +56,8 @@ import IconMinimize from '../../components/icons/IconMinimize.vue'
 import IconMaximize from '../../components/icons/IconMaximize.vue'
 import IconClose from '../../components/icons/IconClose.vue'
 import IconThemeToggle from '../../components/icons/IconThemeToggle.vue'
+import IconAccount from '../../components/icons/IconAccount.vue'
+import IconTopMenu from '../../components/icons/IconTopMenu.vue'
 import Dropdown from '../ui/Dropdown.vue'
 import DropdownMenu from '../ui/DropdownMenu.vue'
 import { useThemeStore } from '../../stores/theme'
@@ -74,6 +87,13 @@ class TopMenu {
 const menus = ref(TopMenu.menus)
 const dropdownRefs = ref<Map<number, ComponentPublicInstance>>(new Map())
 const activeMenuIndex = ref<number | null>(null)
+
+interface Props {
+  isOpen?: boolean
+}
+withDefaults(defineProps<Props>(), {
+  isOpen: true
+})
 
 // 设置 Dropdown 组件引用
 const setDropdownRef = (el: any, index: number) => {
@@ -106,6 +126,8 @@ const emit = defineEmits<{
   'toggle-thumbnail-sidebar': []
   'toggle-right-sidebar': []
   'open-settings': []
+  'open-login': []
+  'toggle-top-menu': []
 }>()
 
 // 窗口控制
@@ -157,7 +179,19 @@ const handleMenuAction = (action: string) => {
   background-color: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-primary);
   -webkit-app-region: drag;
-  transition: var(--theme-transition);
+  transition: var(--theme-transition), height 0.25s ease, transform 0.25s ease, padding 0.25s ease, border-bottom-color 0.25s ease, opacity 0.2s ease;
+  overflow: hidden;
+  transform-origin: top;
+}
+
+.top-menu.collapsed {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .menu-left {
@@ -200,6 +234,11 @@ const handleMenuAction = (action: string) => {
 .window-control-btn:hover {
   background-color: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.window-control-btn.is-active {
+  background-color: var(--bg-active, var(--bg-hover));
+  color: var(--accent, var(--text-primary));
 }
 
 .window-control-btn.close-btn:hover {

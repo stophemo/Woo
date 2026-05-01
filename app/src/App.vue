@@ -2,10 +2,13 @@
   <div class="app-container">
     <!-- 顶部菜单栏 -->
     <TopMenu 
+      :is-open="topMenuOpen"
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
       @toggle-right-sidebar="toggleRightSidebar"
       @open-settings="showSettings = true"
+      @open-login="showLogin = true"
+      @toggle-top-menu="toggleTopMenu"
     />
     
     <!-- 主内容区域 -->
@@ -25,6 +28,9 @@
 
     <!-- 设置弹窗 -->
     <SettingsDialog :visible="showSettings" @close="showSettings = false" />
+
+    <!-- 登录弹窗 -->
+    <LoginDialog :visible="showLogin" @close="showLogin = false" />
   </div>
 </template>
 
@@ -36,6 +42,7 @@ import ThumbnailColumn from './components/layout/ThumbnailColumn.vue'
 import EditArea from './components/layout/EditArea.vue'
 import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
+import LoginDialog from './components/layout/LoginDialog.vue'
 import { useThemeStore } from './stores/theme'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
@@ -46,6 +53,13 @@ const leftSidebarOpen = ref(true)
 const thumbnailSidebarOpen = ref(true)
 const rightSidebarOpen = ref(true)
 const showSettings = ref(false)
+const showLogin = ref(false)
+const topMenuOpen = ref(true)
+
+// 切换顶部菜单栏
+const toggleTopMenu = () => {
+  topMenuOpen.value = !topMenuOpen.value
+}
 
 // 切换左侧侧边栏
 const toggleLeftSidebar = () => {
@@ -64,6 +78,12 @@ const toggleRightSidebar = () => {
 
 // 键盘快捷键处理函数
 const handleKeyDown = (event: KeyboardEvent) => {
+  // 快捷键 Ctrl+` 切换顶部菜单栏
+  if (event.ctrlKey && event.key === '`') {
+    event.preventDefault()
+    toggleTopMenu()
+    return
+  }
   // 检查是否按下 Ctrl 键
   if (event.ctrlKey) {
     switch (event.key) {
