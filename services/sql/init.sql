@@ -2,9 +2,9 @@
 -- Non-ego Notes Database Schema
 -- ============================
 
-CREATE DATABASE IF NOT EXISTS `non_ego_notes` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS `woo_notes` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 
-USE `non_ego_notes`;
+USE `woo_notes`;
 
 -- 用户表
 CREATE TABLE IF NOT EXISTS `sys_user` (
@@ -37,12 +37,13 @@ CREATE TABLE IF NOT EXISTS `note_folder` (
     KEY `idx_parent_id` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='目录表';
 
--- 文稿表（元数据）
+-- 文稿表（含内容）
 CREATE TABLE IF NOT EXISTS `note_document` (
     `id` BIGINT NOT NULL COMMENT '文稿ID',
     `user_id` BIGINT NOT NULL COMMENT '所属用户ID',
     `folder_id` BIGINT NOT NULL COMMENT '所属目录ID',
     `title` VARCHAR(200) NOT NULL COMMENT '文稿标题',
+    `content` LONGTEXT COMMENT '文稿内容（HTML）',
     `branch_name` VARCHAR(300) DEFAULT NULL COMMENT 'Git分支名称',
     `sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序号',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -52,3 +53,6 @@ CREATE TABLE IF NOT EXISTS `note_document` (
     KEY `idx_user_id` (`user_id`),
     KEY `idx_folder_id` (`folder_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文稿表';
+
+-- 若表已存在但缺少 content 字段，可手动执行：
+-- ALTER TABLE `note_document` ADD COLUMN `content` LONGTEXT COMMENT '文稿内容（HTML）' AFTER `title`;

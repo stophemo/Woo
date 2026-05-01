@@ -10,7 +10,7 @@
         @click="handleSelectDocument(doc.id)"
       >
         <h4>{{ doc.title }}</h4>
-        <p>{{ getPreview(doc) }}</p>
+        <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
       </div>
     </template>
 
@@ -28,7 +28,6 @@
 
 <script setup lang="ts">
 import { useWorkspaceStore } from '../../stores/workspace'
-import type { Document } from '../../types/document'
 
 interface Props {
   isOpen: boolean
@@ -42,15 +41,17 @@ const handleSelectDocument = (docId: string) => {
   store.selectDocument(docId)
 }
 
-// 获取文稿预览文本
-function getPreview(doc: Document): string {
-  const tmp = document.createElement('div')
-  tmp.innerHTML = doc.content
-  const text = tmp.textContent || tmp.innerText || ''
-  // 跳过标题，取正文预览
-  const lines = text.split('\n').filter(l => l.trim())
-  const body = lines.slice(1).join(' ').trim()
-  return body.length > 80 ? body.substring(0, 80) + '...' : body
+// 列表项不携带 content（按需单独加载），此处仅显示更新时间
+function formatUpdatedAt(value: string | null | undefined): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${day} ${hh}:${mm}`
 }
 </script>
 

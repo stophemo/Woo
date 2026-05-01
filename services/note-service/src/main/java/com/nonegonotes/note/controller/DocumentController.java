@@ -2,6 +2,7 @@ package com.nonegonotes.note.controller;
 
 import com.nonegonotes.common.entity.Document;
 import com.nonegonotes.common.result.R;
+import com.nonegonotes.note.dto.DocumentContentRequest;
 import com.nonegonotes.note.dto.DocumentRequest;
 import com.nonegonotes.note.service.DocumentService;
 import jakarta.validation.Valid;
@@ -24,6 +25,13 @@ public class DocumentController {
         return R.ok(documents);
     }
 
+    @GetMapping("/{documentId}")
+    public R<Document> getDocument(@RequestHeader("X-User-Id") Long userId,
+                                    @PathVariable Long documentId) {
+        Document document = documentService.getDocument(userId, documentId);
+        return R.ok(document);
+    }
+
     @PostMapping
     public R<Document> createDocument(@RequestHeader("X-User-Id") Long userId,
                                       @Valid @RequestBody DocumentRequest request) {
@@ -36,6 +44,14 @@ public class DocumentController {
                                   @PathVariable Long documentId,
                                   @RequestParam String title) {
         documentService.renameDocument(userId, documentId, title);
+        return R.ok();
+    }
+
+    @PutMapping("/{documentId}/content")
+    public R<Void> updateContent(@RequestHeader("X-User-Id") Long userId,
+                                  @PathVariable Long documentId,
+                                  @RequestBody DocumentContentRequest request) {
+        documentService.updateDocumentContent(userId, documentId, request.getContent());
         return R.ok();
     }
 

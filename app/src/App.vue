@@ -30,7 +30,7 @@
     <SettingsDialog :visible="showSettings" @close="showSettings = false" />
 
     <!-- 登录弹窗 -->
-    <LoginDialog :visible="showLogin" @close="showLogin = false" />
+    <LoginDialog :visible="showLogin" @close="handleLoginClose" @login-success="handleLoginSuccess" />
   </div>
 </template>
 
@@ -44,9 +44,14 @@ import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
 import LoginDialog from './components/layout/LoginDialog.vue'
 import { useThemeStore } from './stores/theme'
+import { useAuthStore } from './stores/auth'
+import { useWorkspaceStore } from './stores/workspace'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
 useThemeStore()
+
+const authStore = useAuthStore()
+const workspaceStore = useWorkspaceStore()
 
 // 侧边栏状态
 const leftSidebarOpen = ref(true)
@@ -55,6 +60,39 @@ const rightSidebarOpen = ref(true)
 const showSettings = ref(false)
 const showLogin = ref(false)
 const topMenuOpen = ref(true)
+
+// 登录成功后拉取数据
+async function handleLoginSuccess() {
+  await authStore.fetchMe()
+  await workspaceStore.bootstrap()
+}
+
+function handleLoginClose() {
+  showLogin.value = false
+}
+
+// 监听 Token 失效，自动弹出登录
+function onUnauthorized() {
+  authStore.logout()
+  workspaceStore.reset()
+  showLogin.value = true
+}
+
+// 启动流程：有 Token 则拉用户+目录；否则弹出登录
+async function initApp() {
+  if (authStore.isLoggedIn) {
+    const ok = await authStore.fetchMe()
+    if (ok) {
+      try {
+        await workspaceStore.bootstrap()
+      } catch {
+        /* error 已在 store 中保存 */
+      }
+      return
+    }
+  }
+  showLogin.value = true
+}
 
 // 切换顶部菜单栏
 const toggleTopMenu = () => {
@@ -106,11 +144,14 @@ const handleKeyDown = (event: KeyboardEvent) => {
 // 组件挂载时添加键盘事件监听
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('auth:unauthorized', onUnauthorized as EventListener);
+  initApp();
 });
 
 // 组件卸载前移除键盘事件监听，防止内存泄漏
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('auth:unauthorized', onUnauthorized as EventListener);
 });
 </script>
 

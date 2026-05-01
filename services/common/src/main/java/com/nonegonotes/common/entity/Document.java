@@ -24,6 +24,9 @@ public class Document {
     /** 文稿标题 */
     private String title;
 
+    /** 文稿内容（HTML） */
+    private String content;
+
     /** Git 分支名称 */
     private String branchName;
 

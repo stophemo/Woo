@@ -20,15 +20,32 @@ public class DocumentService {
     private final FolderMapper folderMapper;
 
     /**
-     * 获取指定目录下的文稿列表
+     * 获取指定目录下的文稿列表（不含内容）
      */
     public List<Document> getDocumentsByFolder(Long userId, Long folderId) {
         return documentMapper.selectList(
                 new LambdaQueryWrapper<Document>()
+                        .select(Document.class, info -> !"content".equals(info.getColumn()))
                         .eq(Document::getUserId, userId)
                         .eq(Document::getFolderId, folderId)
                         .orderByDesc(Document::getUpdateTime)
         );
+    }
+
+    /**
+     * 获取文稿详情（含内容）
+     */
+    public Document getDocument(Long userId, Long documentId) {
+        return getAndVerifyOwnership(userId, documentId);
+    }
+
+    /**
+     * 更新文稿内容
+     */
+    public void updateDocumentContent(Long userId, Long documentId, String content) {
+        Document doc = getAndVerifyOwnership(userId, documentId);
+        doc.setContent(content);
+        documentMapper.updateById(doc);
     }
 
     /**
@@ -48,6 +65,7 @@ public class DocumentService {
         document.setUserId(userId);
         document.setFolderId(request.getFolderId());
         document.setTitle(request.getTitle());
+        document.setContent("");
         document.setBranchName(branchName);
         document.setSortOrder(0);
         document.setDeleted(0);

@@ -48,13 +48,16 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import IconClose from '../icons/IconClose.vue'
+import { useAuthStore } from '../../stores/auth'
 
 interface Props {
   visible: boolean
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [], 'login-success': [] }>()
+
+const authStore = useAuthStore()
 
 const username = ref('')
 const password = ref('')
@@ -78,11 +81,15 @@ async function handleLogin() {
   errorMsg.value = ''
   submitting.value = true
   try {
-    // TODO: 对接后端登录接口
-    await new Promise(resolve => setTimeout(resolve, 300))
-    emit('close')
-  } catch (e) {
-    errorMsg.value = '登录失败，请重试'
+    const ok = await authStore.login(username.value.trim(), password.value)
+    if (ok) {
+      emit('login-success')
+      emit('close')
+    } else {
+      errorMsg.value = authStore.errorMsg || '登录失败'
+    }
+  } catch (e: any) {
+    errorMsg.value = e?.message || '登录失败，请重试'
   } finally {
     submitting.value = false
   }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nonegonotes.auth.dto.LoginRequest;
 import com.nonegonotes.auth.dto.LoginResponse;
 import com.nonegonotes.auth.dto.RegisterRequest;
+import com.nonegonotes.auth.dto.UserInfoResponse;
 import com.nonegonotes.auth.mapper.UserMapper;
 import com.nonegonotes.common.entity.User;
 import com.nonegonotes.common.exception.BusinessException;
@@ -89,6 +90,23 @@ public class AuthService {
                 .userId(user.getId())
                 .username(user.getUsername())
                 .nickname(user.getNickname())
+                .build();
+    }
+
+    /**
+     * 获取当前登录用户信息
+     */
+    public UserInfoResponse getUserInfo(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(404, "用户不存在");
+        }
+        return UserInfoResponse.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .nickname(user.getNickname())
+                .email(user.getEmail())
+                .avatar(user.getAvatar())
                 .build();
     }
 }

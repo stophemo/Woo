@@ -3,6 +3,7 @@ package com.nonegonotes.auth.controller;
 import com.nonegonotes.auth.dto.LoginRequest;
 import com.nonegonotes.auth.dto.LoginResponse;
 import com.nonegonotes.auth.dto.RegisterRequest;
+import com.nonegonotes.auth.dto.UserInfoResponse;
 import com.nonegonotes.auth.service.AuthService;
 import com.nonegonotes.common.result.R;
 import jakarta.validation.Valid;
@@ -26,5 +27,11 @@ public class AuthController {
     public R<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
         return R.ok(response);
+    }
+
+    @GetMapping("/me")
+    public R<UserInfoResponse> me(@RequestHeader("X-User-Id") Long userId) {
+        UserInfoResponse info = authService.getUserInfo(userId);
+        return R.ok(info);
     }
 }
