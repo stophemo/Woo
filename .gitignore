@@ -6,9 +6,13 @@ app/node_modules
 app/dist
 app/dist-electron
 app/dist-ssr
+app/release
 
 # Electron userData (cache, local storage, etc.)
 app/electron/userData
+
+# 图标生成的中间产物（保留 icon.svg / icon.png / icon.ico）
+app/build/icon-*.png
 
 # ============ Services (Backend) ============
 # Maven
