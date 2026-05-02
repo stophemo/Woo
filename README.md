@@ -17,32 +17,90 @@ Woo（无我笔记）是一款专注写作的 Markdown 桌面笔记软件。
 - **持久化**: MyBatis Plus + MySQL
 - **认证**: JWT
 
-## 开发指南
+## 启动指南
 
-### 前端（app）
+### 环境要求
+
+- **Node.js** 18+（前端开发服务器与 Electron）
+- **JDK 17+**（Spring Boot 3 最低要求）
+- **Maven 3.8+**
+- **MySQL 8.x**（默认账号 `root` / `root`，数据库名 `woo_notes`）
+- **Nacos 2.x**（注册中心，默认 `localhost:8848`，standalone 模式即可）
+
+### 后端启动（services）
+
+后端由 `auth-service`、`note-service`、`gateway` 三个微服务组成，均依赖 Nacos 注册中心和 MySQL，**必须按顺序启动**。
+
+#### 1. 准备数据库
+
+```bash
+# 登录 MySQL 后执行
+mysql -u root -p < services/sql/init.sql
+```
+
+脚本会创建 `woo_notes` 数据库及所需表结构。如需修改账号密码，请同步调整各服务 `src/main/resources/application.yml` 中的 `spring.datasource` 配置。
+
+#### 2. 启动 Nacos（先启动，否则业务服务注册失败）
+
+下载 Nacos Server 2.x 后，在其 `bin` 目录执行：
+
+```powershell
+# Windows（standalone 模式）
+.\startup.cmd -m standalone
+```
+
+确认 `http://localhost:8848/nacos` 可访问后再继续。
+
+#### 3. 编译并启动微服务
+
+```bash
+cd services
+mvn clean install -DskipTests
+```
+
+分别在三个终端启动（或使用 IDE 启动各自的 `*Application` 主类）：
+
+```bash
+# 终端 1：认证服务（端口 8081）
+mvn -pl auth-service spring-boot:run
+
+# 终端 2：笔记服务（端口 8082）
+mvn -pl note-service spring-boot:run
+
+# 终端 3：API 网关（端口 8080，对外统一入口）
+mvn -pl gateway spring-boot:run
+```
+
+三个服务均在 Nacos 注册完成后，通过 `http://localhost:8080/api/**` 访问所有接口。
+
+> 可选：执行 `services/logs/seed.ps1` 可向已启动的服务注入示例账号与测试笔记数据。
+
+### 前端启动（app）
+
+前端依赖后端网关（`http://localhost:8080`），建议先启动后端再启动前端。
 
 ```bash
 cd app
 npm install
 
-# 启动开发服务器
+# 方式一：仅启动 Web 开发服务器（默认 http://localhost:5173）
 npm run dev
+
+# 方式二：启动 Electron 桌面应用（需先运行 npm run dev 或 npm run build）
+npm run electron:dev
 
 # 构建生产版本
 npm run build
 
-# 构建 Electron 应用
+# 打包 Electron 安装包
 npm run electron:build
 ```
 
-### 后端（services）
+### 启动顺序速查
 
-```bash
-cd services
-mvn clean install
 ```
-
-各微服务（auth-service、note-service、gateway）可独立启动，数据库初始化脚本见 `services/sql/init.sql`。
+MySQL  →  Nacos  →  auth-service / note-service / gateway  →  前端 npm run dev
+```
 
 ## 项目结构
 
