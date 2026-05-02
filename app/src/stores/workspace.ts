@@ -38,13 +38,40 @@ function mapDocument(dto: DocumentDTO): Document {
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
+  // 草稿箱特殊视图标识：选中此 id 时，folderDocuments 显示本地草稿列表
+  const DRAFT_FOLDER_ID = '__drafts__'
+  const DRAFT_STORAGE_KEY = 'woo:drafts'
+
+  function loadDrafts(): Document[] {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Document[]) : []
+    } catch {
+      return []
+    }
+  }
+
+  function persistDrafts(list: Document[]) {
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(list))
+    } catch { /* ignore */ }
+  }
+
+  function isDraftId(id: string): boolean {
+    return id.startsWith('draft_')
+  }
+
   // ============ 状态 ============
   const folders = ref<FolderNode[]>([])
   const folderDocuments = ref<Document[]>([]) // 当前目录下的文稿（不含 content）
   const selectedFolderId = ref<string | null>(null)
   const selectedDocumentId = ref<string | null>(null)
+  // 新建目录后需要自动进入重命名编辑状态的目录 id
+  const editingFolderId = ref<string | null>(null)
   // 当前选中文稿的完整数据（切换时整体赋值；编辑时原地修改 content）
   const currentDocumentData = ref<Document | null>(null)
+  // 本地草稿列表（未关联后端目录的文稿）
+  const drafts = ref<Document[]>(loadDrafts())
   const loading = ref(false)
   const error = ref<string>('')
 
@@ -102,10 +129,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function renameFolder(folder: FolderNode, newName: string) {
+    const trimmed = newName.trim()
+    if (!trimmed || trimmed === folder.name) return
+    // 同级目录名不可重复
+    const siblings = getSiblings(folder.parentId, folder.id)
+    if (siblings.some(f => f.name === trimmed)) {
+      error.value = `同级已存在名为“${trimmed}”的目录`
+      return
+    }
     const oldName = folder.name
-    folder.name = newName // 乐观更新
+    folder.name = trimmed // 乐观更新
     try {
-      await folderApi.rename(folder.id, newName)
+      await folderApi.rename(folder.id, trimmed)
     } catch (e: any) {
       folder.name = oldName
       error.value = e?.message || '重命名失败'
@@ -114,14 +149,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function createRootFolder() {
     try {
-      const id = await folderApi.create({ name: '新建目录', parentId: null })
+      const name = generateUniqueName('新建目录', folders.value)
+      const id = await folderApi.create({ name, parentId: null })
       folders.value.push({
         id,
-        name: '新建目录',
+        name,
         children: [],
         parentId: null,
         isExpanded: false
       })
+      editingFolderId.value = id
     } catch (e: any) {
       error.value = e?.message || '创建目录失败'
     }
@@ -129,10 +166,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function createSiblingFolder(target: FolderNode) {
     try {
-      const id = await folderApi.create({ name: '新建目录', parentId: target.parentId })
+      const siblings = getSiblings(target.parentId, null)
+      const name = generateUniqueName('新建目录', siblings)
+      const id = await folderApi.create({ name, parentId: target.parentId })
       const sibling: FolderNode = {
         id,
-        name: '新建目录',
+        name,
         children: [],
         parentId: target.parentId,
         isExpanded: false
@@ -142,6 +181,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       } else {
         addFolderToParent(folders.value, target.parentId, sibling)
       }
+      editingFolderId.value = id
     } catch (e: any) {
       error.value = e?.message || '创建目录失败'
     }
@@ -149,18 +189,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function createChildFolder(parent: FolderNode) {
     try {
-      const id = await folderApi.create({ name: '新建子目录', parentId: parent.id })
+      const name = generateUniqueName('新建子目录', parent.children)
+      const id = await folderApi.create({ name, parentId: parent.id })
       parent.children.push({
         id,
-        name: '新建子目录',
+        name,
         children: [],
         parentId: parent.id,
         isExpanded: false
       })
       parent.isExpanded = true
+      editingFolderId.value = id
     } catch (e: any) {
       error.value = e?.message || '创建子目录失败'
     }
+  }
+
+  function clearEditingFolder() {
+    editingFolderId.value = null
   }
 
   async function deleteFolder(folder: FolderNode) {
@@ -186,6 +232,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // ============ 文稿操作 ============
   async function selectDocument(documentId: string) {
     selectedDocumentId.value = documentId
+    // 草稿：从本地获取，不调后端
+    if (isDraftId(documentId)) {
+      const draft = drafts.value.find(d => d.id === documentId)
+      currentDocumentData.value = draft ? { ...draft } : null
+      return
+    }
     try {
       const dto = await documentApi.getById(documentId)
       // 整体赋值，引用变化 → 触发编辑器重载内容
@@ -198,6 +250,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   // 防抖保存 content
   let saveTimer: number | null = null
+  // 记录当前调用中的保存请求（用于 flush 等待返回）
+  let savingPromise: Promise<void> | null = null
+  // 当前 pending 的待保存任务（在 saveTimer 到期前保留）
+  let pendingSave: { documentId: string; content: string } | null = null
+
+  // 版本列表刷新信号：每次成功提交版本后自增，供版本面板 watch 实时重载
+  const versionRefreshTick = ref(0)
+  const lastVersionedDocId = ref<string | null>(null)
+
   function updateDocumentContent(documentId: string, content: string) {
     // 原地修改当前文稿对象的 content（引用不变，不触发编辑器重新渲染）
     if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
@@ -205,23 +266,92 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       currentDocumentData.value.updatedAt = new Date().toISOString()
     }
     const meta = folderDocuments.value.find(d => d.id === documentId)
-    if (meta) meta.updatedAt = new Date().toISOString()
+    if (meta) {
+      meta.updatedAt = new Date().toISOString()
+      meta.content = content
+    }
 
+    // 草稿：只写 localStorage，不调后端
+    if (isDraftId(documentId)) {
+      const draft = drafts.value.find(d => d.id === documentId)
+      if (draft) {
+        draft.content = content
+        draft.updatedAt = new Date().toISOString()
+        persistDrafts(drafts.value)
+      }
+      return
+    }
+
+    pendingSave = { documentId, content }
     if (saveTimer !== null) {
       clearTimeout(saveTimer)
     }
-    saveTimer = window.setTimeout(async () => {
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null
+      void runPendingSave()
+    }, 800)
+  }
+
+  async function runPendingSave(): Promise<void> {
+    if (!pendingSave) return
+    const { documentId, content } = pendingSave
+    pendingSave = null
+    savingPromise = (async () => {
       try {
         await documentApi.updateContent(documentId, content)
       } catch (e: any) {
         error.value = e?.message || '保存失败'
+      } finally {
+        savingPromise = null
       }
-    }, 800)
+    })()
+    await savingPromise
   }
 
-  async function createDocument(folderId: string, title = '新建文稿') {
+  /**
+   * 立即写回当前挂起的保存任务并等待完成（用于提交版本前确保后端读到最新内容）。
+   */
+  async function flushPendingSave(): Promise<void> {
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+      await runPendingSave()
+    } else if (savingPromise) {
+      await savingPromise
+    }
+  }
+
+  /**
+   * 提交一个文稿版本：先 flush 未完成的正文保存，再调用后端 commit 接口。
+   * 草稿（未入库的文稿）不产生版本。
+   */
+  async function commitDocumentVersion(documentId: string, changeType: 'auto' | 'manual' = 'auto'): Promise<void> {
+    if (isDraftId(documentId)) return
     try {
-      const dto = await documentApi.create({ title, folderId })
+      await flushPendingSave()
+      const { commitVersion } = await import('../services/versionApi')
+      await commitVersion(documentId, changeType)
+      // 通知监听者（版本面板）：可能有新版本产生
+      lastVersionedDocId.value = documentId
+      versionRefreshTick.value++
+    } catch (e: any) {
+      error.value = e?.message || '版本保存失败'
+    }
+  }
+
+  // 根据基础标题与当前列表生成不重复的默认文稿标题
+  function generateUniqueDocTitle(base: string, list: Document[]): string {
+    const used = new Set(list.map(d => d.title))
+    if (!used.has(base)) return base
+    let i = 2
+    while (used.has(`${base} ${i}`)) i++
+    return `${base} ${i}`
+  }
+
+  async function createDocument(folderId: string, title?: string) {
+    const finalTitle = title || generateUniqueDocTitle('新建文稿', folderDocuments.value)
+    try {
+      const dto = await documentApi.create({ title: finalTitle, folderId })
       const doc = mapDocument(dto)
       folderDocuments.value.unshift(doc)
       selectedDocumentId.value = doc.id
@@ -230,6 +360,50 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     } catch (e: any) {
       error.value = e?.message || '创建文稿失败'
       return null
+    }
+  }
+
+  // 打开草稿箱视图：folderDocuments 切为本地草稿列表
+  function openDraftBox() {
+    selectedFolderId.value = DRAFT_FOLDER_ID
+    folderDocuments.value = drafts.value.map(d => ({ ...d }))
+    if (folderDocuments.value.length > 0) {
+      selectDocument(folderDocuments.value[0].id)
+    } else {
+      selectedDocumentId.value = null
+      currentDocumentData.value = null
+    }
+  }
+
+  // 本地创建一篇草稿，加入草稿列表并选中进入编辑
+  function createDraft(title?: string): Document {
+    const now = new Date().toISOString()
+    const finalTitle = title || generateUniqueDocTitle('新建文稿', drafts.value)
+    const draft: Document = {
+      id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      title: finalTitle,
+      content: '',
+      folderId: DRAFT_FOLDER_ID,
+      createdAt: now,
+      updatedAt: now
+    }
+    drafts.value.unshift(draft)
+    persistDrafts(drafts.value)
+    // 确保切到草稿箱视图并同步列表
+    selectedFolderId.value = DRAFT_FOLDER_ID
+    folderDocuments.value = drafts.value.map(d => ({ ...d }))
+    selectedDocumentId.value = draft.id
+    currentDocumentData.value = { ...draft }
+    return draft
+  }
+
+  // 统一入口：有选中真实目录 → 后端创建；否则归入草稿箱
+  async function createNewDocument() {
+    const fid = selectedFolderId.value
+    if (fid && fid !== DRAFT_FOLDER_ID) {
+      await createDocument(fid)
+    } else {
+      createDraft()
     }
   }
 
@@ -266,6 +440,32 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   // ============ 辅助 ============
+  // 获取指定父节点下的同级目录列表，可选排除某个 id
+  function getSiblings(parentId: string | null, excludeId: string | null): FolderNode[] {
+    const list = parentId === null ? folders.value : findFolderById(folders.value, parentId)?.children || []
+    return excludeId ? list.filter(f => f.id !== excludeId) : [...list]
+  }
+
+  function findFolderById(nodes: FolderNode[], id: string): FolderNode | null {
+    for (const node of nodes) {
+      if (node.id === id) return node
+      if (node.children.length > 0) {
+        const found = findFolderById(node.children, id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  // 根据基础名与同级已存在的目录，生成不重复的默认名称：“基础名”、“基础名 2”、“基础名 3”...
+  function generateUniqueName(base: string, siblings: FolderNode[]): string {
+    const used = new Set(siblings.map(f => f.name))
+    if (!used.has(base)) return base
+    let i = 2
+    while (used.has(`${base} ${i}`)) i++
+    return `${base} ${i}`
+  }
+
   function addFolderToParent(nodes: FolderNode[], parentId: string, folder: FolderNode): boolean {
     for (const node of nodes) {
       if (node.id === parentId) {
@@ -309,6 +509,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     folders,
     selectedFolderId,
     selectedDocumentId,
+    editingFolderId,
     loading,
     error,
     // 计算属性
@@ -325,10 +526,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     createSiblingFolder,
     createChildFolder,
     deleteFolder,
+    clearEditingFolder,
     // 文稿操作
     selectDocument,
     updateDocumentContent,
+    flushPendingSave,
+    commitDocumentVersion,
+    versionRefreshTick,
+    lastVersionedDocId,
     createDocument,
+    createNewDocument,
+    openDraftBox,
     renameDocument,
     deleteDocument,
     // 辅助

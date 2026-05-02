@@ -11,7 +11,7 @@
     </div>
 
     <!-- 状态栏 -->
-    <div class="editor-statusbar">
+    <div class="editor-statusbar" :class="{ collapsed: !isStatusBarOpen }">
       <div class="statusbar-left">
         <span>Markdown</span>
         <span v-if="currentBlock" class="current-block">{{ currentBlock }}</span>
@@ -40,8 +40,60 @@ import { useWorkspaceStore } from '../../stores/workspace'
 
 const store = useWorkspaceStore()
 
+interface Props {
+  isStatusBarOpen?: boolean
+}
+withDefaults(defineProps<Props>(), {
+  isStatusBarOpen: true
+})
+
 // 防抖标记：防止 setContent 触发 onUpdate 反向写回
 let isSettingContent = false
+
+// ========= 版本触发状态 =========
+// 规则：失焦 / 变更 ≥100字 或 ≥10行 / 停顿 ≥3s 触发一次 commitVersion
+const IDLE_MS = 3000
+const CHAR_DELTA = 100
+const LINE_DELTA = 10
+let idleTimer: number | null = null
+let baselineDocId: string | null = null
+let baselineTextLen = 0
+let baselineLines = 0
+let dirtyAfterBaseline = false
+let committing = false
+
+function clearIdleTimer() {
+  if (idleTimer !== null) {
+    clearTimeout(idleTimer)
+    idleTimer = null
+  }
+}
+
+function resetBaselineFromEditor() {
+  if (!editor.value) return
+  baselineDocId = store.selectedDocumentId
+  baselineTextLen = editor.value.getText().length
+  const json = editor.value.getJSON()
+  baselineLines = json.content?.length || 0
+  dirtyAfterBaseline = false
+  clearIdleTimer()
+}
+
+async function triggerCommit(changeType: 'auto' | 'manual' = 'auto') {
+  const docId = baselineDocId || store.selectedDocumentId
+  if (!docId) return
+  if (!dirtyAfterBaseline) return
+  if (committing) return
+  clearIdleTimer()
+  committing = true
+  try {
+    await store.commitDocumentVersion(docId, changeType)
+  } finally {
+    committing = false
+  }
+  // commit 后按当前编辑器状态重置基线
+  resetBaselineFromEditor()
+}
 
 // 自定义快捷键扩展
 const CustomKeymap = Extension.create({
@@ -74,6 +126,11 @@ const CustomKeymap = Extension.create({
       'Mod-Shift-x': () => this.editor.chain().focus().toggleStrike().run(),
       // Ctrl+Enter 分割线
       'Mod-Enter': () => this.editor.chain().focus().setHorizontalRule().run(),
+      // Ctrl+S 手动保存一版（内容未变则跳过，不发请求）
+      'Mod-s': () => {
+        void triggerCommit('manual')
+        return true
+      },
     }
   },
 })
@@ -109,9 +166,38 @@ const editor = useEditor({
   },
   onUpdate: ({ editor: editorInstance }) => {
     // 编辑器内容变化时同步到 store
-    if (!isSettingContent && store.selectedDocumentId) {
-      store.updateDocumentContent(store.selectedDocumentId, editorInstance.getHTML())
+    if (isSettingContent || !store.selectedDocumentId) return
+    store.updateDocumentContent(store.selectedDocumentId, editorInstance.getHTML())
+
+    // === 版本触发检测 ===
+    if (baselineDocId !== store.selectedDocumentId) {
+      // 文稿已切换，但 watch 还未重置基线，直接跟进
+      resetBaselineFromEditor()
+      return
     }
+    dirtyAfterBaseline = true
+    const currentText = editorInstance.getText()
+    const currentLen = currentText.length
+    const json = editorInstance.getJSON()
+    const currentLines = json.content?.length || 0
+
+    const charDelta = Math.abs(currentLen - baselineTextLen)
+    const lineDelta = Math.abs(currentLines - baselineLines)
+    if (charDelta >= CHAR_DELTA || lineDelta >= LINE_DELTA) {
+      // 达到阈值立即提交
+      void triggerCommit('auto')
+      return
+    }
+
+    // 停顿 3s 触发
+    clearIdleTimer()
+    idleTimer = window.setTimeout(() => {
+      void triggerCommit('auto')
+    }, IDLE_MS)
+  },
+  onBlur: () => {
+    // 失焦立即提交（如有微改动）
+    void triggerCommit('auto')
   },
 })
 
@@ -149,8 +235,18 @@ const lineCount = computed(() => {
 })
 
 // 监听选中文稿变化，加载对应内容到编辑器
-watch(() => store.currentDocument, (newDoc) => {
+watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   if (!editor.value) return
+
+  // 切换/关闭当前文稿前：如有未提交的变更，先 commit 旧文稿
+  if (oldDoc && oldDoc.id !== newDoc?.id && dirtyAfterBaseline && baselineDocId === oldDoc.id) {
+    const oldId = baselineDocId
+    clearIdleTimer()
+    dirtyAfterBaseline = false
+    try {
+      await store.commitDocumentVersion(oldId, 'auto')
+    } catch { /* ignore */ }
+  }
 
   if (newDoc) {
     isSettingContent = true
@@ -161,6 +257,7 @@ watch(() => store.currentDocument, (newDoc) => {
     editor.value.commands.setContent('')
     isSettingContent = false
   }
+  resetBaselineFromEditor()
 }, { immediate: true })
 
 // 暴露方法供父组件调用
@@ -169,6 +266,11 @@ defineExpose({
 })
 
 onBeforeUnmount(() => {
+  // 卸载前尝试提交未保存的改动
+  if (dirtyAfterBaseline && baselineDocId) {
+    void store.commitDocumentVersion(baselineDocId, 'auto')
+  }
+  clearIdleTimer()
   editor.value?.destroy()
 })
 </script>
@@ -214,6 +316,19 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-muted);
   flex-shrink: 0;
+  overflow: hidden;
+  transition: var(--theme-transition), height 0.25s ease, padding 0.25s ease, border-top-color 0.25s ease, opacity 0.2s ease, transform 0.25s ease;
+  transform-origin: bottom;
+}
+
+.editor-statusbar.collapsed {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-color: transparent;
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .statusbar-left,
