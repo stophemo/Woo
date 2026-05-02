@@ -9,6 +9,7 @@ import com.nonegonotes.note.mapper.DocumentMapper;
 import com.nonegonotes.note.mapper.FolderMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -18,14 +19,14 @@ public class DocumentService {
 
     private final DocumentMapper documentMapper;
     private final FolderMapper folderMapper;
+    private final DocumentVersionService documentVersionService;
 
     /**
-     * 获取指定目录下的文稿列表（不含内容）
+     * 获取指定目录下的文稿列表（含内容，用于缩略图展示首行）
      */
     public List<Document> getDocumentsByFolder(Long userId, Long folderId) {
         return documentMapper.selectList(
                 new LambdaQueryWrapper<Document>()
-                        .select(Document.class, info -> !"content".equals(info.getColumn()))
                         .eq(Document::getUserId, userId)
                         .eq(Document::getFolderId, folderId)
                         .orderByDesc(Document::getUpdateTime)
@@ -40,12 +41,70 @@ public class DocumentService {
     }
 
     /**
-     * 更新文稿内容
+     * 更新文稿内容，同时根据内容首行同步更新 title。
+     * 注：本方法不再自动写入版本快照；版本触发统一由前端根据编辑行为
+     * （失焦 / 100字或±10行 / 停顿±3s）调用 saveVersionCommit 完成。
      */
+    @Transactional
     public void updateDocumentContent(Long userId, Long documentId, String content) {
         Document doc = getAndVerifyOwnership(userId, documentId);
         doc.setContent(content);
+        doc.setTitle(extractFirstLineAsTitle(content));
         documentMapper.updateById(doc);
+    }
+
+    /**
+     * 前端明确触发的一次“提交版本”：读当前文稿的最新内容，记入快照，并触发历史合并。
+     */
+    @Transactional
+    public void saveVersionCommit(Long userId, Long documentId, String changeType) {
+        Document doc = getAndVerifyOwnership(userId, documentId);
+        documentVersionService.saveAndCompact(doc, changeType, userId);
+    }
+
+    /**
+     * 手动保存版本（用户点击“保存为版本”时触发），会强制追加一条 manual 快照。
+     */
+    @Transactional
+    public void saveManualVersion(Long userId, Long documentId) {
+        Document doc = getAndVerifyOwnership(userId, documentId);
+        documentVersionService.saveAndCompact(doc, "manual", userId);
+    }
+
+    /**
+     * 从 HTML/纯文本 content 中提取首行纯文本作为标题。
+     * - 去除所有标签，常见实体 &nbsp; 视为空格
+     * - 按换行切分，取第一行非空文本、截断到 40 字
+     * - 内容为空时返回 “新文稿”
+     */
+    private String extractFirstLineAsTitle(String content) {
+        if (content == null || content.isEmpty()) {
+            return "新文稿";
+        }
+        String plain = content
+                .replaceAll("<\\s*br\\s*/?\\s*>", "\n")
+                .replaceAll("</\\s*(p|div|h[1-6]|li|blockquote|pre)\\s*>", "\n")
+                .replaceAll("<[^>]+>", "")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"");
+        String firstLine = "";
+        for (String line : plain.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                firstLine = trimmed;
+                break;
+            }
+        }
+        if (firstLine.isEmpty()) {
+            return "新文稿";
+        }
+        if (firstLine.length() > 40) {
+            firstLine = firstLine.substring(0, 40) + "…";
+        }
+        return firstLine;
     }
 
     /**
