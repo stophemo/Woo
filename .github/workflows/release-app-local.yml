@@ -1,0 +1,112 @@
+name: Release App Local
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "app-local-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (default: v<app-local/package.json version>)"
+        required: false
+        type: string
+      draft:
+        description: "Create as draft release"
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app-local/package-lock.json
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          $pkg = Get-Content app-local/package.json -Raw | ConvertFrom-Json
+          $version = "$($pkg.version)"
+          $tag = "${{ github.ref_name }}"
+          $draft = "false"
+          $prerelease = "false"
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $inputTag = "${{ inputs.tag }}"
+            if ([string]::IsNullOrWhiteSpace($inputTag)) {
+              $tag = "v$version"
+            } else {
+              $tag = $inputTag.Trim()
+            }
+            if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
+            if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
+          }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "draft=$draft" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Install dependencies
+        working-directory: app-local
+        run: npm ci
+
+      - name: Build desktop package
+        working-directory: app-local
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run electron:build
+
+      - name: Ensure tag exists (manual run)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git fetch --tags origin
+          $tagExists = git ls-remote --tags origin "refs/tags/$env:TAG"
+          if ([string]::IsNullOrWhiteSpace($tagExists)) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "$env:TAG"
+            git push origin "refs/tags/$env:TAG"
+          } else {
+            Write-Host "Tag $env:TAG already exists on origin."
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2.6.2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Woo Local ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          draft: ${{ steps.meta.outputs.draft == 'true' }}
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            app-local/release/*.exe
+            app-local/release/*.zip
+            app-local/release/*.blockmap

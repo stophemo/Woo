@@ -1,7 +1,7 @@
 {
   "name": "woo-local",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "无我笔记（本地版）- 纯本地 SQLite 存储，无需任何后端服务",
   "author": "stophemo",
