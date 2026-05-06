@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "无我笔记（本地版）- 纯本地 SQLite 存储，无需任何后端服务",
-  "author": "NoneGoNotes",
+  "author": "stophemo",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
