@@ -109,4 +109,3 @@ jobs:
           files: |
             app-local/release/*.exe
             app-local/release/*.zip
-            app-local/release/*.blockmap
