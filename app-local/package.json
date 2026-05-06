@@ -18,7 +18,8 @@
   },
   "build": {
     "appId": "com.nonegonotes.woo.local",
-    "productName": "无我笔记",
+    "productName": "无我笔记（本地版）",
+    "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
     ],
@@ -49,23 +50,26 @@
       ]
     },
     "nsis": {
+      "artifactName": "woo-local-${version}-${os}-${arch}-setup.${ext}",
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "无我笔记"
+      "shortcutName": "无我笔记（本地版）"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "woo-local-${version}-${os}-${arch}-portable.${ext}"
     },
     "mac": {
       "icon": "build/icon.png",
+      "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
       "target": ["dmg", "zip"]
     },
     "linux": {
       "icon": "build/icon.png",
+      "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
       "target": ["AppImage", "deb"]
     }
   },
