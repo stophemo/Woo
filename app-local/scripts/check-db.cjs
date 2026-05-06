@@ -1,0 +1,10 @@
+const Database = require('better-sqlite3')
+const path = require('path')
+const dbPath = path.join(__dirname, 'electron', 'userData', 'woo.db')
+console.log('DB path:', dbPath)
+
+const db = new Database(dbPath, { readonly: true })
+console.log('Tables:', db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all())
+console.log('Folders:', db.prepare("SELECT * FROM note_folder").all())
+console.log('Documents:', db.prepare("SELECT * FROM note_document").all())
+db.close()
