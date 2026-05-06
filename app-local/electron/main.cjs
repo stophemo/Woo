@@ -8,6 +8,20 @@ const { app, BrowserWindow, ipcMain, shell, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
+// 获取应用根目录（兼容开发和打包环境）
+const getAppRoot = () => {
+  // 打包后：__dirname 指向 resources\app.asar\electron
+  // 开发环境：__dirname 指向 electron 目录
+  if (process.resourcesPath) {
+    // 打包环境：使用 exe 所在目录
+    return path.dirname(process.execPath)
+  }
+  // 开发环境：返回项目根目录
+  return path.join(__dirname, '..')
+}
+
+const APP_ROOT = getAppRoot()
+
 const { getDb, closeDb } = require('./db/index.cjs')
 const ipcRegister = require('./ipc/register.cjs')
 
@@ -54,7 +68,9 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    // 打包后使用 app.getAppPath() 获取 asar 包根目录
+    const appPath = app.getAppPath()
+    mainWindow.loadFile(path.join(appPath, 'dist/index.html'))
   }
 
   // —— 窗口控制 IPC（与原版兼容）——
@@ -70,7 +86,8 @@ function createWindow() {
 
 app.whenReady().then(() => {
   // 设置自定义 userData 目录（必须在 whenReady 之后、getDb 之前）
-  const customUserData = path.join(__dirname, 'userData')
+  // 打包后使用 exe 同级目录，开发环境使用项目根目录
+  const customUserData = path.join(APP_ROOT, 'userData')
   if (!fs.existsSync(customUserData)) fs.mkdirSync(customUserData, { recursive: true })
   app.setPath('userData', customUserData)
 

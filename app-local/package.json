@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.nonegonotes.woo.local",
-    "productName": "无我笔记（本地版）",
+    "productName": "Woo",
     "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
@@ -57,7 +57,7 @@
       "deleteAppDataOnUninstall": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "无我笔记（本地版）"
+      "shortcutName": "Woo"
     },
     "portable": {
       "artifactName": "woo-local-${version}-${os}-${arch}-portable.${ext}"
