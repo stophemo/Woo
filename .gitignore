@@ -14,6 +14,25 @@ app/electron/userData
 # 图标生成的中间产物（保留 icon.svg / icon.png / icon.ico）
 app/build/icon-*.png
 
+# ============ App-Local (Local Frontend) ============
+# Dependencies
+app-local/node_modules
+
+# Build output
+app-local/dist
+app-local/dist-electron
+app-local/dist-ssr
+app-local/release
+
+# Electron userData (cache, local storage, etc.)
+app-local/electron/userData
+
+# 图标生成的中间产物（保留 icon.svg / icon.png / icon.ico）
+app-local/build/icon-*.png
+
+# Install logs
+app-local/install.log
+
 # ============ Services (Backend) ============
 # Maven
 services/target/
