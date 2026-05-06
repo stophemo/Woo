@@ -21,11 +21,11 @@ Woo（无我笔记）是一款专注写作的 Markdown 桌面笔记软件。
 
 ### 环境要求
 
-- **Node.js** 18+（前端开发服务器与 Electron）
-- **JDK 17+**（Spring Boot 3 最低要求）
+- **Node.js**
+- **JDK 17+**
 - **Maven 3.8+**
-- **MySQL 8.x**（默认账号 `root` / `root`，数据库名 `woo_notes`）
-- **Nacos 2.x**（注册中心，默认 `localhost:8848`，standalone 模式即可）
+- **MySQL 8.x**
+- **Nacos 2.x**
 
 ### 后端启动（services）
 
