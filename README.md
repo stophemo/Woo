@@ -1,23 +1,37 @@
 # Woo（无我笔记）
 
-Woo（无我笔记）是一款专注写作的 Markdown 桌面笔记软件。
+Woo（无我笔记）是一款专注写作的 Markdown 笔记软件，提供**云端同步版**和**纯本地版**两种部署方式。
 
-## 特性
+## 版本说明
 
-- 简洁的 Markdown 编辑体验
-- Git 版本管理支持
-- 思维导图与大纲视图
-- AI 辅助写作能力（规划中）
+| 版本 | 目录 | 特点 | 适用场景 |
+|------|------|------|---------|
+| **云端版** | `app/` + `services/` | 需要 MySQL + Nacos + 后端服务，支持多用户、云同步 | 团队协作、多设备同步 |
+| **本地版** | `app-local/` | 纯 Electron + SQLite，无需任何后端，数据完全本地存储 | 个人使用、离线写作、隐私保护 |
 
-## 技术栈
+## 本地版快速开始（推荐）
 
-- **前端**: Vue 3 + TypeScript + Pinia
-- **桌面端**: Electron + Vite
-- **后端**: Spring Boot 3 + Spring Cloud Gateway
-- **持久化**: MyBatis Plus + MySQL
-- **认证**: JWT
+**无需安装数据库、无需启动后端服务**，下载即用：
 
-## 启动指南
+```powershell
+cd app-local
+npm install
+npm run dev            # 开发模式
+npm run electron:build # 打包桌面应用
+```
+
+打包产物位于 `app-local/release/`，包含：
+- `woo-local-{version}-win-x64-setup.exe` — NSIS 安装包
+- `woo-local-{version}-win-x64-portable.exe` — 单文件绿色版
+- `woo-local-{version}-win-x64.zip` — 压缩包绿色版
+
+数据存储位置：`%APPDATA%/无我笔记/woo.db`
+
+> 详细文档见：[app-local/README.md](app-local/README.md)
+
+---
+
+## 云端版启动指南
 
 ### 环境要求
 
@@ -106,12 +120,18 @@ MySQL  →  Nacos  →  auth-service / note-service / gateway  →  前端 npm r
 
 ```
 Woo/
-├── app/                    # 前端应用（Vue 3 + Electron）
+├── app/                    # 云端版前端（Vue 3 + Electron + 后端 API）
 │   ├── electron/           # Electron 主进程和预加载脚本
 │   ├── src/                # Vue 3 源码（components / stores / types 等）
 │   ├── docs/               # 前端设计文档
 │   └── package.json
-└── services/               # 后端微服务（Spring Boot）
+├── app-local/              # 本地版前端（Vue 3 + Electron + SQLite）
+│   ├── electron/           # Electron 主进程（SQLite 业务逻辑）
+│   ├── src/                # Vue 3 源码（无认证、无 userId）
+│   ├── build/              # 打包资源（图标等）
+│   ├── release/            # 打包产物（gitignore）
+│   └── package.json
+└── services/               # 云端版后端微服务（Spring Boot）
     ├── common/             # 通用模块（实体、异常、工具类等）
     ├── auth-service/       # 认证服务
     ├── note-service/       # 笔记服务
