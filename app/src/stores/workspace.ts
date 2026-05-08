@@ -40,6 +40,7 @@ function mapDocument(dto: DocumentDTO): Document {
 export const useWorkspaceStore = defineStore('workspace', () => {
   // 草稿箱特殊视图标识：选中此 id 时，folderDocuments 显示本地草稿列表
   const DRAFT_FOLDER_ID = '__drafts__'
+  const SEARCH_FOLDER_ID = '__search__'
   const DRAFT_STORAGE_KEY = 'woo:drafts'
 
   function loadDrafts(): Document[] {
@@ -375,6 +376,38 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  async function openSearch(keyword: string) {
+    selectedFolderId.value = SEARCH_FOLDER_ID
+    const q = keyword.trim().toLowerCase()
+    if (!q) {
+      folderDocuments.value = []
+      selectedDocumentId.value = null
+      currentDocumentData.value = null
+      return
+    }
+    try {
+      const folderIds = collectFolderIds(folders.value)
+      const lists = await Promise.all(folderIds.map(id => documentApi.listByFolder(id)))
+      const merged = lists
+        .flat()
+        .map(mapDocument)
+        .filter(doc => {
+          const haystack = `${doc.title} ${doc.content}`.toLowerCase()
+          return haystack.includes(q)
+        })
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      folderDocuments.value = merged
+      if (folderDocuments.value.length > 0) {
+        await selectDocument(folderDocuments.value[0].id)
+      } else {
+        selectedDocumentId.value = null
+        currentDocumentData.value = null
+      }
+    } catch (e: any) {
+      error.value = e?.message || '搜索文稿失败'
+    }
+  }
+
   // 本地创建一篇草稿，加入草稿列表并选中进入编辑
   function createDraft(title?: string): Document {
     const now = new Date().toISOString()
@@ -457,6 +490,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return null
   }
 
+  function collectFolderIds(nodes: FolderNode[]): string[] {
+    const ids: string[] = []
+    const queue = [...nodes]
+    while (queue.length > 0) {
+      const node = queue.shift()!
+      ids.push(node.id)
+      if (node.children.length > 0) {
+        queue.push(...node.children)
+      }
+    }
+    return ids
+  }
+
   // 根据基础名与同级已存在的目录，生成不重复的默认名称：“基础名”、“基础名 2”、“基础名 3”...
   function generateUniqueName(base: string, siblings: FolderNode[]): string {
     const used = new Set(siblings.map(f => f.name))
@@ -537,6 +583,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     createDocument,
     createNewDocument,
     openDraftBox,
+    openSearch,
     renameDocument,
     deleteDocument,
     // 辅助
