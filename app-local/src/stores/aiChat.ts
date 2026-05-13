@@ -1,70 +1,119 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ChatMessage, ModelConfig } from '../types/ai'
-import { sendMessage as geminiSendMessage, stripHtml } from '../services/gemini'
+import { sendMessage as deepseekSendMessage } from '../services/deepseek'
+import { stripHtml } from '../services/gemini'
 
 const STORAGE_KEY = 'ai-settings'
+const CHAT_STORAGE_KEY = 'ai-chat-messages'
+const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 
 export const useAiChatStore = defineStore('aiChat', () => {
-  // ============ 状态 ============
-
   const messages = ref<ChatMessage[]>([])
-  const selectedModelId = ref<string>('auto')
+  const selectedModelId = ref<string>('deepseek-v4-pro')
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
-  // 用于触发 hasApiKey 响应式更新的版本号
   const _apiKeyVersion = ref(0)
 
-  // ============ 计算属性 ============
-
   const availableModels = computed<ModelConfig[]>(() => [
-    { id: 'auto', name: 'Auto', provider: 'gemini', model: 'gemini-2.0-flash' },
-    { id: 'gemini-flash', name: 'Gemini 2.0 Flash', provider: 'gemini', model: 'gemini-2.0-flash' }
+    // DeepSeek 暂无公开 "v4 pro/flash" API 模型名，这里映射到当前可用官方模型参数。
+    {
+      id: 'deepseek-v4-pro',
+      name: 'deepseek v4 pro',
+      provider: 'deepseek',
+      model: 'deepseek-reasoner'
+    },
+    { id: 'deepseek-v4-flash', name: 'deepseek v4 flash', provider: 'deepseek', model: 'deepseek-chat' }
   ])
 
-  const currentModel = computed(() => {
-    if (selectedModelId.value === 'auto') {
-      return availableModels.value[1] // 默认用 Gemini Flash
-    }
-    return availableModels.value.find(m => m.id === selectedModelId.value) || availableModels.value[1]
-  })
+  const currentModel = computed(
+    () => availableModels.value.find(m => m.id === selectedModelId.value) || availableModels.value[0]
+  )
 
   const hasApiKey = computed(() => {
+    void _apiKeyVersion.value
     return !!getApiKey()
   })
 
-  // ============ API Key 管理 ============
-
-  function getApiKey(): string {
+  function getSettings(): Record<string, string> {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) return ''
-      const settings = JSON.parse(raw)
-      return settings.geminiApiKey || ''
+      return raw ? JSON.parse(raw) : {}
     } catch {
-      return ''
+      return {}
     }
   }
 
-  function saveApiKey(key: string) {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    let settings: Record<string, string> = {}
-    try {
-      if (raw) settings = JSON.parse(raw)
-    } catch { /* ignore */ }
-    settings.geminiApiKey = key
+  function saveSettings(settings: Record<string, string>) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-    _apiKeyVersion.value++ // 触发 hasApiKey 响应式更新
   }
 
-  // ============ 模型选择 ============
+  function getApiKey(): string {
+    const settings = getSettings()
+    return settings.deepseekApiKey || ''
+  }
+
+  function saveApiKey(key: string) {
+    const settings = getSettings()
+    settings.deepseekApiKey = key
+    if (!settings.deepseekBaseUrl) {
+      settings.deepseekBaseUrl = DEFAULT_DEEPSEEK_BASE_URL
+    }
+    saveSettings(settings)
+    _apiKeyVersion.value++
+  }
+
+  function getBaseUrl(): string {
+    const settings = getSettings()
+    return settings.deepseekBaseUrl || DEFAULT_DEEPSEEK_BASE_URL
+  }
+
+  function saveBaseUrl(baseUrl: string) {
+    const settings = getSettings()
+    settings.deepseekBaseUrl = baseUrl.trim() || DEFAULT_DEEPSEEK_BASE_URL
+    saveSettings(settings)
+  }
 
   function setModel(modelId: string) {
+    if (!availableModels.value.some(model => model.id === modelId)) return
     selectedModelId.value = modelId
+    const settings = getSettings()
+    settings.selectedModelId = modelId
+    saveSettings(settings)
   }
 
-  // ============ 聊天操作 ============
+  function loadSelectedModel() {
+    const settings = getSettings()
+    if (settings.selectedModelId && availableModels.value.some(model => model.id === settings.selectedModelId)) {
+      selectedModelId.value = settings.selectedModelId
+    }
+  }
+
+  function saveMessages() {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.value))
+  }
+
+  function loadMessages() {
+    try {
+      const raw = localStorage.getItem(CHAT_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return
+
+      messages.value = parsed
+        .filter(msg => msg && typeof msg.id === 'string' && (msg.role === 'user' || msg.role === 'assistant'))
+        .map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          content: typeof msg.content === 'string' ? msg.content : '',
+          timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Date.now(),
+          isStreaming: false
+        }))
+    } catch {
+      messages.value = []
+    }
+  }
 
   function generateId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
@@ -73,13 +122,12 @@ export const useAiChatStore = defineStore('aiChat', () => {
   async function sendUserMessage(userText: string, documentContext?: string) {
     const apiKey = getApiKey()
     if (!apiKey) {
-      error.value = '请先在设置中配置 API Key'
+      error.value = '请先在设置中配置 DeepSeek API Key'
       return
     }
 
     error.value = null
 
-    // 创建用户消息
     const userMsg: ChatMessage = {
       id: generateId(),
       role: 'user',
@@ -87,8 +135,8 @@ export const useAiChatStore = defineStore('aiChat', () => {
       timestamp: Date.now()
     }
     messages.value.push(userMsg)
+    saveMessages()
 
-    // 创建助手占位消息
     const assistantMsg: ChatMessage = {
       id: generateId(),
       role: 'assistant',
@@ -97,13 +145,11 @@ export const useAiChatStore = defineStore('aiChat', () => {
       isStreaming: true
     }
     messages.value.push(assistantMsg)
+    saveMessages()
 
     isStreaming.value = true
 
-    // 构建发送给 API 的消息列表
     const apiMessages: ChatMessage[] = []
-
-    // 如果有文档上下文且是首次消息，注入上下文
     if (documentContext && messages.value.filter(m => m.role === 'user').length === 1) {
       const plainText = stripHtml(documentContext)
       if (plainText.trim()) {
@@ -118,7 +164,6 @@ export const useAiChatStore = defineStore('aiChat', () => {
         apiMessages.push(userMsg)
       }
     } else {
-      // 发送完整对话历史（排除 streaming 占位）
       for (const msg of messages.value) {
         if (msg.id === assistantMsg.id) continue
         if (msg.content.trim()) {
@@ -127,44 +172,42 @@ export const useAiChatStore = defineStore('aiChat', () => {
       }
     }
 
-    // 创建 AbortController
     const controller = new AbortController()
     abortController.value = controller
 
     try {
-      await geminiSendMessage(
+      await deepseekSendMessage(
         apiKey,
+        getBaseUrl(),
         currentModel.value.model,
         apiMessages,
         (chunk: string) => {
-          // 找到助手消息并追加内容
           const msg = messages.value.find(m => m.id === assistantMsg.id)
           if (msg) {
             msg.content += chunk
+            saveMessages()
           }
         },
         controller.signal
       )
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // 用户主动取消，不视为错误
-      } else {
+      if (err.name !== 'AbortError') {
         error.value = err.message || '请求失败，请稍后重试'
-        // 如果助手消息为空，移除它
         const msg = messages.value.find(m => m.id === assistantMsg.id)
         if (msg && !msg.content.trim()) {
           const idx = messages.value.indexOf(msg)
           if (idx !== -1) messages.value.splice(idx, 1)
+          saveMessages()
         }
       }
     } finally {
       isStreaming.value = false
       abortController.value = null
-      // 标记流式完成
       const msg = messages.value.find(m => m.id === assistantMsg.id)
       if (msg) {
         msg.isStreaming = false
       }
+      saveMessages()
     }
   }
 
@@ -175,21 +218,24 @@ export const useAiChatStore = defineStore('aiChat', () => {
   function clearChat() {
     messages.value = []
     error.value = null
+    saveMessages()
   }
 
+  loadMessages()
+  loadSelectedModel()
+
   return {
-    // 状态
     messages,
     selectedModelId,
     isStreaming,
     error,
-    // 计算属性
     availableModels,
     currentModel,
     hasApiKey,
-    // 操作
     getApiKey,
     saveApiKey,
+    getBaseUrl,
+    saveBaseUrl,
     setModel,
     sendUserMessage,
     cancelGeneration,

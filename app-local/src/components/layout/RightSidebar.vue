@@ -1,6 +1,5 @@
 <template>
-  <aside class="right-sidebar" :class="{ 'collapsed': !isOpen }">
-    <!-- 头部栏：模型选择 + 清空 -->
+  <aside class="right-sidebar" :class="{ collapsed: !isOpen }">
     <div class="chat-header">
       <select class="model-select" v-model="aiStore.selectedModelId" @change="aiStore.setModel(($event.target as HTMLSelectElement).value)">
         <option v-for="model in aiStore.availableModels" :key="model.id" :value="model.id">
@@ -15,39 +14,29 @@
       </button>
     </div>
 
-    <!-- 消息区域 -->
     <div class="chat-messages" ref="messagesContainer">
-      <!-- 空状态：欢迎 + 快捷操作 -->
       <div v-if="aiStore.messages.length === 0" class="chat-empty">
         <h3>有什么我可以帮你的？</h3>
         <div class="quick-buttons">
           <button class="quick-btn" v-for="action in quickActions" :key="action" @click="handleQuickAction(action)">
-            {{ action }} →
+            {{ action }}
           </button>
         </div>
       </div>
 
-      <!-- 消息列表 -->
-      <ChatMessage
-        v-for="msg in aiStore.messages"
-        :key="msg.id"
-        :message="msg"
-      />
+      <ChatMessage v-for="msg in aiStore.messages" :key="msg.id" :message="msg" />
     </div>
 
-    <!-- 错误提示 -->
     <div v-if="aiStore.error" class="chat-error">
       <span>{{ aiStore.error }}</span>
       <button class="error-dismiss" @click="aiStore.error = null">×</button>
     </div>
 
-    <!-- API Key 未配置提示 -->
     <div v-if="!aiStore.hasApiKey" class="api-key-banner">
-      <span>请先配置 API Key</span>
+      <span>请先配置 DeepSeek API Key</span>
       <button class="banner-btn" @click="$emit('open-settings')">去设置</button>
     </div>
 
-    <!-- 输入区域 -->
     <div class="chat-input-area">
       <textarea
         ref="inputRef"
@@ -59,23 +48,12 @@
         @input="autoResize"
         :disabled="!aiStore.hasApiKey"
       ></textarea>
-      <button
-        v-if="aiStore.isStreaming"
-        class="stop-btn"
-        @click="aiStore.cancelGeneration()"
-        title="停止生成"
-      >
+      <button v-if="aiStore.isStreaming" class="stop-btn" @click="aiStore.cancelGeneration()" title="停止生成">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <rect x="6" y="6" width="12" height="12" rx="2"></rect>
         </svg>
       </button>
-      <button
-        v-else
-        class="send-btn"
-        @click="handleSend"
-        :disabled="!inputText.trim() || !aiStore.hasApiKey"
-        title="发送"
-      >
+      <button v-else class="send-btn" @click="handleSend" :disabled="!inputText.trim() || !aiStore.hasApiKey" title="发送">
         <IconSend :size="16" />
       </button>
     </div>
@@ -104,12 +82,12 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const messagesContainer = ref<HTMLDivElement | null>(null)
 
 const quickActions = [
-  '试试 AI 写作助手',
-  '能为我推荐一些写作灵感吗？',
-  '帮我梳理一下写作思路',
-  '能帮我生成一段开头吗？',
-  '帮我润色这段文字',
-  '帮我总结这篇文章'
+  '帮我优化这段文本',
+  '帮我梳理写作思路',
+  '给我三个标题备选',
+  '为这段内容写一个开头',
+  '总结当前文档要点',
+  '检查语气和逻辑问题'
 ]
 
 function handleQuickAction(action: string) {
@@ -160,7 +138,6 @@ function scrollToBottom() {
   }
 }
 
-// 新消息时强制滚到底部
 watch(
   () => aiStore.messages.length,
   () => {
@@ -173,7 +150,6 @@ watch(
   }
 )
 
-// 流式内容更新时智能滚动
 watch(
   () => {
     const msgs = aiStore.messages
@@ -200,7 +176,6 @@ watch(
   opacity: 0;
 }
 
-/* 头部栏 */
 .chat-header {
   display: flex;
   align-items: center;
@@ -248,14 +223,12 @@ watch(
   cursor: not-allowed;
 }
 
-/* 消息区域 */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
 }
 
-/* 空状态 */
 .chat-empty {
   display: flex;
   flex-direction: column;
@@ -294,7 +267,6 @@ watch(
   border-color: var(--border-primary);
 }
 
-/* 错误提示 */
 .chat-error {
   display: flex;
   align-items: center;
@@ -325,7 +297,6 @@ watch(
   line-height: 1;
 }
 
-/* API Key 未配置提示 */
 .api-key-banner {
   display: flex;
   align-items: center;
@@ -354,7 +325,6 @@ watch(
   background-color: var(--accent-hover);
 }
 
-/* 输入区域 */
 .chat-input-area {
   display: flex;
   align-items: flex-end;

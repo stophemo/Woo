@@ -9,11 +9,13 @@ export interface ChatMessage {
 export interface ModelConfig {
   id: string
   name: string
-  provider: 'gemini'
+  provider: 'gemini' | 'deepseek'
   model: string
 }
 
 export interface AiSettings {
   geminiApiKey: string
+  deepseekApiKey: string
+  deepseekBaseUrl: string
   selectedModelId: string
 }
