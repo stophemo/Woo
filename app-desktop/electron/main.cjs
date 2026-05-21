@@ -48,6 +48,8 @@ if (process.platform === 'win32') {
 let mainWindow
 
 function createWindow() {
+  const isDev = !!process.env.VITE_DEV_SERVER_URL
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 800,
@@ -58,14 +60,16 @@ function createWindow() {
     backgroundColor: '#1a1a1a',
     icon: APP_ICON,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      // 开发模式：plugin 编译 preload.cjs → dist-electron/preload.js
+      // 生产模式：electron-builder 打包后直接使用 electron/preload.cjs
+      preload: path.join(__dirname, isDev ? 'preload.js' : 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
   })
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
+  if (isDev) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     mainWindow.webContents.openDevTools()
   } else {
     // 打包后使用 app.getAppPath() 获取 asar 包根目录

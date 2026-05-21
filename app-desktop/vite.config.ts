@@ -9,6 +9,9 @@ export default defineConfig(async () => {
   const electronPlugins = await electronSimple({
     main: {
       entry: 'electron/main.cjs'
+    },
+    preload: {
+      entry: 'electron/preload.cjs'
     }
   })
   return {
