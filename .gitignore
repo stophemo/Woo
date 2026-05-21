@@ -1,52 +1,55 @@
-# ============ App (Frontend) ============
+# ============ App-Desktop ============
 # Dependencies
-app/node_modules
+app-desktop/node_modules
 
 # Build output
-app/dist
-app/dist-electron
-app/dist-ssr
-app/release
+app-desktop/dist
+app-desktop/dist-electron
+app-desktop/dist-ssr
+app-desktop/release
 
 # Electron userData (cache, local storage, etc.)
-app/electron/userData
+app-desktop/electron/userData
 
-# 图标生成的中间产物（保留 icon.svg / icon.png / icon.ico）
-app/build/icon-*.png
-
-# ============ App-Local (Local Frontend) ============
-# Dependencies
-app-local/node_modules
-
-# Build output
-app-local/dist
-app-local/dist-electron
-app-local/dist-ssr
-app-local/release
-
-# Electron userData (cache, local storage, etc.)
-app-local/electron/userData
-
-# 图标生成的中间产物（保留 icon.svg / icon.png / icon.ico）
-app-local/build/icon-*.png
+# 图标生成的中间产物
+app-desktop/build/icon-*.png
 
 # Install logs
-app-local/install.log
+app-desktop/install.log
 
-# ============ Services (Backend) ============
-# Maven
-services/target/
-services/**/target/
-!services/.mvn/wrapper/maven-wrapper.jar
+# ============ App-Mobile (Flutter) ============
+# Dart/Flutter 工具缓存
+app-mobile/.dart_tool/
+app-mobile/.packages
+app-mobile/.pub/
+
+# Flutter 构建产物
+app-mobile/build/
 
 # IDE
-services/.idea/
-services/*.iml
-services/**/*.iml
+app-mobile/.idea/
+app-mobile/.vscode/
 
-# Logs
-services/logs/
-services/**/*.log
+# iOS 构建产物（Xcode）
+app-mobile/ios/Pods/
+app-mobile/ios/.symlinks/
+app-mobile/ios/Flutter/Flutter.framework
+app-mobile/ios/Flutter/Flutter.podspec
+
+# Android 构建产物（Gradle）
+app-mobile/android/.gradle/
+app-mobile/android/local.properties
+app-mobile/android/key.properties
+
+# macOS 构建产物
+app-mobile/macos/Pods/
+app-mobile/macos/.symlinks/
+
+# Dart 分析缓存
+app-mobile/.dart_tool/package_config.json
+
+# Flutter 导出/发布产物
+app-mobile/export/
 
 # ============ Common ============
 # Logs
