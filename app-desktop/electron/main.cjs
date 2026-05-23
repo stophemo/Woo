@@ -23,6 +23,7 @@ const APP_ROOT = getAppRoot()
 
 const { getDb, closeDb } = require('./db/index.cjs')
 const ipcRegister = require('./ipc/register.cjs')
+const syncEngine = require('./services/syncEngine.cjs')
 
 function resolveAppIcon() {
   const candidates = [
@@ -217,6 +218,14 @@ app.whenReady().then(() => {
   // 注册业务 IPC
   ipcRegister.register()
   createWindow()
+
+  // 启动同步引擎：设置状态回调 + 启动定时器
+  syncEngine.setOnStatusChange((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sync:status-update', status)
+    }
+  })
+  syncEngine.start()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

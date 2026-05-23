@@ -32,6 +32,12 @@
       <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" :title="'显示/隐藏 AI 聊天 (' + modKey() + '→)'">
         <IconRightSidebar />
       </button>
+      <button class="window-control-btn" :title="isLoggedIn ? '账户信息' : '登录账户'" @click="$emit('open-login')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="5" r="2.5"/>
+          <path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/>
+        </svg>
+      </button>
       <div v-if="!isMac" class="menu-divider"></div>
       <button v-if="!isMac" class="window-control-btn minimize-btn" @click="minimizeWindow" title="最小化">
         <IconMinimize />
@@ -122,10 +128,12 @@ const activeMenuIndex = ref<number | null>(null)
 interface Props {
   isOpen?: boolean
   isFullscreen?: boolean
+  isLoggedIn?: boolean
 }
 const props = withDefaults(defineProps<Props>(), {
   isOpen: true,
-  isFullscreen: false
+  isFullscreen: false,
+  isLoggedIn: false
 })
 
 // 设置 Dropdown 组件引用
@@ -161,6 +169,7 @@ const emit = defineEmits<{
   'open-settings': [mode: 'file' | 'ai']
   'toggle-top-menu': []
   'toggle-status-bar': []
+  'open-login': []
 }>()
 
 // 窗口控制

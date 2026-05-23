@@ -88,6 +88,7 @@
     }
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
     "@tiptap/extension-highlight": "^3.22.4",
     "@tiptap/extension-placeholder": "^3.22.4",
     "@tiptap/extension-task-item": "^3.22.4",
@@ -101,7 +102,8 @@
     "better-sqlite3": "^11.3.0",
     "marked": "^15.0.12",
     "pinia": "^3.0.4",
-    "vue": "^3.4.21"
+    "vue": "^3.4.21",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

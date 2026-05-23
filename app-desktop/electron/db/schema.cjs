@@ -44,7 +44,13 @@ const SCHEMA_SQLS = [
     create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     UNIQUE(document_id, version_no)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_ver_doc ON note_document_version(document_id)`
+  `CREATE INDEX IF NOT EXISTS idx_ver_doc ON note_document_version(document_id)`,
+
+  // 同步元数据表（记录上次同步时间等状态）
+  `CREATE TABLE IF NOT EXISTS sync_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`
 ]
 
 function initSchema(db) {

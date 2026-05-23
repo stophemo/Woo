@@ -25,3 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 contextBridge.exposeInMainWorld('woo', {
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 })
+
+// 监听主进程推送的同步状态更新
+ipcRenderer.on('sync:status-update', (_event, status) => {
+  // 通过自定义事件转发给渲染进程
+  window.dispatchEvent(new CustomEvent('sync-status', { detail: status }))
+})

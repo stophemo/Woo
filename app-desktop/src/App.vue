@@ -4,12 +4,14 @@
     <TopMenu
       :is-open="topMenuOpen"
       :is-fullscreen="isFullscreen"
+      :is-logged-in="authStore.isLoggedIn"
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
       @toggle-right-sidebar="toggleRightSidebar"
       @open-settings="openSettings"
       @toggle-top-menu="toggleTopMenu"
       @toggle-status-bar="toggleStatusBar"
+      @open-login="openLoginDialog"
     />
     
     <!-- 主内容区域 -->
@@ -29,6 +31,14 @@
 
     <!-- 设置弹窗 -->
     <SettingsDialog :visible="showSettings" :mode="settingsMode" @close="showSettings = false" />
+
+    <!-- 登录/账户弹窗 -->
+    <LoginDialog
+      :visible="showLoginDialog"
+      @close="showLoginDialog = false"
+      @login-success="onLoginSuccess"
+      @logout="onLogout"
+    />
   </div>
 </template>
 
@@ -40,13 +50,18 @@ import ThumbnailColumn from './components/layout/ThumbnailColumn.vue'
 import EditArea from './components/layout/EditArea.vue'
 import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
+import LoginDialog from './components/layout/LoginDialog.vue'
 import { useThemeStore } from './stores/theme'
+import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
+import { useSyncStore } from './stores/sync'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
 useThemeStore()
 
 const workspaceStore = useWorkspaceStore()
+const authStore = useAuthStore()
+const syncStore = useSyncStore()
 
 // 处理来自 macOS 原生菜单的动作
 function handleMenuAction(action: string) {
@@ -107,6 +122,7 @@ const leftSidebarOpen = ref(true)
 const thumbnailSidebarOpen = ref(true)
 const rightSidebarOpen = ref(true)
 const showSettings = ref(false)
+const showLoginDialog = ref(false)
 const settingsMode = ref<'file' | 'ai'>('file')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
@@ -118,8 +134,33 @@ function openSettings(mode: 'file' | 'ai') {
   showSettings.value = true
 }
 
-// 启动流程：本地版直接进入，加载数据
+function openLoginDialog() {
+  showLoginDialog.value = true
+}
+
+function onLoginSuccess() {
+  showLoginDialog.value = false
+  // 登录成功后重新加载工作区数据
+  workspaceStore.bootstrap()
+}
+
+function onLogout() {
+  // 登出后重置工作区
+  workspaceStore.reset()
+}
+
+// 启动流程：认证恢复 + 工作区加载
 async function initApp() {
+  // 1. 恢复认证 session
+  await authStore.bootstrap()
+
+  // 2. 启动同步监听
+  syncStore.listen()
+  try {
+    await syncStore.refreshStatus()
+  } catch { /* ignore */ }
+
+  // 3. 加载工作区数据
   try {
     await workspaceStore.bootstrap()
   } catch {

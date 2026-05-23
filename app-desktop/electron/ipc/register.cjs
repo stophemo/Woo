@@ -6,6 +6,8 @@ const { ipcMain } = require('electron')
 const folderService = require('../services/folderService.cjs')
 const documentService = require('../services/documentService.cjs')
 const versionService = require('../services/versionService.cjs')
+const authService = require('../services/authService.cjs')
+const syncEngine = require('../services/syncEngine.cjs')
 
 function wrap(fn) {
   return async (_event, ...args) => {
@@ -57,6 +59,25 @@ function register() {
   ipcMain.handle('document:emptyTrash', wrap(() => {
     documentService.emptyTrash(); return null
   }))
+
+  // —— auth ——
+  ipcMain.handle('auth:signUp', wrap(authService.signUp))
+  ipcMain.handle('auth:signIn', wrap(authService.signIn))
+  ipcMain.handle('auth:signInWithOAuth', wrap(authService.signInWithOAuth))
+  ipcMain.handle('auth:signOut', wrap(authService.signOut))
+  ipcMain.handle('auth:getUser', wrap(authService.getCurrentUser))
+  ipcMain.handle('auth:getSession', wrap(authService.getSession))
+
+  // —— sync ——
+  ipcMain.handle('sync:status', wrap(() => {
+    const s = syncEngine.getStatus()
+    return {
+      isSyncing: s.isSyncing,
+      lastSyncTime: s.lastSyncTime,
+      pendingChanges: s.pendingChanges
+    }
+  }))
+  ipcMain.handle('sync:trigger', wrap(syncEngine.syncNow))
 
   // —— version ——
   ipcMain.handle('version:list', wrap((documentId) => versionService.listVersions(documentId)))
