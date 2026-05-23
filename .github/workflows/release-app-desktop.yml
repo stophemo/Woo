@@ -85,6 +85,8 @@ jobs:
       - name: Build desktop package (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         working-directory: app-desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run electron:build
 
       - name: Build desktop package (Windows)

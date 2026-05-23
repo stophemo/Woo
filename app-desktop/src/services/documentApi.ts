@@ -9,6 +9,7 @@ export interface DocumentDTO {
   folderId: string
   title: string
   content?: string
+  folderName?: string
   branchName?: string
   sortOrder: number
   createTime: string
@@ -22,6 +23,10 @@ export interface CreateDocumentPayload {
 
 export function listByFolder(folderId: string): Promise<DocumentDTO[]> {
   return invoke<DocumentDTO[]>('document:listByFolder', folderId)
+}
+
+export function listAll(): Promise<DocumentDTO[]> {
+  return invoke<DocumentDTO[]>('document:listAll')
 }
 
 export function listTrash(): Promise<DocumentDTO[]> {

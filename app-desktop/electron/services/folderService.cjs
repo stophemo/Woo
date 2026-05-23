@@ -42,7 +42,7 @@ function renameFolder(folderId, newName) {
   const db = getDb()
   const row = db.prepare('SELECT id FROM note_folder WHERE id = ? AND deleted = 0').get(folderId)
   if (!row) throw new Error('目录不存在')
-  db.prepare('UPDATE note_folder SET name = ?, update_time = ? WHERE id = ?').run(newName, nowStr(), folderId)
+  db.prepare('UPDATE note_folder SET name = ? WHERE id = ?').run(newName, folderId)
 }
 
 function deleteFolder(folderId) {

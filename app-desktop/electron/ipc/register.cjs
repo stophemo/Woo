@@ -34,6 +34,7 @@ function register() {
 
   // —— document ——
   ipcMain.handle('document:listByFolder', wrap((folderId) => documentService.listByFolder(folderId)))
+  ipcMain.handle('document:listAll', wrap(() => documentService.listAll()))
   ipcMain.handle('document:listTrash', wrap(() => documentService.listTrash()))
   ipcMain.handle('document:search', wrap((keyword) => documentService.search(keyword)))
   ipcMain.handle('document:get', wrap((id) => documentService.getById(id)))

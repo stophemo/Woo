@@ -53,9 +53,14 @@ function handleMenuAction(action: string) {
   switch (action) {
     case 'enter-fullscreen':
       isFullscreen.value = true
+      // 全屏时自动收起顶部菜单栏（类似 Cmd+⬆ 效果），退出时恢复
+      topMenuOpenBeforeFullscreen = topMenuOpen.value
+      topMenuOpen.value = false
       break
     case 'leave-fullscreen':
       isFullscreen.value = false
+      // 恢复全屏前的菜单栏状态
+      topMenuOpen.value = topMenuOpenBeforeFullscreen
       break
     case 'settings':
       openSettings('file')
@@ -106,6 +111,7 @@ const settingsMode = ref<'file' | 'ai'>('file')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
 const isFullscreen = ref(false)
+let topMenuOpenBeforeFullscreen = true
 
 function openSettings(mode: 'file' | 'ai') {
   settingsMode.value = mode

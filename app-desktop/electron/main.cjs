@@ -57,9 +57,13 @@ function createWindow() {
     minHeight: 768,
     // Windows: 无边框（frame: false）；
     // macOS:  保留原生框架（frame: true）并隐藏标题栏文字，
-    //         保留交通灯按钮（红黄绿灯）供用户拖拽/缩放窗口
+    //         保留交通灯按钮（红黄绿灯）。
+    //         titleBarOverlay 使交通灯在 40px 工具栏中垂直居中。
     frame: !isMac,
     titleBarStyle: isMac ? 'hidden' : undefined,
+    titleBarOverlay: isMac ? {
+      height: 40
+    } : undefined,
     backgroundColor: '#1a1a1a',
     icon: APP_ICON,
     webPreferences: {

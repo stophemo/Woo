@@ -22,10 +22,20 @@ function toDto(row) {
 
 function listByFolder(folderId) {
   const db = getDb()
-  const rows = db.prepare(`SELECT * FROM note_document
-                           WHERE folder_id = ? AND deleted = 0
-                           ORDER BY update_time DESC`).all(folderId)
-  return rows.map(toDto)
+  const rows = db.prepare(`SELECT d.*, f.name AS folder_name FROM note_document d
+                           LEFT JOIN note_folder f ON d.folder_id = f.id
+                           WHERE d.folder_id = ? AND d.deleted = 0
+                           ORDER BY d.update_time DESC`).all(folderId)
+  return rows.map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
+}
+
+function listAll() {
+  const db = getDb()
+  const rows = db.prepare(`SELECT d.*, f.name AS folder_name FROM note_document d
+                           LEFT JOIN note_folder f ON d.folder_id = f.id
+                           WHERE d.deleted = 0
+                           ORDER BY d.update_time DESC`).all()
+  return rows.map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
 }
 
 function listTrash() {
@@ -153,6 +163,7 @@ function emptyTrash() {
 
 module.exports = {
   listByFolder,
+  listAll,
   listTrash,
   search,
   getById,

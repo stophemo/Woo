@@ -13,6 +13,7 @@
         >
           <h4>{{ firstLineOf(doc.content) || '新文稿' }}</h4>
           <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
+          <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' }">{{ doc.folderName }}</span>
           <button
             class="flip-btn"
             title="查看详情"
@@ -138,6 +139,7 @@ const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
 const SEARCH_FOLDER_ID = '__search__'
 const DRAFT_FOLDER_ID = '__drafts__'
+const ALL_FOLDER_ID = '__all__'
 
 // ============ 翻转与背面数据 ============
 const flipped = ref(false)
@@ -173,10 +175,12 @@ const outline = computed<{ level: number; text: string }[]>(() => {
 
 const isTrashView = computed(() => store.selectedFolderId === TRASH_FOLDER_ID)
 const isSearchView = computed(() => store.selectedFolderId === SEARCH_FOLDER_ID)
+const isAllView = computed(() => store.selectedFolderId === ALL_FOLDER_ID)
 
 const emptyHint = computed(() => {
   if (isTrashView.value) return '废纸篓为空'
   if (isSearchView.value) return '未搜索到文稿'
+  if (isAllView.value) return '还没有文稿'
   if (store.selectedFolderId === DRAFT_FOLDER_ID) return '草稿箱为空'
   return '该目录下暂无文稿'
 })
@@ -503,6 +507,22 @@ function changeTypeLabel(t: string): string {
 
 .action-btn.danger {
   color: #d9534f;
+}
+
+/* 全部视图中文稿来源标记 */
+.source-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.source-badge.is-draft {
+  background-color: var(--accent-light);
+  color: var(--accent);
 }
 
 .empty-state {

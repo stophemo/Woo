@@ -1,5 +1,5 @@
 <template>
-  <header class="top-menu" :class="{ collapsed: !isOpen, fullscreen: isFullscreen }" :style="macMenuStyle">
+  <header class="top-menu" :class="{ collapsed: !isOpen }" :style="macMenuStyle">
     <div class="menu-left">
       <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
         <template #trigger>
@@ -73,9 +73,11 @@ const themeStore = useThemeStore()
 
 const isMac = navigator.platform.includes('Mac')
 
-// macOS 菜单栏左侧留空给交通灯按钮（约 76px）
+// macOS：窗口模式留 80px 给交通灯按钮（垂直居中由 titleBarOverlay 保证）
+// 全屏时交通灯隐藏，菜单项左对齐
 const macMenuStyle = computed(() => {
-  return isMac ? { paddingLeft: '76px' } : {}
+  if (!isMac || props.isFullscreen) return {}
+  return { paddingLeft: '80px' }
 })
 
 // 返回当前平台对应的修饰键标识
@@ -121,7 +123,7 @@ interface Props {
   isOpen?: boolean
   isFullscreen?: boolean
 }
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   isOpen: true,
   isFullscreen: false
 })
@@ -233,15 +235,6 @@ const handleMenuAction = (action: string) => {
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
-}
-
-/* 全屏模式下隐藏左侧菜单目录，由 macOS 系统菜单栏接管；
-   同时右侧功能按键保持右对齐 */
-.top-menu.fullscreen {
-  justify-content: flex-end;
-}
-.top-menu.fullscreen .menu-left {
-  display: none;
 }
 
 .menu-left {

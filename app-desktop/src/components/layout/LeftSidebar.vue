@@ -18,9 +18,13 @@
                     class="search-input-inline"
                     placeholder="搜索标题和内容..."
                     @input="handleSearchInput"
+                    @blur="handleSearchBlur"
                     @keyup.escape="disableSearch"
                 />
-                <button class="search-close-btn" @click="disableSearch" title="关闭搜索">×</button>
+            </div>
+            <div class="sidebar-item" @click="handleOpenAll">
+                <IconFile />
+                <span>全部</span>
             </div>
             <div class="sidebar-item" @click="handleOpenDraftBox">
                 <IconDraft />
@@ -64,6 +68,7 @@ import FolderTree from './FolderTree.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import IconNewDocument from '../icons/IconNewDocument.vue'
 import IconSearch from '../icons/IconSearch.vue'
+import IconFile from '../icons/IconFile.vue'
 import IconDraft from '../icons/IconDraft.vue'
 import IconTrash from '../icons/IconTrash.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
@@ -110,6 +115,16 @@ const disableSearch = () => {
     }
     // 清空搜索结果（通过调用openSearch传入空字符串）
     store.openSearch('')
+}
+
+// 搜索输入失焦处理：输入栏失焦即关闭搜索模式
+const handleSearchBlur = () => {
+    // 延时关闭，避免点击输入栏内其他元素时误触
+    setTimeout(() => {
+        if (isSearchMode.value) {
+            disableSearch()
+        }
+    }, 200)
 }
 
 // 处理搜索输入（带防抖）
@@ -227,6 +242,11 @@ const handleNewDocument = () => {
     store.createNewDocument()
 }
 
+// 打开全部文稿视图
+const handleOpenAll = () => {
+    void store.openAllDocuments()
+}
+
 // 打开草稿箱视图
 const handleOpenDraftBox = () => {
     store.openDraftBox()
@@ -325,26 +345,16 @@ const handleOpenTrashBox = () => {
     color: var(--text-secondary);
 }
 
-.search-close-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.search-input-inline:focus {
+    background-color: var(--bg-elevated);
     border-radius: 4px;
-    transition: all 0.2s;
-    flex-shrink: 0;
+    padding: 2px 6px;
+    margin: -2px -6px;
 }
 
-.search-close-btn:hover {
+.search-item:focus-within {
     background-color: var(--bg-hover);
-    color: var(--text-primary);
+    border-radius: 6px;
 }
 
 .divider {

@@ -1,7 +1,7 @@
 {
   "name": "woo-local",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "鏃犳垜绗旇锛堟湰鍦扮増锛?绾湰鍦?SQLite 瀛樺偍锛屾棤闇€浠讳綍鍚庣鏈嶅姟",
   "author": "stophemo",
@@ -71,6 +71,8 @@
     "mac": {
       "icon": "build/icon.png",
       "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
       "target": [
         "dmg",
         "zip"

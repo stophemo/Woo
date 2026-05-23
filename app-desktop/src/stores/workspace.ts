@@ -32,6 +32,7 @@ function mapDocument(dto: DocumentDTO): Document {
     title: dto.title,
     content: dto.content ?? '',
     folderId: dto.folderId,
+    folderName: dto.folderName,
     createdAt: dto.createTime,
     updatedAt: dto.updateTime
   }
@@ -42,6 +43,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const DRAFT_FOLDER_ID = '__drafts__'
   const TRASH_FOLDER_ID = '__trash__'
   const SEARCH_FOLDER_ID = '__search__'
+  const ALL_FOLDER_ID = '__all__'
   const DRAFT_STORAGE_KEY = 'woo:drafts'
 
   function loadDrafts(): Document[] {
@@ -121,6 +123,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     if (folderId === TRASH_FOLDER_ID) {
       await openTrashBox()
+      return
+    }
+    if (folderId === ALL_FOLDER_ID) {
+      await openAllDocuments()
       return
     }
     selectedFolderId.value = folderId
@@ -432,6 +438,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  // 打开全部文稿视图：后端所有文档 + 本地草稿，带来源标记
+  async function openAllDocuments() {
+    selectedFolderId.value = ALL_FOLDER_ID
+    try {
+      const backendDocs = (await documentApi.listAll()).map(d => ({
+        ...mapDocument(d),
+        folderName: d.folderName || undefined
+      }))
+      const draftDocs = drafts.value.map(d => ({
+        ...d,
+        folderName: '草稿箱'
+      }))
+      // 合并，update_time 降序
+      const merged = [...backendDocs, ...draftDocs].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+      folderDocuments.value = merged
+      if (merged.length > 0) {
+        await selectDocument(merged[0].id)
+      } else {
+        selectedDocumentId.value = null
+        currentDocumentData.value = null
+      }
+    } catch (e: any) {
+      error.value = e?.message || '加载文稿失败'
+    }
+  }
+
   // 本地创建一篇草稿，加入草稿列表并选中进入编辑
   function createDraft(title?: string): Document {
     const now = new Date().toISOString()
@@ -670,6 +704,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     createDocument,
     createNewDocument,
     openDraftBox,
+    openAllDocuments,
     openTrashBox,
     openSearch,
     renameDocument,
