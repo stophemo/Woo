@@ -31,12 +31,19 @@ const ENTITIES = [
 
 // 同步状态
 let isSyncing = false
+let currentSyncPromise = null
 let lastSyncTime = null
 let syncTimer = null
 let authUnsubscribe = null
 
+// 缓存当前 session（由 auth state listener 实时更新）
+let currentSession = null
+
 // 回调：通知渲染进程同步状态更新
 let onStatusChange = null
+
+// 回调：同步完成后通知渲染进程刷新数据
+let onDataChange = null
 
 /**
  * 获取或创建 sync_meta 表
@@ -78,14 +85,23 @@ function setLastSyncTime(time) {
 
 /**
  * 将本地变更推送到 Supabase
+ * 顺序：先处理删除日志 → 再推送 upsert
  */
 async function pushChanges(userId, lastSync) {
   const client = getClient()
   if (!client) return { ok: false, message: 'Supabase 未配置' }
 
   let pushedCount = 0
+  let deletedCount = 0
   const errors = []
 
+  // === 第一步：处理本地硬删除（删除日志）===
+  // 必须在 upsert 之前处理，否则 PULL 拉回的云端数据又会被 upsert 回去
+  const deleteResult = await pushDeleteLog(client, userId)
+  deletedCount = deleteResult.deletedCount
+  errors.push(...deleteResult.errors)
+
+  // === 第二步：推送常规变更 upsert ===
   for (const entity of ENTITIES) {
     try {
       const localRows = queryLocalChanges(entity.table, entity.idField, lastSync)
@@ -112,7 +128,61 @@ async function pushChanges(userId, lastSync) {
     }
   }
 
-  return { ok: errors.length === 0, pushedCount, errors }
+  return { ok: errors.length === 0, pushedCount, deletedCount, errors }
+}
+
+/**
+ * 处理同步删除日志：在云端执行对应记录的删除
+ * 包含级联删除（如删除 note_document 时同时删 note_document_version）
+ */
+async function pushDeleteLog(client, userId) {
+  const db = getDb()
+  const logs = db.prepare('SELECT * FROM sync_delete_log ORDER BY create_time ASC').all()
+  if (logs.length === 0) return { deletedCount: 0, errors: [] }
+
+  let deletedCount = 0
+  const errors = []
+  const processedIds = []
+
+  for (const log of logs) {
+    try {
+      const { error } = await client
+        .from(log.table_name)
+        .delete()
+        .eq('id', log.record_id)
+        .eq('user_id', userId)
+
+      if (error) {
+        errors.push(`[${log.table_name}] 云端删除失败(${log.record_id}): ${error.message}`)
+        continue
+      }
+
+      // 级联删除：删文档时同时删云端版本记录
+      if (log.table_name === 'note_document') {
+        const { error: verErr } = await client
+          .from('note_document_version')
+          .delete()
+          .eq('document_id', log.record_id)
+        if (verErr) {
+          errors.push(`[note_document_version] 级联删除失败(${log.record_id}): ${verErr.message}`)
+        }
+      }
+
+      deletedCount++
+      processedIds.push(log.id)
+    } catch (err) {
+      errors.push(`[${log.table_name}] 云端删除异常(${log.record_id}): ${err.message}`)
+    }
+  }
+
+  // 清理已处理的日志
+  if (processedIds.length > 0) {
+    const placeholders = processedIds.map(() => '?').join(',')
+    db.prepare(`DELETE FROM sync_delete_log WHERE id IN (${placeholders})`).run(...processedIds)
+    console.log('[Sync] 已清理删除日志:', processedIds.length, '条')
+  }
+
+  return { deletedCount, errors }
 }
 
 /**
@@ -120,10 +190,15 @@ async function pushChanges(userId, lastSync) {
  */
 function queryLocalChanges(table, idField, lastSync) {
   const db = getDb()
-  const stmt = db.prepare(
-    `SELECT * FROM ${table} WHERE update_time > ? ORDER BY update_time ASC`
-  )
-  return stmt.all(lastSync || '1970-01-01')
+  try {
+    const stmt = db.prepare(
+      `SELECT * FROM ${table} WHERE update_time > ? ORDER BY update_time ASC`
+    )
+    return stmt.all(lastSync || '1970-01-01')
+  } catch {
+    // 表缺少 update_time 列，返回空数组
+    return []
+  }
 }
 
 // ============== 拉取逻辑 ==============
@@ -177,6 +252,9 @@ async function queryRemoteChanges(client, table, userId, lastSync) {
 /**
  * 将远程记录合并到本地 SQLite
  * 冲突策略：本地 update_time ≥ 远程 update_time → 保留本地；否则覆盖
+ *
+ * 注意：远程数据含有 user_id 列，但本地 schema 不含，需剥离。
+ * 本地每个数据库文件已对应单一用户，无需冗余存储 user_id。
  */
 function mergeIntoLocal(table, idField, remoteRows) {
   const db = getDb()
@@ -187,9 +265,17 @@ function mergeIntoLocal(table, idField, remoteRows) {
     `SELECT update_time FROM ${table} WHERE ${idField} = ?`
   )
 
-  const upsertStmt = buildUpsertStmt(db, table, remoteRows[0])
+  // 剥离远端数据中的 user_id（本地 schema 不含此列）
+  const localRows = remoteRows.map(row => {
+    const { user_id, ...localRow } = row
+    return localRow
+  })
 
-  for (const row of remoteRows) {
+  if (localRows.length === 0) return { pulled, conflicts }
+
+  const upsertStmt = buildUpsertStmt(db, table, localRows[0])
+
+  for (const row of localRows) {
     const local = checkStmt.get(row[idField])
 
     if (local) {
@@ -201,7 +287,7 @@ function mergeIntoLocal(table, idField, remoteRows) {
     }
 
     // 本地不存在或本地版本更旧 → 覆盖/插入
-    upsertStmt.run(row)
+    upsertStmt.run(Object.values(row))
     pulled++
   }
 
@@ -229,9 +315,24 @@ function buildUpsertStmt(db, table, sampleRow) {
  * 执行一次完整的同步（push + pull）
  */
 async function syncNow() {
-  if (isSyncing) throw new Error('正在同步中，请稍候')
+  // 如果已有同步在进行，等待它完成
+  if (isSyncing && currentSyncPromise) {
+    try { await currentSyncPromise } catch { /* ignore */ }
+    if (!isSyncing) return { waitReused: true, syncTime: lastSyncTime }
+  }
 
-  const session = await getSession()
+  // 创建同步 Promise 并保存，供后续并发调用等待
+  const promise = doSync()
+  currentSyncPromise = promise
+  return promise
+}
+
+/**
+ * 实际执行同步的内部方法
+ */
+async function doSync() {
+  // 优先使用缓存的 session，其次调用 getSession
+  const session = currentSession || await getSession()
   if (!session?.user) throw new Error('未登录')
 
   isSyncing = true
@@ -239,8 +340,14 @@ async function syncNow() {
 
   try {
     const userId = session.user.id
-    const lastSync = getLastSyncTime()
 
+    // === 0. 先处理删除日志（在 PULL 之前，避免云端数据被拉回）===
+    const client = getClient()
+    if (client) {
+      await pushDeleteLog(client, userId)
+    }
+
+    const lastSync = getLastSyncTime()
     console.log('[Sync] 开始同步, lastSync:', lastSync)
 
     // === 1. PULL 先拉 ===
@@ -268,8 +375,21 @@ async function syncNow() {
     throw err
   } finally {
     isSyncing = false
+    currentSyncPromise = null
     emitStatus()
+    if (onDataChange) onDataChange()
   }
+}
+
+/**
+ * 执行同步（含并发保护，返回 Promise）
+ */
+async function runSync() {
+  if (isSyncing) {
+    if (currentSyncPromise) return currentSyncPromise
+  }
+  currentSyncPromise = syncNow()
+  return currentSyncPromise
 }
 
 /**
@@ -293,10 +413,15 @@ function countPendingChanges() {
   const db = getDb()
   let total = 0
   for (const entity of ENTITIES) {
-    const row = db.prepare(
-      `SELECT COUNT(*) as cnt FROM ${entity.table} WHERE update_time > ?`
-    ).get(lastSync)
-    total += row?.cnt || 0
+    try {
+      const row = db.prepare(
+        `SELECT COUNT(*) as cnt FROM ${entity.table} WHERE update_time > ?`
+      ).get(lastSync)
+      total += row?.cnt || 0
+    } catch {
+      // 表缺少 update_time 列时跳过（旧数据库迁移滞后）
+      continue
+    }
   }
   return total
 }
@@ -312,6 +437,10 @@ function emitStatus() {
  */
 function setOnStatusChange(callback) {
   onStatusChange = callback
+}
+
+function setOnDataChange(callback) {
+  onDataChange = callback
 }
 
 async function getSession() {
@@ -340,6 +469,8 @@ function start(intervalMs = 60000) {
   const authService = require('./authService.cjs')
   const { setCurrentUser } = require('../db/index.cjs')
   authUnsubscribe = authService.onAuthStateChange(async (event, session) => {
+    // 缓存最新 session（后续 syncNow 直接复用，避免 getSession() 在 Node 环境异常）
+    currentSession = session
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
       const userId = session?.user?.id
       const username = session?.user?.user_metadata?.username
@@ -365,9 +496,20 @@ function start(intervalMs = 60000) {
       // 切换到用户数据库
       setCurrentUser(username)
       lastSyncTime = null
+
+      // 清除 sync_meta 中的旧 last_sync_time，确保全量推送
+      try {
+        const db = getDb()
+        db.prepare('DELETE FROM sync_meta WHERE key = ?').run('last_sync_time')
+        console.log('[Sync] 已清除旧 last_sync_time，即将全量同步')
+      } catch (e) {
+        console.warn('[Sync] 清除 last_sync_time 失败:', e.message)
+      }
+
       setTimeout(() => syncNow(), 500)
     } else if (event === 'SIGNED_OUT') {
       console.log('[Sync] 用户登出，切回本地数据库')
+      currentSession = null
       setCurrentUser(null)
       lastSyncTime = null
       emitStatus()
@@ -409,7 +551,8 @@ function stop() {
 module.exports = {
   start,
   stop,
-  syncNow,
+  syncNow: syncNow,
   getStatus,
-  setOnStatusChange
+  setOnStatusChange,
+  setOnDataChange
 }

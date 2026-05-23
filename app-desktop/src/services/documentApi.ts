@@ -33,6 +33,10 @@ export function listTrash(): Promise<DocumentDTO[]> {
   return invoke<DocumentDTO[]>('document:listTrash')
 }
 
+export function listOrphans(): Promise<DocumentDTO[]> {
+  return invoke<DocumentDTO[]>('document:listOrphans')
+}
+
 export function search(keyword: string): Promise<DocumentDTO[]> {
   return invoke<DocumentDTO[]>('document:search', keyword)
 }

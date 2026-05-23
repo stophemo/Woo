@@ -219,10 +219,15 @@ app.whenReady().then(() => {
   ipcRegister.register()
   createWindow()
 
-  // 启动同步引擎：设置状态回调 + 启动定时器
+  // 启动同步引擎：设置状态回调 + 数据变更回调 + 启动定时器
   syncEngine.setOnStatusChange((status) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sync:status-update', status)
+    }
+  })
+  syncEngine.setOnDataChange(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sync:data-changed')
     }
   })
   syncEngine.start()

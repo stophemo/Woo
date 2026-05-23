@@ -3,8 +3,8 @@
  * - updateContent 时自动从首行提取 title
  * - 生成 Git 分支名（目录路径-标题，非法字符替换）
  */
-const { getDb } = require('../db/index.cjs')
 const { newId, stripHtmlKeepLines, nowStr } = require('./utils.cjs')
+const { getDb } = require('../db/index.cjs')
 
 function toDto(row) {
   if (!row) return null
@@ -36,6 +36,17 @@ function listAll() {
                            WHERE d.deleted = 0
                            ORDER BY d.update_time DESC`).all()
   return rows.map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
+}
+
+function listOrphans() {
+  const db = getDb()
+  const rows = db.prepare(`SELECT d.* FROM note_document d
+                           WHERE d.deleted = 0 AND (
+                             d.folder_id IS NULL OR d.folder_id = '' OR
+                             NOT EXISTS (SELECT 1 FROM note_folder f WHERE f.id = d.folder_id AND f.deleted = 0)
+                           )
+                           ORDER BY d.update_time DESC`).all()
+  return rows.map(toDto)
 }
 
 function listTrash() {
@@ -71,9 +82,10 @@ function create({ title, folderId }) {
 
   const branchName = generateBranchName(folder, title)
   const id = newId()
-  db.prepare(`INSERT INTO note_document (id, folder_id, title, content, branch_name, sort_order)
-              VALUES (?, ?, ?, '', ?, 0)`)
-    .run(id, folderId, title, branchName)
+  const now = nowStr()
+  db.prepare(`INSERT INTO note_document (id, folder_id, title, content, branch_name, sort_order, create_time, update_time)
+              VALUES (?, ?, ?, '', ?, 0, ?, ?)`)
+    .run(id, folderId, title, branchName, now, now)
   const row = db.prepare('SELECT * FROM note_document WHERE id = ?').get(id)
   return toDto(row)
 }
@@ -99,28 +111,68 @@ function remove(documentId) {
 }
 
 function restore(documentId) {
-  verifyExistsAny(documentId)
   const db = getDb()
-  db.prepare('UPDATE note_document SET deleted = 0, update_time = ? WHERE id = ?').run(nowStr(), documentId)
+  const doc = db.prepare('SELECT * FROM note_document WHERE id = ?').get(documentId)
+  if (!doc) throw new Error('文稿不存在')
+
+  const now = nowStr()
+
+  // 递归恢复目录链（父目录软删除时一并恢复）
+  function restoreFolderChain(folderId) {
+    if (!folderId) return
+    const folder = db.prepare('SELECT * FROM note_folder WHERE id = ?').get(folderId)
+    if (!folder) return // 目录已被真删，无法恢复
+    if (folder.deleted === 0) return // 目录已存在
+
+    // 先恢复父目录
+    restoreFolderChain(folder.parent_id)
+    // 再恢复当前目录
+    db.prepare('UPDATE note_folder SET deleted = 0, update_time = ? WHERE id = ?').run(now, folderId)
+  }
+
+  restoreFolderChain(doc.folder_id)
+
+  // 恢复文档
+  db.prepare('UPDATE note_document SET deleted = 0, update_time = ? WHERE id = ?').run(now, documentId)
+}
+
+function logDelete(tableName, recordIds) {
+  if (!recordIds || recordIds.length === 0) return
+  const db = getDb()
+  const now = nowStr()
+  const stmt = db.prepare('INSERT OR IGNORE INTO sync_delete_log (id, table_name, record_id, create_time) VALUES (?, ?, ?, ?)')
+  const trx = db.transaction(() => {
+    for (const rid of recordIds) {
+      stmt.run(newId(), tableName, rid, now)
+    }
+  })
+  trx()
 }
 
 function hardDelete(documentId) {
-  verifyExistsAny(documentId)
   const db = getDb()
+  const doc = db.prepare('SELECT * FROM note_document WHERE id = ? AND deleted = 1').get(documentId)
+  if (!doc) throw new Error('文稿不存在或未在回收站中')
+  logDelete('note_document', [documentId])
   db.prepare('DELETE FROM note_document_version WHERE document_id = ?').run(documentId)
   db.prepare('DELETE FROM note_document WHERE id = ?').run(documentId)
+}
+
+function emptyTrash() {
+  const db = getDb()
+  // 先收集所有待真删的文档 ID（用于同步删除日志）
+  const toDelete = db.prepare('SELECT id FROM note_document WHERE deleted = 1').all()
+  if (toDelete.length > 0) {
+    logDelete('note_document', toDelete.map(r => r.id))
+  }
+  db.prepare(`DELETE FROM note_document_version
+               WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)`).run()
+  db.prepare('DELETE FROM note_document WHERE deleted = 1').run()
 }
 
 function verifyExists(documentId) {
   const db = getDb()
   const row = db.prepare('SELECT * FROM note_document WHERE id = ? AND deleted = 0').get(documentId)
-  if (!row) throw new Error('文稿不存在')
-  return row
-}
-
-function verifyExistsAny(documentId) {
-  const db = getDb()
-  const row = db.prepare('SELECT * FROM note_document WHERE id = ?').get(documentId)
   if (!row) throw new Error('文稿不存在')
   return row
 }
@@ -152,19 +204,11 @@ function sanitize(seg) {
   return String(seg || '').replace(/[\s/\\:*?"<>|]/g, '_')
 }
 
-function emptyTrash() {
-  const db = getDb()
-  // Delete all version records for trashed documents
-  db.prepare(`DELETE FROM note_document_version
-               WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)`).run()
-  // Delete all trashed documents
-  db.prepare('DELETE FROM note_document WHERE deleted = 1').run()
-}
-
 module.exports = {
   listByFolder,
   listAll,
   listTrash,
+  listOrphans,
   search,
   getById,
   create,

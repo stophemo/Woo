@@ -32,6 +32,13 @@
       <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" :title="'显示/隐藏 AI 聊天 (' + modKey() + '→)'">
         <IconRightSidebar />
       </button>
+      <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" :class="{ 'spin': syncing }">
+          <path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/>
+          <path d="M13.5 1.5V4.5H10.5"/>
+          <path d="M2.5 14.5V11.5H5.5"/>
+        </svg>
+      </button>
       <button class="window-control-btn" :title="isLoggedIn ? '账户信息' : '登录账户'" @click="$emit('open-login')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="8" cy="5" r="2.5"/>
@@ -53,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, type ComponentPublicInstance, computed } from 'vue'
+import { ref, type ComponentPublicInstance, computed, onMounted } from 'vue'
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
 import IconRightSidebar from '../../components/icons/IconRightSidebar.vue'
@@ -66,6 +73,7 @@ import IconStatusBar from '../../components/icons/IconStatusBar.vue'
 import Dropdown from '../ui/Dropdown.vue'
 import DropdownMenu from '../ui/DropdownMenu.vue'
 import { useThemeStore } from '../../stores/theme'
+import { useSyncStore } from '../../stores/sync'
 import {
   fileMenuItems,
   editMenuItems,
@@ -76,6 +84,7 @@ import {
 } from '../../config/menus'
 
 const themeStore = useThemeStore()
+const syncStore = useSyncStore()
 
 const isMac = navigator.platform.includes('Mac')
 
@@ -171,6 +180,37 @@ const emit = defineEmits<{
   'toggle-status-bar': []
   'open-login': []
 }>()
+
+const syncTitle = computed(() => {
+  if (syncing.value) return '同步中...'
+  return `同步数据 (${syncStore.lastSyncLabel})`
+})
+
+const syncing = ref(false)
+
+async function handleSync() {
+  if (syncing.value || syncStore.isSyncing) return
+  syncing.value = true
+  try {
+    const ok = await syncStore.triggerSync()
+    window.dispatchEvent(new CustomEvent('sync:toast', {
+      detail: {
+        message: ok ? '同步完成' : syncStore.errorMsg || '同步失败，请重试',
+        type: ok ? 'success' : 'error'
+      }
+    }))
+  } catch (e: any) {
+    window.dispatchEvent(new CustomEvent('sync:toast', {
+      detail: { message: e?.message || '同步异常', type: 'error' }
+    }))
+  } finally {
+    syncing.value = false
+  }
+}
+
+onMounted(() => {
+  syncStore.listen()
+})
 
 // 窗口控制
 const minimizeWindow = () => {
@@ -309,5 +349,14 @@ const handleMenuAction = (action: string) => {
   background-color: var(--border-primary);
   margin: 0 2px;
   align-self: center;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 </style>

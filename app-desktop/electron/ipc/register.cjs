@@ -38,6 +38,7 @@ function register() {
   ipcMain.handle('document:listByFolder', wrap((folderId) => documentService.listByFolder(folderId)))
   ipcMain.handle('document:listAll', wrap(() => documentService.listAll()))
   ipcMain.handle('document:listTrash', wrap(() => documentService.listTrash()))
+  ipcMain.handle('document:listOrphans', wrap(() => documentService.listOrphans()))
   ipcMain.handle('document:search', wrap((keyword) => documentService.search(keyword)))
   ipcMain.handle('document:get', wrap((id) => documentService.getById(id)))
   ipcMain.handle('document:create', wrap((payload) => documentService.create(payload)))

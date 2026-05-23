@@ -1,50 +1,64 @@
 /**
- * 通用工具：ID 生成、SHA-256、HTML 处理。
+ * 通用工具函数。
+ * 供 electron/services 下的服务文件使用。
  */
 const crypto = require('crypto')
 
+/**
+ * 生成唯一 ID（UUID v4）
+ */
 function newId() {
-  // 16 字节随机 ID（十六进制），足够本地使用
-  return crypto.randomBytes(12).toString('hex')
+  return crypto.randomUUID()
 }
 
-function sha256(text) {
-  return crypto.createHash('sha256').update(text || '', 'utf8').digest('hex')
-}
-
-function stripHtml(content) {
-  if (!content) return ''
-  return String(content)
-    .replace(/<\s*br\s*\/?\s*>/gi, ' ')
-    .replace(/<\/\s*(p|div|h[1-6]|li|blockquote|pre)\s*>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function stripHtmlKeepLines(content) {
-  if (!content) return ''
-  return String(content)
-    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/\s*(p|div|h[1-6]|li|blockquote|pre)\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-}
-
+/**
+ * 返回当前时间字符串
+ * 格式：YYYY-MM-DDTHH:MM:SS（与 schema 默认值和 migration 一致）
+ */
 function nowStr() {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-module.exports = { newId, sha256, stripHtml, stripHtmlKeepLines, nowStr }
+/**
+ * SHA-256 哈希
+ * @param {string} content
+ * @returns {string} hex string
+ */
+function sha256(content) {
+  return crypto.createHash('sha256').update(String(content || '')).digest('hex')
+}
+
+/**
+ * 去除 HTML 标签，保留文本
+ * @param {string} html
+ * @returns {string}
+ */
+function stripHtml(html) {
+  if (!html) return ''
+  return String(html).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim()
+}
+
+/**
+ * 去除 HTML 标签，但保留换行符（将块级标签替换为 \n）
+ * @param {string} html
+ * @returns {string}
+ */
+function stripHtmlKeepLines(html) {
+  if (!html) return ''
+  // 先替换块级标签为换行，再去除其余标签
+  let text = String(html)
+    .replace(/<\/?(div|p|br|h[1-6]|li|tr|blockquote|section|article|header|footer)[^>]*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+  // 合并连续换行
+  text = text.replace(/\n{3,}/g, '\n\n')
+  return text.trim()
+}
+
+module.exports = { newId, nowStr, sha256, stripHtml, stripHtmlKeepLines }

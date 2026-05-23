@@ -39,6 +39,13 @@
       @login-success="onLoginSuccess"
       @logout="onLogout"
     />
+
+    <!-- 同步提示 -->
+    <transition name="toast-fade">
+      <div v-if="syncToast.visible" class="sync-toast" :class="syncToast.type">
+        {{ syncToast.message }}
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -154,8 +161,10 @@ async function initApp() {
   // 1. 恢复认证 session
   await authStore.bootstrap()
 
-  // 2. 启动同步监听
+  // 2. 启动同步监听和提示
   syncStore.listen()
+  setupSyncToast()
+  setupSyncDataRefresh()
   try {
     await syncStore.refreshStatus()
   } catch { /* ignore */ }
@@ -168,7 +177,31 @@ async function initApp() {
   }
 }
 
-// 切换顶部菜单栏
+const syncToast = ref({ visible: false, message: '', type: 'success' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  syncToast.value = { visible: true, message, type }
+  toastTimer = setTimeout(() => {
+    syncToast.value.visible = false
+  }, 3000)
+}
+
+// 注册全局同步反馈事件
+function setupSyncToast() {
+  window.addEventListener('sync:toast', ((event: CustomEvent) => {
+    const { message, type } = event.detail
+    showToast(message, type || 'success')
+  }) as EventListener)
+}
+
+// 同步完成后刷新工作区数据
+function setupSyncDataRefresh() {
+  window.addEventListener('sync-data-changed', () => {
+    workspaceStore.bootstrap()
+  })
+}
 const toggleTopMenu = () => {
   topMenuOpen.value = !topMenuOpen.value
 }
@@ -279,5 +312,39 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   overflow: hidden;
+}
+
+.sync-toast {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.sync-toast.success {
+  background: #10b981;
+  color: #fff;
+}
+.sync-toast.error {
+  background: #ef4444;
+  color: #fff;
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: all 0.3s ease;
+}
+.toast-fade-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-10px);
+}
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-10px);
 }
 </style>

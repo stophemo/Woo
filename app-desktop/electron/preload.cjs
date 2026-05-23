@@ -31,3 +31,8 @@ ipcRenderer.on('sync:status-update', (_event, status) => {
   // 通过自定义事件转发给渲染进程
   window.dispatchEvent(new CustomEvent('sync-status', { detail: status }))
 })
+
+// 监听主进程通知数据已变更（同步完成后的刷新信号）
+ipcRenderer.on('sync:data-changed', () => {
+  window.dispatchEvent(new CustomEvent('sync-data-changed'))
+})

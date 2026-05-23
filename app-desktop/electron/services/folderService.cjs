@@ -31,18 +31,40 @@ function getFolderTree() {
 function createFolder({ name, parentId }) {
   if (!name) throw new Error('目录名不能为空')
   const db = getDb()
+  const pid = parentId || null
+
+  // 同级下是否有同名且未删除的目录
+  const existing = db.prepare('SELECT id, deleted FROM note_folder WHERE parent_id IS ? AND name = ?').all(pid, name)
+  const active = existing.find(r => r.deleted === 0)
+  if (active) throw new Error('同级目录名不能重复')
+
+  // 同级下有同名已软删除的目录 → 恢复它
+  const softDeleted = existing.find(r => r.deleted === 1)
+  if (softDeleted) {
+    const now = nowStr()
+    db.prepare('UPDATE note_folder SET deleted = 0, update_time = ? WHERE id = ?').run(now, softDeleted.id)
+    return softDeleted.id
+  }
+
+  // 新建
   const id = newId()
-  db.prepare(`INSERT INTO note_folder (id, parent_id, name, sort_order)
-              VALUES (?, ?, ?, 0)`)
-    .run(id, parentId || null, name)
+  const now = nowStr()
+  db.prepare(`INSERT INTO note_folder (id, parent_id, name, sort_order, create_time, update_time)
+              VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, pid, name, 0, now, now)
   return id
 }
 
 function renameFolder(folderId, newName) {
   const db = getDb()
-  const row = db.prepare('SELECT id FROM note_folder WHERE id = ? AND deleted = 0').get(folderId)
+  const row = db.prepare('SELECT id, parent_id FROM note_folder WHERE id = ? AND deleted = 0').get(folderId)
   if (!row) throw new Error('目录不存在')
-  db.prepare('UPDATE note_folder SET name = ? WHERE id = ?').run(newName, folderId)
+
+  // 同级下是否有其他同名且未删除的目录
+  const dup = db.prepare('SELECT id FROM note_folder WHERE parent_id IS ? AND name = ? AND deleted = 0 AND id != ?').get(row.parent_id, newName, folderId)
+  if (dup) throw new Error('同级目录名不能重复')
+
+  db.prepare('UPDATE note_folder SET name = ?, update_time = ? WHERE id = ?').run(newName, nowStr(), folderId)
 }
 
 function deleteFolder(folderId) {
@@ -65,11 +87,12 @@ function deleteFolder(folderId) {
   walk(folderId)
 
   const trx = db.transaction(() => {
-    const upd = db.prepare('UPDATE note_folder SET deleted = 1 WHERE id = ?')
-    const updDoc = db.prepare('UPDATE note_document SET deleted = 1 WHERE folder_id = ?')
+    const now = nowStr()
+    const upd = db.prepare('UPDATE note_folder SET deleted = 1, update_time = ? WHERE id = ?')
+    const updDoc = db.prepare('UPDATE note_document SET deleted = 1, update_time = ? WHERE folder_id = ?')
     for (const fid of ids) {
-      upd.run(fid)
-      updDoc.run(fid)
+      upd.run(now, fid)
+      updDoc.run(now, fid)
     }
   })
   trx()

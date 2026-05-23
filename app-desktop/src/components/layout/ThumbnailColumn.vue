@@ -13,7 +13,8 @@
         >
           <h4>{{ firstLineOf(doc.content) || '新文稿' }}</h4>
           <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
-          <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' }">{{ doc.folderName }}</span>
+          <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' || doc.folderName === '未分类' }">{{ doc.folderName }}</span>
+          <span v-if="isTrashView && isDraftId(doc.id)" class="source-badge is-draft">草稿箱</span>
           <button
             class="flip-btn"
             title="查看详情"

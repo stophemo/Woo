@@ -45,6 +45,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const SEARCH_FOLDER_ID = '__search__'
   const ALL_FOLDER_ID = '__all__'
   const DRAFT_STORAGE_KEY = 'woo:drafts'
+  const TRASH_DRAFT_STORAGE_KEY = 'woo:trash_drafts'
 
   function loadDrafts(): Document[] {
     try {
@@ -58,6 +59,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function persistDrafts(list: Document[]) {
     try {
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(list))
+    } catch { /* ignore */ }
+  }
+
+  function loadTrashDrafts(): Document[] {
+    try {
+      const raw = localStorage.getItem(TRASH_DRAFT_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Document[]) : []
+    } catch {
+      return []
+    }
+  }
+
+  function persistTrashDrafts(list: Document[]) {
+    try {
+      localStorage.setItem(TRASH_DRAFT_STORAGE_KEY, JSON.stringify(list))
     } catch { /* ignore */ }
   }
 
@@ -76,6 +92,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const currentDocumentData = ref<Document | null>(null)
   // 本地草稿列表（未关联后端目录的文稿）
   const drafts = ref<Document[]>(loadDrafts())
+  // 废纸篓中的草稿（已从草稿箱删除但未彻底删除）
+  const trashDrafts = ref<Document[]>(loadTrashDrafts())
   const loading = ref(false)
   const error = ref<string>('')
 
@@ -118,7 +136,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function selectFolder(folderId: string) {
     if (folderId === DRAFT_FOLDER_ID) {
-      openDraftBox()
+      await openDraftBox()
       return
     }
     if (folderId === TRASH_FOLDER_ID) {
@@ -248,15 +266,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // ============ 文稿操作 ============
   async function selectDocument(documentId: string) {
     selectedDocumentId.value = documentId
+    // 废纸篓视图优先：从当前列表获取（含后端已删文档 + 本地已删草稿）
+    if (selectedFolderId.value === TRASH_FOLDER_ID) {
+      const trashDoc = folderDocuments.value.find(d => d.id === documentId)
+      currentDocumentData.value = trashDoc ? { ...trashDoc } : null
+      return
+    }
     // 草稿：从本地获取，不调后端
     if (isDraftId(documentId)) {
       const draft = drafts.value.find(d => d.id === documentId)
       currentDocumentData.value = draft ? { ...draft } : null
-      return
-    }
-    if (selectedFolderId.value === TRASH_FOLDER_ID) {
-      const trashDoc = folderDocuments.value.find(d => d.id === documentId)
-      currentDocumentData.value = trashDoc ? { ...trashDoc } : null
       return
     }
     try {
@@ -387,12 +406,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  // 打开草稿箱视图：folderDocuments 切为本地草稿列表
-  function openDraftBox() {
+  // 打开草稿箱视图：本地草稿 + 后端遗留文档（无目录/目录不存在）
+  async function openDraftBox() {
     selectedFolderId.value = DRAFT_FOLDER_ID
-    folderDocuments.value = drafts.value.map(d => ({ ...d }))
+    const localDrafts = drafts.value.map(d => ({
+      ...d,
+      folderName: '草稿箱'
+    }))
+    try {
+      const orphans = (await documentApi.listOrphans()).map(d => ({
+        ...mapDocument(d),
+        folderName: '未分类'
+      }))
+      folderDocuments.value = [...localDrafts, ...orphans].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+    } catch {
+      folderDocuments.value = localDrafts
+    }
     if (folderDocuments.value.length > 0) {
-      selectDocument(folderDocuments.value[0].id)
+      await selectDocument(folderDocuments.value[0].id)
     } else {
       selectedDocumentId.value = null
       currentDocumentData.value = null
@@ -403,7 +436,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectedFolderId.value = TRASH_FOLDER_ID
     try {
       const list = await documentApi.listTrash()
-      folderDocuments.value = list.map(mapDocument)
+      const backendDocs = list.map(d => ({
+        ...mapDocument(d),
+        folderName: ''
+      }))
+      const localTrashDrafts = trashDrafts.value.map(d => ({
+        ...d,
+        folderName: '草稿箱'
+      }))
+      // 合并后端废纸篓与本地已删草稿，按 update_time 降序
+      folderDocuments.value = [...backendDocs, ...localTrashDrafts].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
       if (folderDocuments.value.length > 0) {
         await selectDocument(folderDocuments.value[0].id)
       } else {
@@ -444,7 +488,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       const backendDocs = (await documentApi.listAll()).map(d => ({
         ...mapDocument(d),
-        folderName: d.folderName || undefined
+        folderName: d.folderName || '未分类'
       }))
       const draftDocs = drafts.value.map(d => ({
         ...d,
@@ -489,10 +533,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   // 统一入口：有选中真实目录 → 后端创建；否则归入草稿箱
+  // 后端创建失败（目录不存在等）自动回退为草稿
   async function createNewDocument() {
     const fid = selectedFolderId.value
     if (fid && fid !== DRAFT_FOLDER_ID) {
-      await createDocument(fid)
+      const doc = await createDocument(fid)
+      if (!doc) {
+        createDraft()
+      }
     } else {
       createDraft()
     }
@@ -515,7 +563,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (isDraftId(documentId)) {
       const idx = drafts.value.findIndex(d => d.id === documentId)
       if (idx !== -1) {
-        drafts.value.splice(idx, 1)
+        const [deleted] = drafts.value.splice(idx, 1)
+        // 已删除草稿移入废纸篓（标记来源以便显示）
+        trashDrafts.value.unshift({ ...deleted, folderName: '草稿箱' })
+        persistTrashDrafts(trashDrafts.value)
         persistDrafts(drafts.value)
       }
       if (selectedFolderId.value === DRAFT_FOLDER_ID) {
@@ -558,6 +609,29 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function restoreDocument(documentId: string) {
+    // 废纸篓中的草稿恢复到草稿箱
+    if (isDraftId(documentId)) {
+      const idx = trashDrafts.value.findIndex(d => d.id === documentId)
+      if (idx !== -1) {
+        const [restored] = trashDrafts.value.splice(idx, 1)
+        delete restored.folderName
+        drafts.value.unshift(restored)
+        persistDrafts(drafts.value)
+        persistTrashDrafts(trashDrafts.value)
+      }
+      const listIdx = folderDocuments.value.findIndex(d => d.id === documentId)
+      if (listIdx !== -1) folderDocuments.value.splice(listIdx, 1)
+      if (selectedDocumentId.value === documentId) {
+        const next = folderDocuments.value[0]
+        if (next) {
+          await selectDocument(next.id)
+        } else {
+          selectedDocumentId.value = null
+          currentDocumentData.value = null
+        }
+      }
+      return
+    }
     try {
       await documentApi.restore(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
@@ -577,6 +651,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function hardDeleteDocument(documentId: string) {
+    // 废纸篓中的草稿：彻底删除（从 localStorage 移除）
+    if (isDraftId(documentId)) {
+      const idx = trashDrafts.value.findIndex(d => d.id === documentId)
+      if (idx !== -1) {
+        trashDrafts.value.splice(idx, 1)
+        persistTrashDrafts(trashDrafts.value)
+      }
+      const listIdx = folderDocuments.value.findIndex(d => d.id === documentId)
+      if (listIdx !== -1) folderDocuments.value.splice(listIdx, 1)
+      if (selectedDocumentId.value === documentId) {
+        const next = folderDocuments.value[0]
+        if (next) {
+          await selectDocument(next.id)
+        } else {
+          selectedDocumentId.value = null
+          currentDocumentData.value = null
+        }
+      }
+      return
+    }
     try {
       await documentApi.hardDelete(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
@@ -598,6 +692,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function emptyTrash() {
     try {
       await documentApi.emptyTrash()
+      // 同时清空废纸篓中的本地草稿
+      trashDrafts.value = []
+      persistTrashDrafts(trashDrafts.value)
       folderDocuments.value = []
       selectedDocumentId.value = null
       currentDocumentData.value = null

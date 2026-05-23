@@ -30,10 +30,11 @@ function saveSnapshot(doc, changeType, operatorId) {
   const nextNo = latest ? latest.version_no + 1 : 1
   const id = newId()
   const db = getDb()
+  const now = nowStr()
   db.prepare(`INSERT INTO note_document_version
-              (id, document_id, version_no, title, content, content_hash, change_type, operator_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, doc.id, nextNo, doc.title, content, hash, changeType || 'auto', operatorId || null)
+              (id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, doc.id, nextNo, doc.title, content, hash, changeType || 'auto', operatorId || null, now, now)
   return db.prepare('SELECT * FROM note_document_version WHERE id = ?').get(id)
 }
 

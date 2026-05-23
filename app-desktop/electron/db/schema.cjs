@@ -12,7 +12,7 @@ const SCHEMA_SQLS = [
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    update_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     deleted INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_folder_parent ON note_folder(parent_id)`,
@@ -26,7 +26,7 @@ const SCHEMA_SQLS = [
     branch_name TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    update_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     deleted INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_doc_folder ON note_document(folder_id)`,
@@ -42,6 +42,7 @@ const SCHEMA_SQLS = [
     change_type TEXT NOT NULL DEFAULT 'auto',
     operator_id TEXT,
     create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     UNIQUE(document_id, version_no)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_ver_doc ON note_document_version(document_id)`,
@@ -50,6 +51,14 @@ const SCHEMA_SQLS = [
   `CREATE TABLE IF NOT EXISTS sync_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+  )`,
+
+  // 同步删除日志表（记录本地硬删除的记录，同步时通知云端也删除）
+  `CREATE TABLE IF NOT EXISTS sync_delete_log (
+    id TEXT PRIMARY KEY,
+    table_name TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    create_time TEXT NOT NULL
   )`
 ]
 
@@ -60,6 +69,38 @@ function initSchema(db) {
     for (const sql of SCHEMA_SQLS) db.prepare(sql).run()
   })
   trx()
+
+  // 迁移：为旧数据库补充缺失的列
+  migrate(db)
+}
+
+/**
+ * 数据库迁移：兼容旧版本缺失的列
+ */
+function migrate(db) {
+  const migrations = [
+    // note_folder 缺 update_time（旧版本）—— 只加列，不用函数默认值
+    `ALTER TABLE note_folder ADD COLUMN update_time TEXT`,
+    // note_document_version 缺 update_time（旧版本）
+    `ALTER TABLE note_document_version ADD COLUMN update_time TEXT`,
+    // 给旧版新建的 update_time 列设置初始值
+    `UPDATE note_folder SET update_time = datetime('now') WHERE update_time IS NULL`,
+    `UPDATE note_document SET update_time = datetime('now') WHERE update_time IS NULL`,
+    `UPDATE note_document_version SET update_time = datetime('now') WHERE update_time IS NULL`,
+    // 旧格式时间戳迁移（空格 → ISO T 格式）
+    `UPDATE note_folder SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
+    `UPDATE note_document SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
+    `UPDATE note_document_version SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`
+  ]
+  for (const sql of migrations) {
+    try {
+      db.prepare(sql).run()
+      console.log('[DB] 迁移成功:', sql)
+    } catch (e) {
+      // 列已存在或表不存在，忽略
+      console.log('[DB] 迁移跳过:', sql, e.message)
+    }
+  }
 }
 
 module.exports = { initSchema }
