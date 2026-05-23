@@ -9,7 +9,7 @@ app-desktop/dist-ssr
 app-desktop/release
 
 # Electron userData (cache, local storage, etc.)
-app-desktop/electron/userData
+app-desktop/userData
 
 # 图标生成的中间产物
 app-desktop/build/icon-*.png

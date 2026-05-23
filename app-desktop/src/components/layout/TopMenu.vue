@@ -1,5 +1,5 @@
 <template>
-  <header class="top-menu" :class="{ collapsed: !isOpen }">
+  <header class="top-menu" :class="{ collapsed: !isOpen, fullscreen: isFullscreen }" :style="macMenuStyle">
     <div class="menu-left">
       <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
         <template #trigger>
@@ -9,38 +9,37 @@
       </Dropdown>
     </div>
     <div class="menu-right">
+      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
+        <IconThemeToggle :mode="themeStore.theme" />
+      </button>
       <button
         class="window-control-btn"
         :class="{ 'is-active': !isOpen }"
         @click="$emit('toggle-top-menu')"
-        title="显示/隐藏菜单栏 (Ctrl+↑)"
+        :title="'显示/隐藏菜单栏 (' + modKey() + '↑)'"
       >
         <IconTopMenu />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-status-bar')" title="显示/隐藏底部状态栏 (Ctrl+↓)">
+      <button class="window-control-btn" @click="$emit('toggle-status-bar')" :title="'显示/隐藏底部状态栏 (' + modKey() + '↓)'">
         <IconStatusBar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-left-sidebar')" title="显示/隐藏左侧菜单 (Ctrl+←)">
+      <button class="window-control-btn" @click="$emit('toggle-left-sidebar')" :title="'显示/隐藏左侧菜单 (' + modKey() + '←)'">
         <IconLeftSidebar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" title="显示/隐藏缩略图栏 (Ctrl+←)">
+      <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" :title="'显示/隐藏缩略图栏 (' + modKey() + '←)'">
         <IconThumbnailSidebar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" title="显示/隐藏 AI 聊天 (Ctrl+→)">
+      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" :title="'显示/隐藏 AI 聊天 (' + modKey() + '→)'">
         <IconRightSidebar />
       </button>
-      <div class="menu-divider"></div>
-      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
-        <IconThemeToggle :mode="themeStore.theme" />
-      </button>
-      <div class="menu-divider"></div>
-      <button class="window-control-btn minimize-btn" @click="minimizeWindow" title="最小化">
+      <div v-if="!isMac" class="menu-divider"></div>
+      <button v-if="!isMac" class="window-control-btn minimize-btn" @click="minimizeWindow" title="最小化">
         <IconMinimize />
       </button>
-      <button class="window-control-btn maximize-btn" @click="maximizeWindow" title="最大化">
+      <button v-if="!isMac" class="window-control-btn maximize-btn" @click="maximizeWindow" title="最大化">
         <IconMaximize />
       </button>
-      <button class="window-control-btn close-btn" @click="closeWindow" title="关闭">
+      <button v-if="!isMac" class="window-control-btn close-btn" @click="closeWindow" title="关闭">
         <IconClose />
       </button>
     </div>
@@ -48,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, type ComponentPublicInstance } from 'vue'
+import { ref, type ComponentPublicInstance, computed } from 'vue'
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
 import IconRightSidebar from '../../components/icons/IconRightSidebar.vue'
@@ -72,15 +71,45 @@ import {
 
 const themeStore = useThemeStore()
 
+const isMac = navigator.platform.includes('Mac')
+
+// macOS 菜单栏左侧留空给交通灯按钮（约 76px）
+const macMenuStyle = computed(() => {
+  return isMac ? { paddingLeft: '76px' } : {}
+})
+
+// 返回当前平台对应的修饰键标识
+function modKey(): string {
+  return isMac ? '⌘' : 'Ctrl+'
+}
+
+// 递归处理菜单项中的快捷键（macOS 上将 Ctrl 替换为 ⌘）
+function normalizeShortcut(shortcut?: string): string | undefined {
+  if (!shortcut || !isMac) return shortcut
+  return shortcut.replace(/Ctrl\+/g, '⌘')
+}
+
+function normalizeItems(items: import('../../config/menus').MenuItem[]): import('../../config/menus').MenuItem[] {
+  return items.map(item => {
+    if (item.type === 'item') {
+      return { ...item, shortcut: normalizeShortcut(item.shortcut) }
+    }
+    if (item.type === 'submenu' && item.children) {
+      return { ...item, children: normalizeItems(item.children) }
+    }
+    return item
+  })
+}
+
 // 菜单配置数据
 class TopMenu {
   static menus = [
-    { label: '文件', items: fileMenuItems },
-    { label: '编辑', items: editMenuItems },
-    { label: 'AI', items: aiMenuItems },
-    { label: '标记', items: markMenuItems },
-    { label: '查看', items: viewMenuItems },
-    { label: '帮助', items: helpMenuItems }
+    { label: '文件', items: normalizeItems(fileMenuItems) },
+    { label: '编辑', items: normalizeItems(editMenuItems) },
+    { label: 'AI', items: normalizeItems(aiMenuItems) },
+    { label: '标记', items: normalizeItems(markMenuItems) },
+    { label: '查看', items: normalizeItems(viewMenuItems) },
+    { label: '帮助', items: normalizeItems(helpMenuItems) }
   ]
 }
 
@@ -90,9 +119,11 @@ const activeMenuIndex = ref<number | null>(null)
 
 interface Props {
   isOpen?: boolean
+  isFullscreen?: boolean
 }
 withDefaults(defineProps<Props>(), {
-  isOpen: true
+  isOpen: true,
+  isFullscreen: false
 })
 
 // 设置 Dropdown 组件引用
@@ -152,6 +183,12 @@ const closeWindow = () => {
 // 菜单操作处理
 const handleMenuAction = (action: string) => {
   console.log('Menu action:', action)
+  // 关闭所有下拉菜单（点击菜单项后自动收起）
+  for (const [, dropdown] of dropdownRefs.value) {
+    if (dropdown && (dropdown as any).close) {
+      ;(dropdown as any).close()
+    }
+  }
   if (action === 'github') {
     if (window.electronAPI) {
       window.electronAPI.openExternalLink('https://github.com/stophemo/Woo')
@@ -196,6 +233,15 @@ const handleMenuAction = (action: string) => {
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
+}
+
+/* 全屏模式下隐藏左侧菜单目录，由 macOS 系统菜单栏接管；
+   同时右侧功能按键保持右对齐 */
+.top-menu.fullscreen {
+  justify-content: flex-end;
+}
+.top-menu.fullscreen .menu-left {
+  display: none;
 }
 
 .menu-left {

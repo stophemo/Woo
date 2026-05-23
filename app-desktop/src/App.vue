@@ -3,6 +3,7 @@
     <!-- 顶部菜单栏 -->
     <TopMenu
       :is-open="topMenuOpen"
+      :is-fullscreen="isFullscreen"
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
       @toggle-right-sidebar="toggleRightSidebar"
@@ -47,6 +48,55 @@ useThemeStore()
 
 const workspaceStore = useWorkspaceStore()
 
+// 处理来自 macOS 原生菜单的动作
+function handleMenuAction(action: string) {
+  switch (action) {
+    case 'enter-fullscreen':
+      isFullscreen.value = true
+      break
+    case 'leave-fullscreen':
+      isFullscreen.value = false
+      break
+    case 'settings':
+      openSettings('file')
+      break
+    case 'ai-settings':
+      openSettings('ai')
+      break
+    case 'new-document':
+      workspaceStore.createNewDocument()
+      break
+    case 'new-folder':
+      workspaceStore.createRootFolder()
+      break
+    case 'version-history':
+      // 切换到第一个文档的版本历史
+      break
+    case 'toggle-left':
+      toggleLeftSidebar()
+      break
+    case 'toggle-thumbnail':
+      toggleThumbnailSidebar()
+      break
+    case 'toggle-right':
+    case 'open-chat':
+      toggleRightSidebar()
+      break
+    case 'theme':
+      useThemeStore().toggleTheme()
+      break
+    case 'docs':
+      break
+    case 'github':
+      if (window.electronAPI) {
+        window.electronAPI.openExternalLink('https://github.com/stophemo/Woo')
+      }
+      break
+    default:
+      console.log('[MenuAction] 未处理的动作:', action)
+  }
+}
+
 // 侧边栏状态
 const leftSidebarOpen = ref(true)
 const thumbnailSidebarOpen = ref(true)
@@ -55,6 +105,7 @@ const showSettings = ref(false)
 const settingsMode = ref<'file' | 'ai'>('file')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
+const isFullscreen = ref(false)
 
 function openSettings(mode: 'file' | 'ai') {
   settingsMode.value = mode
@@ -109,9 +160,26 @@ const cycleLeftPanels = () => {
   }
 }
 
+// 工具函数：在 macOS 上使用 Cmd，在其它平台使用 Ctrl
+function isModKey(event: KeyboardEvent): boolean {
+  if (navigator.platform.includes('Mac')) {
+    return event.metaKey
+  }
+  return event.ctrlKey
+}
+
 // 键盘快捷键处理函数
 const handleKeyDown = (event: KeyboardEvent) => {
-  if (!event.ctrlKey) return
+  // ESC 退出全屏
+  if (event.key === 'Escape' && isFullscreen.value) {
+    if (window.electronAPI && window.electronAPI.setFullscreen) {
+      window.electronAPI.setFullscreen(false)
+    }
+    isFullscreen.value = false
+    return
+  }
+
+  if (!isModKey(event)) return
   switch (event.key) {
     case 'ArrowUp':
       event.preventDefault()
@@ -135,12 +203,19 @@ const handleKeyDown = (event: KeyboardEvent) => {
 // 组件挂载时添加键盘事件监听
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
+  // 注册 macOS 原生菜单动作监听
+  if (window.electronAPI && window.electronAPI.onMenuAction) {
+    window.electronAPI.onMenuAction(handleMenuAction)
+  }
   initApp();
 });
 
-// 组件卸载前移除键盘事件监听，防止内存泄漏
+// 组件卸载前移除键盘事件监听和菜单监听，防止内存泄漏
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  if (window.electronAPI && window.electronAPI.removeMenuActionListener) {
+    window.electronAPI.removeMenuActionListener()
+  }
 });
 </script>
 

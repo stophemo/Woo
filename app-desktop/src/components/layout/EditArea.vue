@@ -202,7 +202,8 @@ function decreaseZoom() { zoomPercent.value = Math.max(60, zoomPercent.value - 1
 function resetZoom() { zoomPercent.value = 100 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
-  if (!event.ctrlKey) return
+  const isMod = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey
+  if (!isMod) return
   if (event.key === '+' || event.key === '=' || event.code === 'NumpadAdd') { event.preventDefault(); increaseZoom(); return }
   if (event.key === '-' || event.code === 'NumpadSubtract') { event.preventDefault(); decreaseZoom(); return }
   if (event.key === '0') { event.preventDefault(); resetZoom(); return }

@@ -26,11 +26,18 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
+  # =============== 构建阶段（双平台并行） ===============
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      draft: ${{ steps.meta.outputs.draft }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      notes_path: ${{ steps.release_notes.outputs.path }}
 
     steps:
       - name: Checkout
@@ -47,6 +54,7 @@ jobs:
 
       - name: Resolve release metadata
         id: meta
+        shell: pwsh
         run: |
           $pkg = Get-Content app-desktop/package.json -Raw | ConvertFrom-Json
           $version = "$($pkg.version)"
@@ -74,11 +82,80 @@ jobs:
         working-directory: app-desktop
         run: npm ci
 
-      - name: Build desktop package
+      - name: Build desktop package (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        working-directory: app-desktop
+        run: npm run electron:build
+
+      - name: Build desktop package (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
         working-directory: app-desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run electron:build
+        shell: pwsh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ matrix.os }}
+          path: app-desktop/release/*
+          if-no-files-found: error
+
+  # =============== 发布阶段（windows runner 单独执行） ===============
+  release:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-macos-latest
+          path: app-desktop/release
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-windows-latest
+          path: app-desktop/release
+
+      - name: List downloaded artifacts
+        run: Get-ChildItem -Path app-desktop/release -Recurse
+        shell: pwsh
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $pkg = Get-Content app-desktop/package.json -Raw | ConvertFrom-Json
+          $version = "$($pkg.version)"
+          $tag = "${{ github.ref_name }}"
+          $draft = "false"
+          $prerelease = "false"
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $inputTag = "${{ inputs.tag }}"
+            if ([string]::IsNullOrWhiteSpace($inputTag)) {
+              $tag = "v$version"
+            } else {
+              $tag = $inputTag.Trim()
+            }
+            if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
+            if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
+          }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "draft=$draft" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Ensure tag exists (manual run)
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -95,17 +172,19 @@ jobs:
           } else {
             Write-Host "Tag $env:TAG already exists on origin."
           }
+        shell: pwsh
 
       - name: Generate release notes
         id: release_notes
+        shell: pwsh
         run: |
           $tag = "${{ steps.meta.outputs.tag }}"
-          $previousTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+          $previousTag = git describe --tags --abbrev=0 "$tag^" 2>`$null
           if ($LASTEXITCODE -ne 0) {
             $previousTag = ""
           }
           
-          $notes = "## 🚀 更新内容`n`n"
+          $notes = "## 更新内容`n`n"
           
           if ($previousTag) {
             $commits = git log "$previousTag..$tag" --pretty=format:"%s" --no-merges
@@ -114,7 +193,7 @@ jobs:
             $choreCommits = $commits | Where-Object { $_ -match "^(chore|refactor|style):" }
             
             if ($featCommits) {
-              $notes += "### ✨ 新增功能`n"
+              $notes += "### 新增功能`n"
               $featCommits | ForEach-Object {
                 $msg = $_ -replace "^(feat|feature):\s*", ""
                 $notes += "- $msg`n"
@@ -123,7 +202,7 @@ jobs:
             }
             
             if ($fixCommits) {
-              $notes += "###  问题修复`n"
+              $notes += "### 问题修复`n"
               $fixCommits | ForEach-Object {
                 $msg = $_ -replace "^fix:\s*", ""
                 $notes += "- $msg`n"
@@ -132,7 +211,7 @@ jobs:
             }
             
             if ($choreCommits) {
-              $notes += "### 🔧 其他改进`n"
+              $notes += "### 其他改进`n"
               $choreCommits | ForEach-Object {
                 $msg = $_ -replace "^(chore|refactor|style):\s*", ""
                 $notes += "- $msg`n"
@@ -143,7 +222,7 @@ jobs:
             $notes += "首次发布`n`n"
           }
           
-          $notes += "---`n`n**完整变更日志**: https://github.com/stophemo/Woo/compare/"
+          $notes += "---`n`n完整变更日志: https://github.com/stophemo/Woo/compare/"
           if ($previousTag) {
             $notes += "${previousTag}...${tag}`n"
           } else {
@@ -165,7 +244,8 @@ jobs:
           draft: ${{ steps.meta.outputs.draft == 'true' }}
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           overwrite_files: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
             app-desktop/release/*.exe
+            app-desktop/release/*.dmg
             app-desktop/release/*.zip

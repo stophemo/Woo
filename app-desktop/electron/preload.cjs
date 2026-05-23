@@ -8,8 +8,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  setFullscreen: (fullscreen) => ipcRenderer.invoke('window:set-fullscreen', fullscreen),
   openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
-  getAppVersion: () => ipcRenderer.invoke('app:getVersion')
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  // 监听原生菜单动作（macOS 菜单栏/快捷键）
+  onMenuAction: (callback) => {
+    ipcRenderer.on('menu:action', (_event, action) => callback(action))
+  },
+  // 移除原生菜单监听
+  removeMenuActionListener: () => {
+    ipcRenderer.removeAllListeners('menu:action')
+  }
 })
 
 // 业务 IPC 调用入口：统一 invoke，返回 { ok, data | message }

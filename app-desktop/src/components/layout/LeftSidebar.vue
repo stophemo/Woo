@@ -50,6 +50,11 @@
             @select="handleMenuSelect"
             @close="closeContextMenu"
         />
+            
+        <!-- 错误提示 -->
+        <div v-if="store.error" class="sidebar-error" @click="store.error = ''">
+            {{ store.error }}
+        </div>
     </aside>
 </template>
 
@@ -180,24 +185,30 @@ const handleFolderContextMenu = (data: { folder: FolderNode, position: ContextMe
 
 // 处理菜单项选择
 const handleMenuSelect = (action: string) => {
-    switch (action) {
-        case 'createRoot':
-            store.createRootFolder()
-            break
-        case 'createSibling':
-            if (selectedFolder.value) store.createSiblingFolder(selectedFolder.value)
-            break
-        case 'createChild':
-            if (selectedFolder.value) store.createChildFolder(selectedFolder.value)
-            break
-        case 'rename':
-            if (selectedFolder.value) store.editingFolderId = selectedFolder.value.id
-            break
-        case 'delete':
-            if (selectedFolder.value) store.deleteFolder(selectedFolder.value)
-            break
-    }
-    closeContextMenu()
+  console.log('[LeftSidebar] 菜单选择:', action, '选中的目录:', selectedFolder.value)
+  switch (action) {
+    case 'createRoot':
+      console.log('[LeftSidebar] 调用 createRootFolder')
+      store.createRootFolder().then(() => {
+        console.log('[LeftSidebar] createRootFolder 完成, 当前文件夹数:', store.folders.length)
+      }).catch((e: any) => {
+        console.error('[LeftSidebar] createRootFolder 失败:', e)
+      })
+      break
+    case 'createSibling':
+      if (selectedFolder.value) store.createSiblingFolder(selectedFolder.value)
+      break
+    case 'createChild':
+      if (selectedFolder.value) store.createChildFolder(selectedFolder.value)
+      break
+    case 'rename':
+      if (selectedFolder.value) store.editingFolderId = selectedFolder.value.id
+      break
+    case 'delete':
+      if (selectedFolder.value) store.deleteFolder(selectedFolder.value)
+      break
+  }
+  closeContextMenu()
 }
 
 // 关闭右键菜单
@@ -340,6 +351,25 @@ const handleOpenTrashBox = () => {
     height: 1px;
     background-color: var(--border-primary);
     margin: 8px 0;
+}
+
+.sidebar-error {
+    position: fixed;
+    bottom: 16px;
+    left: 24px;
+    background-color: #c42b1c;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    z-index: 9999;
+    max-width: 200px;
+    word-break: break-word;
+}
+
+:root[data-theme="dark"] .sidebar-error {
+    background-color: #e53935;
 }
 
 </style>
