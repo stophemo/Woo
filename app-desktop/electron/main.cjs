@@ -60,7 +60,7 @@ function createWindow() {
     // macOS:  保留原生框架（frame: true）并隐藏标题栏文字，
     //         保留交通灯按钮（红黄绿灯）。
     //         titleBarOverlay 使交通灯在 40px 工具栏中垂直居中。
-    frame: !isMac,
+    frame: isMac,
     titleBarStyle: isMac ? 'hidden' : undefined,
     titleBarOverlay: isMac ? {
       height: 40
