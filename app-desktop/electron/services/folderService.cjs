@@ -71,8 +71,9 @@ function deleteFolder(folderId) {
   const db = getDb()
   const row = db.prepare('SELECT id FROM note_folder WHERE id = ? AND deleted = 0').get(folderId)
   if (!row) throw new Error('目录不存在')
-  // 级联删除：收集所有后代
-  const all = db.prepare('SELECT id, parent_id FROM note_folder WHERE deleted = 0').all()
+
+  // 收集所有后代目录（含已废纸篓的，用于完整判断子树文档情况）
+  const all = db.prepare('SELECT id, parent_id FROM note_folder WHERE deleted IN (0, 1)').all()
   const childrenMap = new Map()
   for (const r of all) {
     const key = r.parent_id || '__root__'
@@ -88,11 +89,27 @@ function deleteFolder(folderId) {
 
   const trx = db.transaction(() => {
     const now = nowStr()
-    const upd = db.prepare('UPDATE note_folder SET deleted = 1, update_time = ? WHERE id = ?')
-    const updDoc = db.prepare('UPDATE note_document SET deleted = 1, update_time = ? WHERE folder_id = ?')
+    const placeholders = ids.map(() => '?').join(',')
+
+    // 1. 将目录树下所有活跃文稿移入废纸篓
+    db.prepare(
+      `UPDATE note_document SET deleted = 1, update_time = ? WHERE folder_id IN (${placeholders}) AND deleted = 0`
+    ).run(now, ...ids)
+
+    // 2. 检查子树下是否存在废纸篓文稿
+    const { cnt: trashCount } = db.prepare(
+      `SELECT COUNT(*) as cnt FROM note_document WHERE folder_id IN (${placeholders}) AND deleted = 1`
+    ).get(...ids)
+
+    // 3. 设置目录 deleted 值
+    //    子树下有废纸篓文稿 → 目录进入废纸篓（可恢复）
+    //    子树为空 → 跳过废纸篓，直接标记永久删除
+    const targetDeleted = trashCount > 0 ? 1 : 2
+    const upd = db.prepare(
+      'UPDATE note_folder SET deleted = ?, update_time = ? WHERE id = ? AND deleted = 0'
+    )
     for (const fid of ids) {
-      upd.run(now, fid)
-      updDoc.run(now, fid)
+      upd.run(targetDeleted, now, fid)
     }
   })
   trx()

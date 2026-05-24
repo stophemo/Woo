@@ -136,38 +136,60 @@ function restore(documentId) {
   db.prepare('UPDATE note_document SET deleted = 0, update_time = ? WHERE id = ?').run(now, documentId)
 }
 
-function logDelete(tableName, recordIds) {
-  if (!recordIds || recordIds.length === 0) return
-  const db = getDb()
-  const now = nowStr()
-  const stmt = db.prepare('INSERT OR IGNORE INTO sync_delete_log (id, table_name, record_id, create_time) VALUES (?, ?, ?, ?)')
-  const trx = db.transaction(() => {
-    for (const rid of recordIds) {
-      stmt.run(newId(), tableName, rid, now)
-    }
-  })
-  trx()
-}
+
 
 function hardDelete(documentId) {
   const db = getDb()
   const doc = db.prepare('SELECT * FROM note_document WHERE id = ? AND deleted = 1').get(documentId)
   if (!doc) throw new Error('文稿不存在或未在回收站中')
-  logDelete('note_document', [documentId])
-  db.prepare('DELETE FROM note_document_version WHERE document_id = ?').run(documentId)
-  db.prepare('DELETE FROM note_document WHERE id = ?').run(documentId)
+
+  const now = nowStr()
+  db.prepare('UPDATE note_document_version SET deleted = 2, update_time = ? WHERE document_id = ?').run(now, documentId)
+  db.prepare('UPDATE note_document SET deleted = 2, update_time = ? WHERE id = ?').run(now, documentId)
+
+  // 检查目录链是否需要升级到 deleted=2
+  promoteEmptyFoldersToDeleted2()
 }
 
 function emptyTrash() {
   const db = getDb()
-  // 先收集所有待真删的文档 ID（用于同步删除日志）
-  const toDelete = db.prepare('SELECT id FROM note_document WHERE deleted = 1').all()
-  if (toDelete.length > 0) {
-    logDelete('note_document', toDelete.map(r => r.id))
+  const now = nowStr()
+  db.prepare(`UPDATE note_document_version SET deleted = 2, update_time = ?
+               WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)`).run(now)
+  db.prepare('UPDATE note_document SET deleted = 2, update_time = ? WHERE deleted = 1').run(now)
+
+  // 检查所有受影响目录链是否需要升级到 deleted=2
+  promoteEmptyFoldersToDeleted2()
+}
+
+/**
+ * 递归检查空目录链，将其升级为 deleted=2。
+ * 当目录下没有任何活跃（deleted=0/1）的文稿和子目录时，
+ * 该目录无需停留在废纸篓中，可直接标记待清理。
+ */
+function promoteEmptyFoldersToDeleted2() {
+  const db = getDb()
+  let changed = true
+  while (changed) {
+    changed = false
+    const emptyFolders = db.prepare(`
+      SELECT f.id FROM note_folder f
+      WHERE f.deleted = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM note_document d
+          WHERE d.folder_id = f.id AND d.deleted IN (0, 1)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM note_folder c
+          WHERE c.parent_id = f.id AND c.deleted IN (0, 1)
+        )
+    `).all()
+
+    for (const f of emptyFolders) {
+      db.prepare('UPDATE note_folder SET deleted = 2, update_time = ? WHERE id = ?').run(nowStr(), f.id)
+      changed = true
+    }
   }
-  db.prepare(`DELETE FROM note_document_version
-               WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)`).run()
-  db.prepare('DELETE FROM note_document WHERE deleted = 1').run()
 }
 
 function verifyExists(documentId) {
@@ -218,5 +240,6 @@ module.exports = {
   restore,
   hardDelete,
   emptyTrash,
+  promoteEmptyFoldersToDeleted2,
   verifyExists
 }

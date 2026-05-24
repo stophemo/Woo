@@ -5,20 +5,20 @@
  * - 本地 SQLite 是主数据源，Supabase 是云端副本
  * - 时间戳冲突策略：最后写入者胜出（last-write-wins）
  * - 增量同步：仅推送/拉取 update_time 距上次同步之后变更的记录
- * - 软删除：所有删除标记 deleted=1，不做硬删除
+ * - 软删除三态：deleted=0（正常）delated=1（废纸篓）deleted=2（待清理）
+ * - 超期清理：客户端同步时检测本地 deleted=2 且过期的文档/目录 → 云端真删 + 写墓碑
+ * - 墓碑传播：云端 sync_tombstone 表实现跨设备真删通知
  *
  * 同步流程（每次触发）：
- *   1. PULL 先拉：读取云端 update_time > last_sync_time 的记录 → 合并到本地
- *      （远程新于本地 → 覆盖本地；本地新于远程 → 保持本地）
- *   2. PUSH 后推：读取本地 update_time > last_sync_time 的记录 → upsert 到云端
- *      （先拉后推，确保推送的是合并后的最新结果）
- *   3. 更新 last_sync_time
- *
- * 注意：LWW 策略下，同一篇文档在多设备同时编辑不同字段时，
- *      后保存的设备会整体覆盖先保存的内容。个人笔记场景可接受此限制。
+ *   1. PULL 墓碑：读取云端 sync_tombstone（比 last_tombstone_pull 新）→ 本地真删对应行
+ *   2. PULL 云端变更：读取云端 update_time > last_sync_time 的记录 → 合并到本地
+ *   3. PUSH 本地变更：读取本地 update_time > last_sync_time 的记录 → upsert 到云端
+ *   4. 超期清理：清理过期文档 → 级联空目录升级 deleted=2 → 清理过期目录
+ *   5. 更新 last_sync_time + 回收云端 30 天前的旧墓碑
  */
 const { getDb } = require('../db/index.cjs')
 const { getClient } = require('../config/supabase.cjs')
+const { promoteEmptyFoldersToDeleted2 } = require('./documentService.cjs')
 const fs = require('fs')
 const path = require('path')
 const { app } = require('electron')
@@ -85,23 +85,14 @@ function setLastSyncTime(time) {
 
 /**
  * 将本地变更推送到 Supabase
- * 顺序：先处理删除日志 → 再推送 upsert
  */
 async function pushChanges(userId, lastSync) {
   const client = getClient()
   if (!client) return { ok: false, message: 'Supabase 未配置' }
 
   let pushedCount = 0
-  let deletedCount = 0
   const errors = []
 
-  // === 第一步：处理本地硬删除（删除日志）===
-  // 必须在 upsert 之前处理，否则 PULL 拉回的云端数据又会被 upsert 回去
-  const deleteResult = await pushDeleteLog(client, userId)
-  deletedCount = deleteResult.deletedCount
-  errors.push(...deleteResult.errors)
-
-  // === 第二步：推送常规变更 upsert ===
   for (const entity of ENTITIES) {
     try {
       const localRows = queryLocalChanges(entity.table, entity.idField, lastSync)
@@ -128,61 +119,137 @@ async function pushChanges(userId, lastSync) {
     }
   }
 
-  return { ok: errors.length === 0, pushedCount, deletedCount, errors }
+  return { ok: errors.length === 0, pushedCount, errors }
 }
 
 /**
- * 处理同步删除日志：在云端执行对应记录的删除
- * 包含级联删除（如删除 note_document 时同时删 note_document_version）
+ * 超期清理：扫描本地 deleted=2 且超过7天的记录，执行云端真删、写墓碑、本地真删。
+ * 由客户端在同步时触发（非云端定时任务）。
  */
-async function pushDeleteLog(client, userId) {
+async function cleanupExpiredDeletes(userId) {
+  const client = getClient()
+  if (!client) return { cleanupCount: 0, errors: [] }
   const db = getDb()
-  const logs = db.prepare('SELECT * FROM sync_delete_log ORDER BY create_time ASC').all()
-  if (logs.length === 0) return { deletedCount: 0, errors: [] }
 
-  let deletedCount = 0
+  // 支持 .env 中写表达式，如 "60*60*24*7" = 604800 秒
+  // 注意：格式必须与 nowStr() 一致（本地时间，无毫秒），否则字符串比较因时区差异而失效
+  const cleanupSeconds = eval(process.env.SYNC_CLEANUP_SECONDS) || 604800
+  const cutoffDate = new Date(Date.now() - cleanupSeconds * 1000)
+  const pad = (n) => String(n).padStart(2, '0')
+  const cutoff = `${cutoffDate.getFullYear()}-${pad(cutoffDate.getMonth() + 1)}-${pad(cutoffDate.getDate())}T${pad(cutoffDate.getHours())}:${pad(cutoffDate.getMinutes())}:${pad(cutoffDate.getSeconds())}`
+
+  let cleanupCount = 0
   const errors = []
-  const processedIds = []
 
-  for (const log of logs) {
+  // === 1. 清理过期文档（deleted=2 且超期） ===
+  const expiredDocs = db.prepare(
+    'SELECT id FROM note_document WHERE deleted = 2 AND update_time < ?'
+  ).all(cutoff)
+
+  for (const doc of expiredDocs) {
     try {
-      const { error } = await client
-        .from(log.table_name)
+      await client.from('note_document_version')
         .delete()
-        .eq('id', log.record_id)
+        .eq('document_id', doc.id)
         .eq('user_id', userId)
-
-      if (error) {
-        errors.push(`[${log.table_name}] 云端删除失败(${log.record_id}): ${error.message}`)
-        continue
-      }
-
-      // 级联删除：删文档时同时删云端版本记录
-      if (log.table_name === 'note_document') {
-        const { error: verErr } = await client
-          .from('note_document_version')
-          .delete()
-          .eq('document_id', log.record_id)
-        if (verErr) {
-          errors.push(`[note_document_version] 级联删除失败(${log.record_id}): ${verErr.message}`)
-        }
-      }
-
-      deletedCount++
-      processedIds.push(log.id)
+      await client.from('note_document')
+        .delete()
+        .eq('id', doc.id)
+        .eq('user_id', userId)
+      await client.from('sync_tombstone')
+        .insert({ table_name: 'note_document', record_id: doc.id, user_id: userId })
+      db.prepare('DELETE FROM note_document_version WHERE document_id = ?').run(doc.id)
+      db.prepare('DELETE FROM note_document WHERE id = ?').run(doc.id)
+      cleanupCount++
     } catch (err) {
-      errors.push(`[${log.table_name}] 云端删除异常(${log.record_id}): ${err.message}`)
+      errors.push(`[cleanup] 文档清理失败(${doc.id}): ${err.message}`)
     }
   }
 
-  // 清理已处理的日志
-  if (processedIds.length > 0) {
-    const placeholders = processedIds.map(() => '?').join(',')
-    db.prepare(`DELETE FROM sync_delete_log WHERE id IN (${placeholders})`).run(...processedIds)
-    console.log('[Sync] 已清理删除日志:', processedIds.length, '条')
+  // === 2. 级联：文档清理后，空目录链升级为 deleted=2 ===
+  if (expiredDocs.length > 0) {
+    promoteEmptyFoldersToDeleted2()
   }
 
-  return { deletedCount, errors }
+  // === 3. 清理过期目录（deleted=2 且超期） ===
+  const expiredFolders = db.prepare(
+    'SELECT id FROM note_folder WHERE deleted = 2 AND update_time < ?'
+  ).all(cutoff)
+
+  for (const folder of expiredFolders) {
+    try {
+      await client.from('note_folder')
+        .delete()
+        .eq('id', folder.id)
+        .eq('user_id', userId)
+      await client.from('sync_tombstone')
+        .insert({ table_name: 'note_folder', record_id: folder.id, user_id: userId })
+      db.prepare('DELETE FROM note_folder WHERE id = ?').run(folder.id)
+      cleanupCount++
+    } catch (err) {
+      errors.push(`[cleanup] 目录清理失败(${folder.id}): ${err.message}`)
+    }
+  }
+
+  return { cleanupCount, errors }
+}
+
+/**
+ * 从云端拉取墓碑并本地真删
+ * 同时在云端回收 30 天前的旧墓碑
+ */
+async function pullTombstones(userId) {
+  const client = getClient()
+  if (!client) return { pulledDeleteCount: 0, errors: [] }
+  const db = getDb()
+
+  const lastPull = getSyncMeta('last_tombstone_pull') || '1970-01-01T00:00:00'
+
+  const { data: tombstones, error } = await client
+    .from('sync_tombstone')
+    .select('*')
+    .eq('user_id', userId)
+    .gt('deleted_at', lastPull)
+    .order('deleted_at', { ascending: true })
+
+  if (error) return { pulledDeleteCount: 0, errors: [error.message] }
+  if (!tombstones || tombstones.length === 0) return { pulledDeleteCount: 0, errors: [] }
+
+  let count = 0
+  for (const t of tombstones) {
+    try {
+      // 级联删版本
+      if (t.table_name === 'note_document') {
+        db.prepare('DELETE FROM note_document_version WHERE document_id = ?').run(t.record_id)
+      }
+      // 删业务行
+      db.prepare(`DELETE FROM ${t.table_name} WHERE id = ?`).run(t.record_id)
+      count++
+    } catch (err) {
+      console.warn(`[Sync] 本地墓碑删除失败(${t.table_name}/${t.record_id}): ${err.message}`)
+    }
+  }
+
+  // 更新拉取进度
+  const latest = tombstones[tombstones.length - 1].deleted_at
+  setSyncMeta('last_tombstone_pull', latest)
+
+  // 回收云端 30 天前的旧墓碑（控制云端存储成本）
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { error: cleanErr } = await client
+      .from('sync_tombstone')
+      .delete()
+      .eq('user_id', userId)
+      .lt('deleted_at', cutoff)
+    if (cleanErr) {
+      console.warn('[Sync] 回收旧墓碑失败:', cleanErr.message)
+    }
+  } catch (e) {
+    console.warn('[Sync] 回收旧墓碑异常:', e.message)
+  }
+
+  return { pulledDeleteCount: count, errors: [] }
 }
 
 /**
@@ -340,27 +407,26 @@ async function doSync() {
 
   try {
     const userId = session.user.id
-
-    // === 0. 先处理删除日志（在 PULL 之前，避免云端数据被拉回）===
-    const client = getClient()
-    if (client) {
-      await pushDeleteLog(client, userId)
-    }
-
     const lastSync = getLastSyncTime()
     console.log('[Sync] 开始同步, lastSync:', lastSync)
 
-    // === 1. PULL 先拉 ===
-    // 先拉取云端变更合并到本地，确保后续推送的是合并后的最新结果
+    // === 1. PULL 云端墓碑（其他设备的真删 → 本地真删）===
+    const tombstoneResult = await pullTombstones(userId)
+    console.log('[Sync] 墓碑拉取完成:', tombstoneResult)
+
+    // === 2. PULL 云端变更（先拉取再推送，避免过时数据覆盖云端）===
     const pullResult = await pullChanges(userId, lastSync)
     console.log('[Sync] 拉取完成:', pullResult)
 
-    // === 2. PUSH 后推 ===
-    // 推送本地变更到云端（此时本地已包含拉取的最新数据）
+    // === 3. PUSH 本地变更 ===
     const pushResult = await pushChanges(userId, lastSync)
     console.log('[Sync] 推送完成:', pushResult)
 
-    // 3. 更新同步时间戳
+    // === 4. 超期清理（本地 deleted=2 且过期 → 云端真删 + 写墓碑）===
+    const cleanupResult = await cleanupExpiredDeletes(userId)
+    console.log('[Sync] 超期清理完成:', cleanupResult)
+
+    // 5. 更新同步时间戳
     const now = new Date().toISOString()
     setLastSyncTime(now)
 
@@ -368,6 +434,8 @@ async function doSync() {
       pushedCount: pushResult.pushedCount || 0,
       pulledCount: pullResult.pulledCount || 0,
       conflictCount: pullResult.conflictCount || 0,
+      cleanupCount: cleanupResult.cleanupCount || 0,
+      tombstoneCount: tombstoneResult.pulledDeleteCount || 0,
       syncTime: now
     }
   } catch (err) {
