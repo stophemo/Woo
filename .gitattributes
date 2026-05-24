@@ -1,0 +1,2 @@
+# .env 透明加解密（smudge=解密, clean=加密）
+.env filter=env diff=env
