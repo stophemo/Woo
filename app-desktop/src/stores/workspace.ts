@@ -105,13 +105,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function bootstrap() {
     loading.value = true
     error.value = ''
+    // 同步重置，确保在用户交互之前初始状态已清空
+    selectedFolderId.value = null
+    selectedDocumentId.value = null
+    folderDocuments.value = []
+    currentDocumentData.value = null
     try {
       const tree = await folderApi.getTree()
       folders.value = tree.map(mapFolder)
-      selectedFolderId.value = null
-      selectedDocumentId.value = null
-      folderDocuments.value = []
-      currentDocumentData.value = null
     } catch (e: any) {
       error.value = e?.message || '加载目录失败'
       throw e
@@ -150,6 +151,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectedFolderId.value = folderId
     try {
       const list = await documentApi.listByFolder(folderId)
+      // 防竞态：如果用户在此期间切换了目录，放弃本次结果
+      if (selectedFolderId.value !== folderId) return
       folderDocuments.value = list.map(mapDocument)
       if (folderDocuments.value.length > 0) {
         await selectDocument(folderDocuments.value[0].id)
@@ -280,6 +283,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     try {
       const dto = await documentApi.getById(documentId)
+      // 防竞态：如果用户在此期间切换了文稿，放弃本次结果
+      if (selectedDocumentId.value !== documentId) return
       // 整体赋值，引用变化 → 触发编辑器重载内容
       currentDocumentData.value = mapDocument(dto)
     } catch (e: any) {

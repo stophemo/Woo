@@ -12,7 +12,7 @@ export interface MenuItem {
 
 // 文件菜单
 export const fileMenuItems: MenuItem[] = [
-  { type: 'item', label: '新建文稿', action: 'new-document' },
+  { type: 'item', label: '新建文稿', action: 'new-document', shortcut: 'Mod+N' },
   { type: 'item', label: '新建文件夹', action: 'new-folder' },
   { type: 'item', label: '删除文稿', action: 'delete-document' },
   { type: 'divider' },
@@ -37,7 +37,7 @@ export const fileMenuItems: MenuItem[] = [
     ]
   },
   { type: 'divider' },
-  { type: 'item', label: '设置', action: 'settings' },
+  { type: 'item', label: '设置', action: 'settings', shortcut: 'Mod+,' },
   { type: 'item', label: '检查更新', action: 'check-update' },
   { type: 'item', label: '退出', action: 'exit' }
 ]
@@ -47,8 +47,8 @@ export const editMenuItems: MenuItem[] = [
   { type: 'item', label: '撤销', action: 'undo' },
   { type: 'item', label: '反撤销', action: 'redo' },
   { type: 'divider' },
-  { type: 'item', label: '查找', action: 'find' },
-  { type: 'item', label: '查找并替换', action: 'find-replace' }
+  { type: 'item', label: '查找', action: 'find', shortcut: 'Mod+F' },
+  { type: 'item', label: '查找并替换', action: 'find-replace', shortcut: 'Mod+H' }
 ]
 
 // AI 菜单
@@ -67,23 +67,23 @@ export const markMenuItems: MenuItem[] = [
   { type: 'item', label: '##### 五级标题', action: 'h5', shortcut: 'Shift+Alt+5' },
   { type: 'item', label: '###### 六级标题', action: 'h6', shortcut: 'Shift+Alt+6' },
   { type: 'divider' },
-  { type: 'item', label: '<strong>粗体</strong>', action: 'bold', shortcut: 'Ctrl+B', isHtml: true },
-  { type: 'item', label: '<em>斜体</em>', action: 'italic', shortcut: 'Ctrl+I', isHtml: true },
-  { type: 'item', label: '<s>删除线</s>', action: 'strikethrough', shortcut: 'Ctrl+Shift+X', isHtml: true },
+  { type: 'item', label: '<strong>粗体</strong>', action: 'bold', shortcut: 'Mod+B', isHtml: true },
+  { type: 'item', label: '<em>斜体</em>', action: 'italic', shortcut: 'Mod+I', isHtml: true },
+  { type: 'item', label: '<s>删除线</s>', action: 'strikethrough', shortcut: 'Mod+Shift+X', isHtml: true },
   { type: 'divider' },
-  { type: 'item', label: '- 无序列表', action: 'ul', shortcut: 'Ctrl+Shift+L' },
-  { type: 'item', label: '1. 有序列表', action: 'ol', shortcut: 'Ctrl+Shift+O' },
-  { type: 'item', label: '- [ ] 任务列表', action: 'task', shortcut: 'Ctrl+Shift+T' },
+  { type: 'item', label: '- 无序列表', action: 'ul', shortcut: 'Mod+Shift+L' },
+  { type: 'item', label: '1. 有序列表', action: 'ol', shortcut: 'Mod+Shift+O' },
+  { type: 'item', label: '- [ ] 任务列表', action: 'task', shortcut: 'Mod+Shift+T' },
   { type: 'divider' },
-  { type: 'item', label: '> 引用', action: 'quote', shortcut: 'Ctrl+Shift+Q' },
-  { type: 'item', label: '<code> 行内代码', action: 'code', shortcut: 'Ctrl+Shift+E' },
-  { type: 'item', label: '``` 代码块', action: 'codeblock', shortcut: 'Ctrl+Shift+C' },
+  { type: 'item', label: '> 引用', action: 'quote', shortcut: 'Mod+Shift+Q' },
+  { type: 'item', label: '<code> 行内代码', action: 'code', shortcut: 'Mod+Shift+E' },
+  { type: 'item', label: '``` 代码块', action: 'codeblock', shortcut: 'Mod+Shift+C' },
   { type: 'divider' },
-  { type: 'item', label: '[链接](url)', action: 'link', shortcut: 'Ctrl+K' },
-  { type: 'item', label: '![图片](url)', action: 'image', shortcut: 'Ctrl+Shift+I' },
-  { type: 'item', label: '| 表格 |', action: 'table', shortcut: 'Ctrl+Shift+V' },
+  { type: 'item', label: '[链接](url)', action: 'link', shortcut: 'Mod+K' },
+  { type: 'item', label: '![图片](url)', action: 'image', shortcut: 'Mod+Shift+I' },
+  { type: 'item', label: '| 表格 |', action: 'table', shortcut: 'Mod+Shift+V' },
   { type: 'divider' },
-  { type: 'item', label: '--- 分割线', action: 'hr', shortcut: 'Ctrl+Enter' }
+  { type: 'item', label: '--- 分割线', action: 'hr', shortcut: 'Mod+Enter' }
 ]
 
 // 查看菜单

@@ -29,6 +29,27 @@ const ENTITIES = [
   { table: 'note_document_version', idField: 'id' }
 ]
 
+/**
+ * 安全解析算术表达式（只允许数字、空格和 * 号）
+ * @param {string|undefined} expr - 环境变量值，如 "60*60*24*7"
+ * @param {number} fallback - 解析失败时的默认值
+ * @returns {number}
+ */
+function parseIntSafe(expr, fallback) {
+  if (!expr) return fallback
+  if (/^[\d\s*]+$/.test(expr)) {
+    try {
+      // 乘积展开："60*60*24*7" -> final 值
+      const parts = String(expr).split('*').map(s => parseInt(s.trim(), 10))
+      if (parts.some(isNaN)) return fallback
+      return parts.reduce((a, b) => a * b, 1)
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
+}
+
 // 同步状态
 let isSyncing = false
 let currentSyncPromise = null
@@ -86,7 +107,7 @@ function setLastSyncTime(time) {
 /**
  * 将本地变更推送到 Supabase
  */
-async function pushChanges(userId, lastSync) {
+async function pushChanges(userId, lastSync, skipIds) {
   const client = getClient()
   if (!client) return { ok: false, message: 'Supabase 未配置' }
 
@@ -95,8 +116,17 @@ async function pushChanges(userId, lastSync) {
 
   for (const entity of ENTITIES) {
     try {
-      const localRows = queryLocalChanges(entity.table, entity.idField, lastSync)
+      let localRows = queryLocalChanges(entity.table, entity.idField, lastSync)
       if (localRows.length === 0) continue
+
+      // 过滤回显：跳过本轮刚刚从云端拉取的记录
+      if (skipIds) {
+        const skipSet = skipIds.get(entity.table)
+        if (skipSet && skipSet.size > 0) {
+          localRows = localRows.filter(row => !skipSet.has(row[entity.idField]))
+          if (localRows.length === 0) continue
+        }
+      }
 
       // 为每行记录添加 user_id
       const rowsWithUser = localRows.map(row => ({
@@ -132,11 +162,11 @@ async function cleanupExpiredDeletes(userId) {
   const db = getDb()
 
   // 支持 .env 中写表达式，如 "60*60*24*7" = 604800 秒
-  // 注意：格式必须与 nowStr() 一致（本地时间，无毫秒），否则字符串比较因时区差异而失效
-  const cleanupSeconds = eval(process.env.SYNC_CLEANUP_SECONDS) || 604800
+  // 注意：表达式只允许数字、空格和 * 号，不支持函数调用等任意代码
+  const cleanupSeconds = parseIntSafe(process.env.SYNC_CLEANUP_SECONDS, 604800)
   const cutoffDate = new Date(Date.now() - cleanupSeconds * 1000)
   const pad = (n) => String(n).padStart(2, '0')
-  const cutoff = `${cutoffDate.getFullYear()}-${pad(cutoffDate.getMonth() + 1)}-${pad(cutoffDate.getDate())}T${pad(cutoffDate.getHours())}:${pad(cutoffDate.getMinutes())}:${pad(cutoffDate.getSeconds())}`
+  const cutoff = `${cutoffDate.getUTCFullYear()}-${pad(cutoffDate.getUTCMonth() + 1)}-${pad(cutoffDate.getUTCDate())}T${pad(cutoffDate.getUTCHours())}:${pad(cutoffDate.getUTCMinutes())}:${pad(cutoffDate.getUTCSeconds())}`
 
   let cleanupCount = 0
   const errors = []
@@ -280,6 +310,7 @@ async function pullChanges(userId, lastSync) {
   let pulledCount = 0
   let conflictCount = 0
   const errors = []
+  const pulledIdsMap = new Map()
 
   for (const entity of ENTITIES) {
     try {
@@ -289,12 +320,17 @@ async function pullChanges(userId, lastSync) {
       const result = mergeIntoLocal(entity.table, entity.idField, remoteRows)
       pulledCount += result.pulled
       conflictCount += result.conflicts
+
+      // 收集本轮实际拉取的 ID，用于防止回显
+      if (result.pulledIds && result.pulledIds.length > 0) {
+        pulledIdsMap.set(entity.table, new Set(result.pulledIds))
+      }
     } catch (err) {
       errors.push(`[${entity.table}] 拉取异常: ${err.message}`)
     }
   }
 
-  return { ok: errors.length === 0, pulledCount, conflictCount, errors }
+  return { ok: errors.length === 0, pulledCount, conflictCount, errors, pulledIds: pulledIdsMap }
 }
 
 /**
@@ -327,6 +363,7 @@ function mergeIntoLocal(table, idField, remoteRows) {
   const db = getDb()
   let pulled = 0
   let conflicts = 0
+  const pulledIds = []
 
   const checkStmt = db.prepare(
     `SELECT update_time FROM ${table} WHERE ${idField} = ?`
@@ -338,7 +375,7 @@ function mergeIntoLocal(table, idField, remoteRows) {
     return localRow
   })
 
-  if (localRows.length === 0) return { pulled, conflicts }
+  if (localRows.length === 0) return { pulled, conflicts, pulledIds }
 
   const upsertStmt = buildUpsertStmt(db, table, localRows[0])
 
@@ -356,9 +393,10 @@ function mergeIntoLocal(table, idField, remoteRows) {
     // 本地不存在或本地版本更旧 → 覆盖/插入
     upsertStmt.run(Object.values(row))
     pulled++
+    pulledIds.push(row[idField])
   }
 
-  return { pulled, conflicts }
+  return { pulled, conflicts, pulledIds }
 }
 
 /**
@@ -418,8 +456,8 @@ async function doSync() {
     const pullResult = await pullChanges(userId, lastSync)
     console.log('[Sync] 拉取完成:', pullResult)
 
-    // === 3. PUSH 本地变更 ===
-    const pushResult = await pushChanges(userId, lastSync)
+    // === 3. PUSH 本地变更（跳过本轮拉取的记录，避免回显）===
+    const pushResult = await pushChanges(userId, lastSync, pullResult.pulledIds)
     console.log('[Sync] 推送完成:', pushResult)
 
     // === 4. 超期清理（本地 deleted=2 且过期 → 云端真删 + 写墓碑）===

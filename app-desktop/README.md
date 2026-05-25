@@ -181,6 +181,19 @@ npm run rebuild:sqlite
 </details>
 
 <details>
+<summary><b>macOS 提示“已损坏，无法打开”（DMG 安装后）</b></summary>
+
+由于应用未通过 Apple 公证（notarization），从 GitHub 下载的 DMG 会被 macOS Gatekeeper 拦截。
+运行以下命令解除隔离属性即可：
+
+```bash
+sudo xattr -cr /Applications/Woo.app
+```
+
+然后重新启动应用即可。
+</details>
+
+<details>
 <summary><b>想把数据库导出 / 清空 / 重置</b></summary>
 
 - 导出：复制 `%APPDATA%/无我笔记/woo.db`

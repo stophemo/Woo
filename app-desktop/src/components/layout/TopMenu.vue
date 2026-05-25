@@ -86,7 +86,7 @@ import {
 const themeStore = useThemeStore()
 const syncStore = useSyncStore()
 
-const isMac = navigator.platform.includes('Mac')
+import { isMac, shortcutDisplay } from '../../config/shortcutUtils'
 
 // macOS：窗口模式留 80px 给交通灯按钮（垂直居中由 titleBarOverlay 保证）
 // 全屏时交通灯隐藏，菜单项左对齐
@@ -100,10 +100,10 @@ function modKey(): string {
   return isMac ? '⌘' : 'Ctrl+'
 }
 
-// 递归处理菜单项中的快捷键（macOS 上将 Ctrl 替换为 ⌘）
+// 递归处理菜单项中的快捷键（使用 shortcutUtils 平台感知转换）
 function normalizeShortcut(shortcut?: string): string | undefined {
-  if (!shortcut || !isMac) return shortcut
-  return shortcut.replace(/Ctrl\+/g, '⌘')
+  if (!shortcut) return undefined
+  return shortcutDisplay(shortcut)
 }
 
 function normalizeItems(items: import('../../config/menus').MenuItem[]): import('../../config/menus').MenuItem[] {

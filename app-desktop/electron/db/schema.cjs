@@ -11,7 +11,7 @@ const SCHEMA_SQLS = [
     parent_id TEXT,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     deleted INTEGER NOT NULL DEFAULT 0
   )`,
@@ -25,7 +25,7 @@ const SCHEMA_SQLS = [
     content TEXT,
     branch_name TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     deleted INTEGER NOT NULL DEFAULT 0
   )`,
@@ -41,7 +41,7 @@ const SCHEMA_SQLS = [
     content_hash TEXT,
     change_type TEXT NOT NULL DEFAULT 'auto',
     operator_id TEXT,
-    create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     deleted INTEGER NOT NULL DEFAULT 0,
     UNIQUE(document_id, version_no)
@@ -87,7 +87,11 @@ function migrate(db) {
     `UPDATE note_document_version SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
     // 为旧版 note_document_version 补充 deleted 列
     `ALTER TABLE note_document_version ADD COLUMN deleted INTEGER`,
-    `UPDATE note_document_version SET deleted = 0 WHERE deleted IS NULL`
+    `UPDATE note_document_version SET deleted = 0 WHERE deleted IS NULL`,
+    // 旧格式 create_time 迁移（空格 → ISO T 格式）
+    `UPDATE note_folder SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
+    `UPDATE note_document SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
+    `UPDATE note_document_version SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`
   ]
   for (const sql of migrations) {
     try {

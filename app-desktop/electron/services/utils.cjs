@@ -12,13 +12,13 @@ function newId() {
 }
 
 /**
- * 返回当前时间字符串
- * 格式：YYYY-MM-DDTHH:MM:SS（与 schema 默认值和 migration 一致）
+ * 返回当前 UTC 时间字符串
+ * 格式：YYYY-MM-DDTHH:MM:SS（与 schema update_time 默认值一致）
  */
 function nowStr() {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
 }
 
 /**

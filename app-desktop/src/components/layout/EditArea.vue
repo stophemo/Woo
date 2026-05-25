@@ -74,6 +74,7 @@ import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import { useWorkspaceStore } from '../../stores/workspace'
+import { setHeadings, registerScrollHandler, type HeadingInfo } from '../../config/editorNavigation'
 
 const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
@@ -283,6 +284,7 @@ const editor = useEditor({
     const lineDelta = Math.abs((editorInstance.getJSON().content?.length || 0) - baselineLines)
     if (charDelta >= CHAR_DELTA || lineDelta >= LINE_DELTA) { void triggerCommit('auto'); return }
     clearIdleTimer(); idleTimer = window.setTimeout(() => void triggerCommit('auto'), IDLE_MS)
+    updateHeadings()
   },
   onBlur: () => { void triggerCommit('auto') }
 })
@@ -324,6 +326,7 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   isSettingContent = false
   resetBaselineFromEditor()
   loadSheet()
+  updateHeadings()
 }, { immediate: true })
 
 onMounted(() => {
@@ -331,23 +334,48 @@ onMounted(() => {
   loadSheet()
 })
 
-function scrollToHeading(headingIndex: number) {
+function updateHeadings() {
   const ed = editor.value
-  if (!ed) return
-  const doc = ed.state.doc
-  let hIdx = 0
-  doc.descendants((node, pos) => {
+  if (!ed) { setHeadings([]); return }
+  const list: HeadingInfo[] = []
+  ed.state.doc.descendants((node, pos) => {
     if (node.type.name === 'heading') {
-      if (hIdx === headingIndex) {
-        ed.commands.setTextSelection(pos)
-        ed.commands.scrollIntoView()
-        ed.commands.focus()
-        return false
-      }
-      hIdx++
+      list.push({
+        level: node.attrs.level,
+        text: node.textContent || `H${node.attrs.level}`,
+        pos
+      })
     }
   })
+  setHeadings(list)
 }
+
+function scrollToHeading(pos: number) {
+  const ed = editor.value
+  if (!ed) return
+
+  // Step 1: 选中标题位置 + 聚焦（保证编辑器状态一致）
+  ed.commands.focus()
+  ed.chain().setTextSelection(pos).scrollIntoView().run()
+
+  // Step 2: 用 coordsAtPos 精确计算滚动位置（每次必执行，不受 PM 状态影响）
+  // coordsAtPos 返回视口坐标，与 getBoundingClientRect 同一体系
+  try {
+    const coords = ed.view.coordsAtPos(pos)
+    if (!coords) return
+    const container = (ed.view.dom as HTMLElement).closest('.editor-body') as HTMLElement | null
+    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+    // diff = 标题在容器可见区域内的视觉偏移量
+    const diff = coords.top - containerRect.top
+    // 滚动容器使标题位于顶部 + 24px 间距
+    container.scrollTop = Math.round(container.scrollTop + diff - 24)
+  } catch {
+    // setTextSelection + scrollIntoView 链已兜底
+  }
+}
+
+registerScrollHandler(scrollToHeading)
 
 defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading })
 

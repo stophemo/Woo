@@ -105,21 +105,6 @@ function createWindow() {
       mainWindow.webContents.send('menu:action', 'leave-fullscreen')
     })
   }
-
-  // —— 窗口控制 IPC（与原版兼容）——
-  ipcMain.on('window:minimize', () => mainWindow.minimize())
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow.isMaximized()) mainWindow.unmaximize()
-    else mainWindow.maximize()
-  })
-  ipcMain.on('window:close', () => mainWindow.close())
-  ipcMain.handle('app:getVersion', () => app.getVersion())
-  ipcMain.on('open-external-link', (_e, url) => shell.openExternal(url))
-
-  // 窗口全屏控制（ESC 退出全屏、程序化控制）
-  ipcMain.handle('window:set-fullscreen', (_e, fullscreen) => {
-    mainWindow.setFullScreen(fullscreen)
-  })
 }
 
 /**
@@ -143,12 +128,12 @@ async function checkForUpdates() {
   let expectedName = ''
   if (process.platform === 'win32') {
     expectedName = isPortable()
-      ? `woo-local-${version}-win-x64.zip`
-      : `woo-local-${version}-win-x64-setup.exe`
+      ? `woo-desktop-${version}-win-x64.zip`
+      : `woo-desktop-${version}-win-x64-setup.exe`
   } else if (process.platform === 'darwin') {
-    expectedName = `woo-local-${version}-mac-x64.dmg`
+    expectedName = `woo-desktop-${version}-mac-x64.dmg`
   } else {
-    expectedName = `woo-local-${version}-linux-x64.AppImage`
+    expectedName = `woo-desktop-${version}-linux-x64.AppImage`
   }
 
   const asset = release.assets.find(a => a.name === expectedName)
@@ -321,6 +306,10 @@ app.whenReady().then(() => {
   // 注册业务 IPC
   ipcRegister.register()
 
+  // —— 全局 IPC（只注册一次，不依赖窗口）——
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.on('open-external-link', (_e, url) => shell.openExternal(url))
+
   // 注册检查更新 IPC（invoke 模式，渲染进程直接 await 结果）
   ipcMain.handle('update:check', async () => {
     try {
@@ -331,6 +320,17 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  // —— 窗口控制 IPC（依赖 mainWindow，但只注册一次）——
+  ipcMain.on('window:minimize', () => mainWindow.minimize())
+  ipcMain.on('window:maximize', () => {
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.on('window:close', () => mainWindow.close())
+  ipcMain.handle('window:set-fullscreen', (_e, fullscreen) => {
+    mainWindow.setFullScreen(fullscreen)
+  })
 
   // 启动同步引擎：设置状态回调 + 数据变更回调 + 启动定时器
   syncEngine.setOnStatusChange((status) => {

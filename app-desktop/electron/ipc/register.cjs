@@ -9,12 +9,28 @@ const versionService = require('../services/versionService.cjs')
 const authService = require('../services/authService.cjs')
 const syncEngine = require('../services/syncEngine.cjs')
 
+/**
+ * 截断日志中的 content 字段，只保留标题和摘要。
+ * 完整文稿内容在日志中无意义且刷屏。
+ */
+function sanitizeLog(val) {
+  if (Array.isArray(val)) return val.map(sanitizeLog)
+  if (val && typeof val === 'object') {
+    const copy = { ...val }
+    if (copy.content && typeof copy.content === 'string' && copy.content.length > 100) {
+      copy.content = `[content: ${copy.content.length} chars]`
+    }
+    return copy
+  }
+  return val
+}
+
 function wrap(fn) {
   return async (_event, ...args) => {
     try {
-      console.log('[IPC] called with args:', args)
+      console.log('[IPC] called with args:', sanitizeLog(args))
       const data = await fn(...args)
-      console.log('[IPC] success:', data)
+      console.log('[IPC] success:', sanitizeLog(data))
       return { ok: true, data }
     } catch (err) {
       console.error('[IPC] error:', err)

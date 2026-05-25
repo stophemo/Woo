@@ -20,7 +20,7 @@
       <LeftSidebar :is-open="leftSidebarOpen" />
       
       <!-- 中间缩略图列 -->
-      <ThumbnailColumn :is-open="thumbnailSidebarOpen" @outline-select="handleOutlineSelect" />
+      <ThumbnailColumn :is-open="thumbnailSidebarOpen" />
       
       <!-- 中央编辑区域 -->
       <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" />
@@ -67,6 +67,7 @@ import { useThemeStore } from './stores/theme'
 import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
 import { useSyncStore } from './stores/sync'
+import { isModKey } from './config/shortcutUtils'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
 useThemeStore()
@@ -76,11 +77,7 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 
 const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
-const editAreaRef = ref<ComponentPublicInstance & { scrollToHeading: (index: number) => void } | null>(null)
-
-function handleOutlineSelect(headingIndex: number) {
-  editAreaRef.value?.scrollToHeading(headingIndex)
-}
+const editAreaRef = ref<ComponentPublicInstance | null>(null)
 
 // 处理来自 macOS 原生菜单的动作
 function handleMenuAction(action: string) {
@@ -285,13 +282,7 @@ const cycleLeftPanels = () => {
   }
 }
 
-// 工具函数：在 macOS 上使用 Cmd，在其它平台使用 Ctrl
-function isModKey(event: KeyboardEvent): boolean {
-  if (navigator.platform.includes('Mac')) {
-    return event.metaKey
-  }
-  return event.ctrlKey
-}
+// handleKeyDown 中直接使用从 shortcutUtils 导入的 isModKey
 
 // 键盘快捷键处理函数
 const handleKeyDown = (event: KeyboardEvent) => {
@@ -305,7 +296,32 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 
   if (!isModKey(event)) return
+
   switch (event.key) {
+    // 应用级快捷键（跨平台：Mac ⌘ / Win Ctrl）
+    case 'n':
+    case 'N':
+      event.preventDefault()
+      workspaceStore.createNewDocument()
+      break
+    case ',':
+      event.preventDefault()
+      openSettings('file')
+      break
+    case 'f':
+    case 'F':
+      event.preventDefault()
+      // 触发编辑器的查找功能（Tiptap 内置）
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'f', code: 'KeyF', ctrlKey: true, bubbles: true
+      }))
+      break
+    case 'h':
+    case 'H':
+      event.preventDefault()
+      // 查找替换（Tiptap 查找替换扩展）
+      break
+    // 侧边栏切换
     case 'ArrowUp':
       event.preventDefault()
       toggleTopMenu()

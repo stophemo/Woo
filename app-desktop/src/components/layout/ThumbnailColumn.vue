@@ -132,14 +132,14 @@ import type { ContextMenuItem, ContextMenuPosition } from '../../types/folder'
 import IconDetail from '../icons/IconDetail.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
+import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 
 interface Props {
   isOpen: boolean
 }
 defineProps<Props>()
-const emit = defineEmits<{
-  (e: 'outline-select', headingIndex: number): void
-}>()
+
+const { headings } = useEditorNavigation()
 
 const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
@@ -164,25 +164,16 @@ const contextMenuDocId = ref<string | null>(null)
 const activeHeadingIndex = ref<number | null>(null)
 
 function handleOutlineClick(headingIndex: number) {
-  activeHeadingIndex.value = headingIndex
-  emit('outline-select', headingIndex)
+  navScrollToHeading(headingIndex)
 }
 
-// 当前文档大纲：从 currentDocument.content 中提取 h1~h6
-const outline = computed<{ level: number; text: string; headingIndex: number }[]>(() => {
-  const doc = store.currentDocument
-  if (!doc || !doc.content) return []
-  if (activeDocId.value && doc.id !== activeDocId.value) return []
-  const tmp = document.createElement('div')
-  tmp.innerHTML = doc.content
-  const headings = tmp.querySelectorAll('h1,h2,h3,h4,h5,h6')
-  const list: { level: number; text: string; headingIndex: number }[] = []
-  headings.forEach((h, idx) => {
-    const level = Number(h.tagName.slice(1)) || 1
-    const text = (h.textContent || '').trim()
-    if (text) list.push({ level, text, headingIndex: idx })
-  })
-  return list
+// 当前文档大纲：从 EditArea 的 headings 获取（唯一数据源）
+const outline = computed(() => {
+  return headings.value.map(h => ({
+    level: h.level,
+    text: h.text,
+    headingIndex: h.pos
+  }))
 })
 
 const isTrashView = computed(() => store.selectedFolderId === TRASH_FOLDER_ID)
@@ -310,6 +301,8 @@ async function handleMenuSelect(action: string) {
 // 当前文稿被删除则自动返回正面
 watch(() => store.currentFolderDocuments.map(d => d.id).join(','), () => {
   if (!flipped.value || !activeDocId.value) return
+  // loading 期间（bootstrap 重置列表）跳过，避免因临时空列表误翻转
+  if (store.loading) return
   const exists = store.currentFolderDocuments.some(d => d.id === activeDocId.value)
   if (!exists) {
     flipped.value = false
