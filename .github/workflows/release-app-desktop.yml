@@ -187,36 +187,36 @@ jobs:
             $previousTag = ""
           }
           
-          $notes = "## 更新内容`n`n"
+          $notes = "## $tag`n`n"
           
           if ($previousTag) {
             $commits = git log "$previousTag..$tag" --pretty=format:"%s" --no-merges
-            $featCommits = $commits | Where-Object { $_ -match "^(feat|feature):" }
-            $fixCommits = $commits | Where-Object { $_ -match "^fix:" }
-            $choreCommits = $commits | Where-Object { $_ -match "^(chore|refactor|style):" }
+            $featCommits = $commits | Where-Object { $_ -match "^(feat|feature)(\(.*?\))?:" }
+            $fixCommits = $commits | Where-Object { $_ -match "^fix(\(.*?\))?:" }
+            $choreCommits = $commits | Where-Object { $_ -match "^(chore|refactor|style|docs|test|perf)(\(.*?\))?:" }
             
             if ($featCommits) {
-              $notes += "### 新增功能`n"
+              $notes += "### 🚀 新增功能`n"
               $featCommits | ForEach-Object {
-                $msg = $_ -replace "^(feat|feature):\s*", ""
+                $msg = $_ -replace "^(feat|feature)(\(.*?\))?:\s*", ""
                 $notes += "- $msg`n"
               }
               $notes += "`n"
             }
             
             if ($fixCommits) {
-              $notes += "### 问题修复`n"
+              $notes += "### 🐛 问题修复`n"
               $fixCommits | ForEach-Object {
-                $msg = $_ -replace "^fix:\s*", ""
+                $msg = $_ -replace "^fix(\(.*?\))?:\s*", ""
                 $notes += "- $msg`n"
               }
               $notes += "`n"
             }
             
             if ($choreCommits) {
-              $notes += "### 其他改进`n"
+              $notes += "### 🔧 其他改进`n"
               $choreCommits | ForEach-Object {
-                $msg = $_ -replace "^(chore|refactor|style):\s*", ""
+                $msg = $_ -replace "^(chore|refactor|style|docs|test|perf)(\(.*?\))?:\s*", ""
                 $notes += "- $msg`n"
               }
               $notes += "`n"
