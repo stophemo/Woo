@@ -20,10 +20,10 @@
       <LeftSidebar :is-open="leftSidebarOpen" />
       
       <!-- 中间缩略图列 -->
-      <ThumbnailColumn :is-open="thumbnailSidebarOpen" />
+      <ThumbnailColumn :is-open="thumbnailSidebarOpen" @outline-select="handleOutlineSelect" />
       
       <!-- 中央编辑区域 -->
-      <EditArea :is-status-bar-open="statusBarOpen" />
+      <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" />
       
       <!-- 右侧AI对话区域 -->
       <RightSidebar :is-open="rightSidebarOpen" @open-settings="openSettings" />
@@ -76,6 +76,11 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 
 const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
+const editAreaRef = ref<ComponentPublicInstance & { scrollToHeading: (index: number) => void } | null>(null)
+
+function handleOutlineSelect(headingIndex: number) {
+  editAreaRef.value?.scrollToHeading(headingIndex)
+}
 
 // 处理来自 macOS 原生菜单的动作
 function handleMenuAction(action: string) {
@@ -206,10 +211,40 @@ function setupSyncToast() {
   }) as EventListener)
 }
 
-// 同步完成后刷新工作区数据
+// 同步完成后刷新工作区数据（保留选中状态）
 function setupSyncDataRefresh() {
-  window.addEventListener('sync-data-changed', () => {
-    workspaceStore.bootstrap()
+  window.addEventListener('sync-data-changed', async () => {
+    const prevFolderId = workspaceStore.selectedFolderId
+    const prevDocId = workspaceStore.selectedDocumentId
+
+    await workspaceStore.bootstrap()
+
+    // 恢复选中状态
+    if (prevFolderId) {
+      try {
+        if (prevFolderId === '__drafts__') {
+          await workspaceStore.openDraftBox()
+        } else if (prevFolderId === '__trash__') {
+          await workspaceStore.openTrashBox()
+        } else if (prevFolderId === '__all__') {
+          await workspaceStore.openAllDocuments()
+        } else if (prevFolderId === '__search__') {
+          return // 搜索状态无法恢复关键词，跳过
+        } else {
+          await workspaceStore.selectFolder(prevFolderId)
+        }
+
+        // 尝试恢复选中文稿
+        if (prevDocId) {
+          const docExists = workspaceStore.currentFolderDocuments.some(d => d.id === prevDocId)
+          if (docExists) {
+            await workspaceStore.selectDocument(prevDocId)
+          }
+        }
+      } catch {
+        // 目录/文稿可能在同步中被删除，静默忽略
+      }
+    }
   })
 }
 const toggleTopMenu = () => {

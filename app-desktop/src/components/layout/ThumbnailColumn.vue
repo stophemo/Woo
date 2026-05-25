@@ -100,8 +100,10 @@
               v-for="(o, idx) in outline"
               :key="idx"
               class="outline-item"
+              :class="{ 'outline-item-active': activeHeadingIndex === o.headingIndex }"
               :style="{ paddingLeft: (o.level - 1) * 12 + 4 + 'px' }"
               :title="o.text"
+              @click="handleOutlineClick(o.headingIndex)"
             >
               <span class="outline-level">H{{ o.level }}</span>
               <span class="outline-text">{{ o.text }}</span>
@@ -135,6 +137,9 @@ interface Props {
   isOpen: boolean
 }
 defineProps<Props>()
+const emit = defineEmits<{
+  (e: 'outline-select', headingIndex: number): void
+}>()
 
 const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
@@ -156,20 +161,26 @@ const showContextMenu = ref(false)
 const contextMenuPosition = ref<ContextMenuPosition>({ x: 0, y: 0 })
 const contextMenuItems = ref<ContextMenuItem[]>([])
 const contextMenuDocId = ref<string | null>(null)
+const activeHeadingIndex = ref<number | null>(null)
+
+function handleOutlineClick(headingIndex: number) {
+  activeHeadingIndex.value = headingIndex
+  emit('outline-select', headingIndex)
+}
 
 // 当前文档大纲：从 currentDocument.content 中提取 h1~h6
-const outline = computed<{ level: number; text: string }[]>(() => {
+const outline = computed<{ level: number; text: string; headingIndex: number }[]>(() => {
   const doc = store.currentDocument
   if (!doc || !doc.content) return []
   if (activeDocId.value && doc.id !== activeDocId.value) return []
   const tmp = document.createElement('div')
   tmp.innerHTML = doc.content
   const headings = tmp.querySelectorAll('h1,h2,h3,h4,h5,h6')
-  const list: { level: number; text: string }[] = []
-  headings.forEach(h => {
+  const list: { level: number; text: string; headingIndex: number }[] = []
+  headings.forEach((h, idx) => {
     const level = Number(h.tagName.slice(1)) || 1
     const text = (h.textContent || '').trim()
-    if (text) list.push({ level, text })
+    if (text) list.push({ level, text, headingIndex: idx })
   })
   return list
 })
@@ -773,10 +784,21 @@ function changeTypeLabel(t: string): string {
   padding: 3px 4px;
   font-size: 12px;
   color: var(--text-primary);
-  cursor: default;
+  cursor: pointer;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.outline-item:hover {
+  background-color: var(--bg-hover);
+}
+
+.outline-item-active,
+.outline-item:active {
+  background-color: var(--bg-active);
 }
 
 .outline-level {

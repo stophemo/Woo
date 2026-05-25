@@ -331,7 +331,25 @@ onMounted(() => {
   loadSheet()
 })
 
-defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom })
+function scrollToHeading(headingIndex: number) {
+  const ed = editor.value
+  if (!ed) return
+  const doc = ed.state.doc
+  let hIdx = 0
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      if (hIdx === headingIndex) {
+        ed.commands.setTextSelection(pos)
+        ed.commands.scrollIntoView()
+        ed.commands.focus()
+        return false
+      }
+      hIdx++
+    }
+  })
+}
+
+defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading })
 
 onBeforeUnmount(() => {
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
