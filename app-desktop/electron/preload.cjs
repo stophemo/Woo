@@ -18,7 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 移除原生菜单监听
   removeMenuActionListener: () => {
     ipcRenderer.removeAllListeners('menu:action')
-  }
+  },
+
+  // 检查更新：返回 { hasUpdate, version?, downloadUrl?, error? }
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
 })
 
 // 业务 IPC 调用入口：统一 invoke，返回 { ok, data | message }

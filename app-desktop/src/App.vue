@@ -46,11 +46,15 @@
         {{ syncToast.message }}
       </div>
     </transition>
+
+   <!-- 自动更新通知 -->
+    <UpdateNotification ref="updateNotificationRef" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import TopMenu from './components/layout/TopMenu.vue'
 import LeftSidebar from './components/layout/LeftSidebar.vue'
 import ThumbnailColumn from './components/layout/ThumbnailColumn.vue'
@@ -58,6 +62,7 @@ import EditArea from './components/layout/EditArea.vue'
 import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
 import LoginDialog from './components/layout/LoginDialog.vue'
+import UpdateNotification from './components/ui/UpdateNotification.vue'
 import { useThemeStore } from './stores/theme'
 import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
@@ -69,6 +74,8 @@ useThemeStore()
 const workspaceStore = useWorkspaceStore()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
+
+const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
 
 // 处理来自 macOS 原生菜单的动作
 function handleMenuAction(action: string) {
@@ -111,6 +118,9 @@ function handleMenuAction(action: string) {
       break
     case 'theme':
       useThemeStore().toggleTheme()
+      break
+    case 'check-update':
+      updateNotificationRef.value?.check()
       break
     case 'docs':
       break

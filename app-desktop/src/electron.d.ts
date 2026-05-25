@@ -8,6 +8,8 @@ declare interface Window {
     getAppVersion: () => Promise<string>;
     onMenuAction: (callback: (action: string) => void) => void;
     removeMenuActionListener: () => void;
+    // 检查更新：返回 { hasUpdate, version?, downloadUrl?, error? }
+    checkForUpdates: () => Promise<{ hasUpdate: boolean; version?: string; downloadUrl?: string; error?: string }>;
   };
   // 本地版业务 IPC 入口：由 preload.cjs 通过 contextBridge 暴露
   woo: {

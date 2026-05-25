@@ -8,22 +8,28 @@ const { app, BrowserWindow, ipcMain, shell, nativeImage, Menu } = require('elect
 const path = require('path')
 const fs = require('fs')
 
-// 获取应用根目录（兼容开发和打包环境）
-const getAppRoot = () => {
-  // app.isPackaged = true 时为打包环境，false 为开发环境
-  if (app.isPackaged) {
-    // 打包环境：使用 exe 所在目录
-    return path.dirname(process.execPath)
-  }
-  // 开发环境：返回项目根目录
-  return path.join(__dirname, '..')
-}
-
-const APP_ROOT = getAppRoot()
-
 const { getDb, closeDb } = require('./db/index.cjs')
 const ipcRegister = require('./ipc/register.cjs')
 const syncEngine = require('./services/syncEngine.cjs')
+
+/**
+ * 判断是否为便携模式（ZIP / portable 绿色版）。
+ * 判断依据：exe 所在目录是否可写。
+ *   - 可写 → portable 模式（数据放 exe 同级 userData/）
+ *   - 不可写 → NSIS 安装模式（数据放标准 app.getPath('userData')，如 %APPDATA%）
+ */
+function isPortable() {
+  if (!app.isPackaged) return true // 开发时始终便携
+  try {
+    const exeDir = path.dirname(process.execPath)
+    const testFile = path.join(exeDir, `.write-test-${Date.now()}`)
+    fs.writeFileSync(testFile, '')
+    fs.unlinkSync(testFile)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function resolveAppIcon() {
   const candidates = [
@@ -116,6 +122,43 @@ function createWindow() {
   })
 }
 
+/**
+ * 通过 GitHub API 检查最新版本，返回匹配当前平台的下载链接。
+ * 渲染进程通过 invoke('update:check') 调用，结果直接返回。
+ */
+async function checkForUpdates() {
+  const res = await fetch('https://api.github.com/repos/stophemo/Woo/releases/latest')
+  if (!res.ok) throw new Error(`GitHub API 请求失败 (${res.status})`)
+  const release = await res.json()
+  const latestVer = release.tag_name.replace(/^v/, '')
+  const currentVer = app.getVersion()
+
+  // 版本相同或更旧
+  if (latestVer === currentVer) {
+    return { hasUpdate: false }
+  }
+
+  // 根据平台和安装模式匹配下载链接
+  const version = latestVer
+  let expectedName = ''
+  if (process.platform === 'win32') {
+    expectedName = isPortable()
+      ? `woo-local-${version}-win-x64.zip`
+      : `woo-local-${version}-win-x64-setup.exe`
+  } else if (process.platform === 'darwin') {
+    expectedName = `woo-local-${version}-mac-x64.dmg`
+  } else {
+    expectedName = `woo-local-${version}-linux-x64.AppImage`
+  }
+
+  const asset = release.assets.find(a => a.name === expectedName)
+  const downloadUrl = asset
+    ? asset.browser_download_url
+    : release.html_url  // 回退到 Release 页面
+
+  return { hasUpdate: true, version, downloadUrl }
+}
+
 // macOS 原生菜单：窗口聚焦时自动显示在系统菜单栏（不仅是全屏模式）
 function buildMenu() {
   if (process.platform !== 'darwin') return
@@ -204,19 +247,89 @@ function buildMenu() {
   Menu.setApplicationMenu(menu)
 }
 
+/**
+ * 迁移旧版数据：将 v0.3.x 时期 exe 同级 userData/ 下的数据库
+ * 复制到当前 userData 路径。
+ *
+ * 此函数用于 NSIS 安装版从旧版升级到新版时的数据迁移：
+ *   旧路径: C:\Program Files\Woo\userData\woo.db
+ *   新路径: %APPDATA%\Woo\woo.db
+ *
+ * 便携版（ZIP/portable）两者路径相同，会自动跳过。
+ */
+function migrateOldUserData() {
+  if (!app.isPackaged) return
+
+  const oldDir = path.join(path.dirname(process.execPath), 'userData')
+  const newDir = app.getPath('userData')
+  if (oldDir === newDir) return
+
+  const oldDb = path.join(oldDir, 'woo.db')
+  const newDb = path.join(newDir, 'woo.db')
+
+  // 只有旧路径有数据且新路径还没有时，才执行迁移
+  if (!fs.existsSync(oldDb) || fs.existsSync(newDb)) return
+
+  try {
+    if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true })
+    fs.copyFileSync(oldDb, newDb)
+    // 同时迁移 WAL/SHM 文件
+    for (const ext of ['-wal', '-shm']) {
+      const src = oldDb + ext
+      if (fs.existsSync(src)) fs.copyFileSync(src, newDb + ext)
+    }
+    console.log('[Migrate] 旧版数据已迁移:', oldDb, '→', newDb)
+
+    // 迁移用户专属数据库（woo-{用户名}.db）
+    const oldDirList = fs.readdirSync(oldDir)
+    for (const file of oldDirList) {
+      if (file.startsWith('woo-') && file.endsWith('.db')) {
+        const src = path.join(oldDir, file)
+        const dst = path.join(newDir, file)
+        if (!fs.existsSync(dst)) {
+          fs.copyFileSync(src, dst)
+          for (const ext of ['-wal', '-shm']) {
+            const walSrc = src + ext
+            if (fs.existsSync(walSrc)) fs.copyFileSync(walSrc, dst + ext)
+          }
+          console.log('[Migrate] 用户数据库已迁移:', file)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Migrate] 数据迁移失败:', err)
+  }
+}
+
 app.whenReady().then(() => {
   // 构建原生菜单（macOS 系统菜单栏集成，窗口聚焦即生效）
   buildMenu()
 
-  // 设置自定义 userData 目录（打包后使用 exe 同级目录，开发环境使用项目根目录）
-  const customUserData = path.join(APP_ROOT, 'userData')
-  if (!fs.existsSync(customUserData)) fs.mkdirSync(customUserData, { recursive: true })
-  app.setPath('userData', customUserData)
+  // 便携模式（ZIP/portable）：数据放 exe 同级 userData/
+  // NSIS 安装模式：使用默认 userData（%APPDATA%/Woo）
+  if (isPortable()) {
+    const portableData = path.join(path.dirname(process.execPath), 'userData')
+    if (!fs.existsSync(portableData)) fs.mkdirSync(portableData, { recursive: true })
+    app.setPath('userData', portableData)
+  }
 
-  // 初始化数据库（会在 userData 下创建 woo.db）
+  // 迁移旧版数据（v0.3.x 及以前，userData 在 exe 同级目录下）
+  migrateOldUserData()
+
+  // 初始化数据库（会在 app.getPath('userData') 下创建 woo.db）
   getDb()
   // 注册业务 IPC
   ipcRegister.register()
+
+  // 注册检查更新 IPC（invoke 模式，渲染进程直接 await 结果）
+  ipcMain.handle('update:check', async () => {
+    try {
+      return await checkForUpdates()
+    } catch (err) {
+      return { hasUpdate: false, error: err.message }
+    }
+  })
+
   createWindow()
 
   // 启动同步引擎：设置状态回调 + 数据变更回调 + 启动定时器
