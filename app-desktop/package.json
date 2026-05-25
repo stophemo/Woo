@@ -1,5 +1,5 @@
 {
-  "name": "woo-local",
+  "name": "woo-desktop",
   "private": true,
   "version": "0.4.1",
   "type": "module",
@@ -19,7 +19,7 @@
   "build": {
     "appId": "com.nonegonotes.woo.local",
     "productName": "Woo",
-    "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
+    "artifactName": "woo-desktop-${version}-${os}-${arch}.${ext}",
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
     ],
@@ -56,7 +56,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "woo-local-${version}-${os}-${arch}-setup.${ext}",
+      "artifactName": "woo-desktop-${version}-${os}-${arch}-setup.${ext}",
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
@@ -66,11 +66,11 @@
       "shortcutName": "Woo"
     },
     "portable": {
-      "artifactName": "woo-local-${version}-${os}-${arch}-portable.${ext}"
+      "artifactName": "woo-desktop-${version}-${os}-${arch}-portable.${ext}"
     },
     "mac": {
       "icon": "build/icon.png",
-      "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
+      "artifactName": "woo-desktop-${version}-${os}-${arch}.${ext}",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "target": [
@@ -80,7 +80,7 @@
     },
     "linux": {
       "icon": "build/icon.png",
-      "artifactName": "woo-local-${version}-${os}-${arch}.${ext}",
+      "artifactName": "woo-desktop-${version}-${os}-${arch}.${ext}",
       "target": [
         "AppImage",
         "deb"

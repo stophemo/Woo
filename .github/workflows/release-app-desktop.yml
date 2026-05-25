@@ -5,6 +5,7 @@ on:
     tags:
       - "v*"
       - "app-desktop-v*"
+      - "Woo-desktop-v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -241,7 +242,7 @@ jobs:
         uses: softprops/action-gh-release@v2.6.2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Woo Local ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
           body_path: ${{ steps.release_notes.outputs.path }}
           draft: ${{ steps.meta.outputs.draft == 'true' }}
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
