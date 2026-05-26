@@ -6,4 +6,5 @@ export interface Document {
   folderName?: string       // 目录名称（仅全部视图时填充）
   createdAt: string        // ISO 时间串
   updatedAt: string        // ISO 时间串
+  isLocked?: boolean       // 是否被锁定
 }

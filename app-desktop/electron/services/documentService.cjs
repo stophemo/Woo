@@ -16,7 +16,8 @@ function toDto(row) {
     branchName: row.branch_name || undefined,
     sortOrder: row.sort_order,
     createTime: row.create_time,
-    updateTime: row.update_time
+    updateTime: row.update_time,
+    isLocked: row.is_locked === 1
   }
 }
 
@@ -26,7 +27,13 @@ function listByFolder(folderId) {
                            LEFT JOIN note_folder f ON d.folder_id = f.id
                            WHERE d.folder_id = ? AND d.deleted = 0
                            ORDER BY d.update_time DESC`).all(folderId)
-  return rows.map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
+  const lockService = require('./lockService.cjs')
+  return rows.map(r => {
+    const dto = { ...toDto(r), folderName: r.folder_name || '' }
+    // 使用有效锁定状态（文档自身或祖先目录锁定均视为锁定）
+    dto.isLocked = lockService.isDocumentEffectivelyLocked(r.id)
+    return dto
+  })
 }
 
 function listAll() {
@@ -35,7 +42,9 @@ function listAll() {
                            LEFT JOIN note_folder f ON d.folder_id = f.id
                            WHERE d.deleted = 0
                            ORDER BY d.update_time DESC`).all()
-  return rows.map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
+  const lockService = require('./lockService.cjs')
+  return rows.filter(r => !lockService.isDocumentHidden(r.id))
+             .map(r => ({ ...toDto(r), folderName: r.folder_name || '' }))
 }
 
 function listOrphans() {
@@ -46,7 +55,8 @@ function listOrphans() {
                              NOT EXISTS (SELECT 1 FROM note_folder f WHERE f.id = d.folder_id AND f.deleted = 0)
                            )
                            ORDER BY d.update_time DESC`).all()
-  return rows.map(toDto)
+  const lockService = require('./lockService.cjs')
+  return rows.filter(r => !lockService.isDocumentHidden(r.id)).map(toDto)
 }
 
 function listTrash() {
@@ -65,7 +75,8 @@ function search(keyword) {
   const rows = db.prepare(`SELECT * FROM note_document
                            WHERE deleted = 0 AND (title LIKE ? OR content LIKE ?)
                            ORDER BY update_time DESC`).all(like, like)
-  return rows.map(toDto)
+  const lockService = require('./lockService.cjs')
+  return rows.filter(r => !lockService.isDocumentHidden(r.id)).map(toDto)
 }
 
 function getById(documentId) {

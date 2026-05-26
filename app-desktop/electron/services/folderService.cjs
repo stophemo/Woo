@@ -6,7 +6,7 @@ const { newId, nowStr } = require('./utils.cjs')
 
 function getFolderTree() {
   const db = getDb()
-  const rows = db.prepare(`SELECT id, parent_id AS parentId, name, sort_order AS sortOrder
+  const rows = db.prepare(`SELECT id, parent_id AS parentId, name, sort_order AS sortOrder, is_locked AS isLocked
                            FROM note_folder WHERE deleted = 0
                            ORDER BY sort_order ASC, create_time ASC`).all()
   const byParent = new Map()
@@ -22,6 +22,7 @@ function getFolderTree() {
       parentId: r.parentId || null,
       name: r.name,
       sortOrder: r.sortOrder,
+      isLocked: r.isLocked === 1,
       children: build(r.id)
     }))
   }

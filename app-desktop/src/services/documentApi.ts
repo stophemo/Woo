@@ -14,6 +14,7 @@ export interface DocumentDTO {
   sortOrder: number
   createTime: string
   updateTime: string
+  isLocked: boolean
 }
 
 export interface CreateDocumentPayload {

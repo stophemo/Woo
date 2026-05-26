@@ -4,6 +4,7 @@ export interface FolderNode {
   children: FolderNode[]
   parentId: string | null
   isExpanded?: boolean
+  isLocked?: boolean
 }
 
 export interface ContextMenuPosition {

@@ -3,28 +3,39 @@
     <!-- 正面：文稿缩略图列表 -->
     <div class="face face-front">
       <template v-if="store.currentFolderDocuments.length > 0">
-        <div
-          v-for="doc in store.currentFolderDocuments"
-          :key="doc.id"
-          class="note-item"
-          :class="{ 'active': store.selectedDocumentId === doc.id }"
-          @click="handleSelectDocument(doc.id)"
-          @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
-        >
-          <h4>{{ firstLineOf(doc.content) || '新文稿' }}</h4>
-          <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
-          <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' || doc.folderName === '未分类' }">{{ doc.folderName }}</span>
-          <span v-if="isTrashView && isDraftId(doc.id)" class="source-badge is-draft">草稿箱</span>
-          <button
-            class="flip-btn"
-            title="查看详情"
-            @click.stop="handleFlip(doc.id)"
+        <div class="doc-list-wrap">
+          <div
+            v-for="doc in store.currentFolderDocuments"
+            :key="doc.id"
+            class="note-item"
+            :class="{ 'active': store.selectedDocumentId === doc.id }"
+            @click="handleSelectDocument(doc.id)"
+            @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
           >
-            <IconDetail />
-          </button>
-          <div v-if="isTrashView" class="trash-actions">
-            <button class="action-btn" title="恢复文稿" @click.stop="handleRestoreDocument(doc.id)">恢复</button>
-            <button class="action-btn danger" title="彻底删除文稿" @click.stop="handleHardDeleteDocument(doc.id)">删除</button>
+            <h4>
+              <template v-if="doc.isLocked">
+                <IconLock class="doc-lock-icon" />
+                <span class="locked-label">已锁定</span>
+              </template>
+              <template v-else>
+                {{ firstLineOf(doc.content) || '新文稿' }}
+              </template>
+            </h4>
+            <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
+            <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' || doc.folderName === '未分类' }">{{ doc.folderName }}</span>
+            <span v-if="isTrashView && isDraftId(doc.id)" class="source-badge is-draft">草稿箱</span>
+            <button
+              v-if="!doc.isLocked"
+              class="flip-btn"
+              title="查看详情"
+              @click.stop="handleFlip(doc.id)"
+            >
+              <IconDetail />
+            </button>
+            <div v-if="isTrashView" class="trash-actions">
+              <button class="action-btn" title="恢复文稿" @click.stop="handleRestoreDocument(doc.id)">恢复</button>
+              <button class="action-btn danger" title="彻底删除文稿" @click.stop="handleHardDeleteDocument(doc.id)">删除</button>
+            </div>
           </div>
         </div>
       </template>
@@ -49,66 +60,74 @@
 
       <!-- 上 1/3：版本历史 -->
       <section class="panel versions-panel" :class="{ 'panel-collapsed': versionsCollapsed }">
-        <header class="panel-header">
+        <header class="panel-header" @click="versionsCollapsed = !versionsCollapsed">
           <h5 class="panel-title">版本历史</h5>
           <button
             class="panel-toggle"
             :title="versionsCollapsed ? '展开' : '收起'"
-            @click="versionsCollapsed = !versionsCollapsed"
+            @click.stop="versionsCollapsed = !versionsCollapsed"
           >
-            <IconChevron :direction="versionsCollapsed ? 'down' : 'up'" />
+            <span class="panel-chevron-wrap" :class="{ 'is-collapsed': versionsCollapsed }">
+              <IconChevron direction="up" />
+            </span>
           </button>
         </header>
-        <div class="panel-body">
-          <div v-if="versionsLoading" class="panel-loading">加载中…</div>
-          <div v-else-if="versionsError" class="panel-error">{{ versionsError }}</div>
-          <div v-else-if="versions.length === 0" class="panel-empty">暂无历史版本</div>
-          <TransitionGroup v-else name="version" tag="ul" class="version-list">
-            <li
-              v-for="v in versions"
-              :key="v.id"
-              class="version-item"
-              @click="handleRestore(v.versionNo)"
-            >
-              <div class="version-row1">
-                <span class="version-no">v{{ v.versionNo }}</span>
-                <span class="version-type" :class="'type-' + v.changeType">{{ changeTypeLabel(v.changeType) }}</span>
-                <span class="version-time">{{ formatUpdatedAt(v.createTime) }}</span>
-              </div>
-              <div class="version-preview">{{ v.preview || '（空白）' }}</div>
-            </li>
-          </TransitionGroup>
+        <div class="panel-collapse-wrap">
+          <div class="panel-body">
+            <div v-if="versionsLoading" class="panel-loading">加载中…</div>
+            <div v-else-if="versionsError" class="panel-error">{{ versionsError }}</div>
+            <div v-else-if="versions.length === 0" class="panel-empty">暂无历史版本</div>
+            <TransitionGroup v-else name="version" tag="ul" class="version-list">
+              <li
+                v-for="v in versions"
+                :key="v.id"
+                class="version-item"
+                @click="handleRestore(v.versionNo)"
+              >
+                <div class="version-row1">
+                  <span class="version-no">v{{ v.versionNo }}</span>
+                  <span class="version-type" :class="'type-' + v.changeType">{{ changeTypeLabel(v.changeType) }}</span>
+                  <span class="version-time">{{ formatUpdatedAt(v.createTime) }}</span>
+                </div>
+                <div class="version-preview">{{ v.preview || '（空白）' }}</div>
+              </li>
+            </TransitionGroup>
+          </div>
         </div>
       </section>
 
       <!-- 下 2/3：文稿目录（大纲） -->
       <section class="panel outline-panel" :class="{ 'panel-collapsed': outlineCollapsed }">
-        <header class="panel-header">
+        <header class="panel-header" @click="outlineCollapsed = !outlineCollapsed">
           <h5 class="panel-title">文稿目录</h5>
           <button
             class="panel-toggle"
             :title="outlineCollapsed ? '展开' : '收起'"
-            @click="outlineCollapsed = !outlineCollapsed"
+            @click.stop="outlineCollapsed = !outlineCollapsed"
           >
-            <IconChevron :direction="outlineCollapsed ? 'down' : 'up'" />
+            <span class="panel-chevron-wrap" :class="{ 'is-collapsed': outlineCollapsed }">
+              <IconChevron direction="up" />
+            </span>
           </button>
         </header>
-        <div class="panel-body">
-          <div v-if="outline.length === 0" class="panel-empty">当前文稿没有标题，无法生成目录</div>
-          <ul v-else class="outline-list">
-            <li
-              v-for="(o, idx) in outline"
-              :key="idx"
-              class="outline-item"
-              :class="{ 'outline-item-active': activeHeadingIndex === o.headingIndex }"
-              :style="{ paddingLeft: (o.level - 1) * 12 + 4 + 'px' }"
-              :title="o.text"
-              @click="handleOutlineClick(o.headingIndex)"
-            >
-              <span class="outline-level">H{{ o.level }}</span>
-              <span class="outline-text">{{ o.text }}</span>
-            </li>
-          </ul>
+        <div class="panel-collapse-wrap">
+          <div class="panel-body">
+            <div v-if="outline.length === 0" class="panel-empty">当前文稿没有标题，无法生成目录</div>
+            <ul v-else class="outline-list">
+              <li
+                v-for="(o, idx) in outline"
+                :key="idx"
+                class="outline-item"
+                :class="{ 'outline-item-active': activeHeadingIndex === o.headingIndex }"
+                :style="{ paddingLeft: (o.level - 1) * 12 + 4 + 'px' }"
+                :title="o.text"
+                @click="handleOutlineClick(o.headingIndex)"
+              >
+                <span class="outline-level">H{{ o.level }}</span>
+                <span class="outline-text">{{ o.text }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
     </div>
@@ -120,28 +139,41 @@
       @select="handleMenuSelect"
       @close="closeContextMenu"
     />
+
+    <LockPasswordDialog
+      v-if="showLockDialog"
+      :mode="lockDialogMode"
+      @confirm="handleLockConfirm"
+      @cancel="handleLockCancel"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useWorkspaceStore } from '../../stores/workspace'
+import { useLockStore } from '../../stores/lock'
 import * as versionApi from '../../services/versionApi'
 import type { DocumentVersionSummary } from '../../services/versionApi'
 import type { ContextMenuItem, ContextMenuPosition } from '../../types/folder'
+import type { Document } from '../../types/document'
 import IconDetail from '../icons/IconDetail.vue'
 import IconChevron from '../icons/IconChevron.vue'
+import IconLock from '../icons/IconLock.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
+import LockPasswordDialog from './LockPasswordDialog.vue'
 
 interface Props {
   isOpen: boolean
+  activeHeading?: number | null
 }
 defineProps<Props>()
 
 const { headings } = useEditorNavigation()
 
 const store = useWorkspaceStore()
+const lockStore = useLockStore()
 const TRASH_FOLDER_ID = '__trash__'
 const SEARCH_FOLDER_ID = '__search__'
 const DRAFT_FOLDER_ID = '__drafts__'
@@ -162,6 +194,11 @@ const contextMenuPosition = ref<ContextMenuPosition>({ x: 0, y: 0 })
 const contextMenuItems = ref<ContextMenuItem[]>([])
 const contextMenuDocId = ref<string | null>(null)
 const activeHeadingIndex = ref<number | null>(null)
+
+// 加锁弹窗状态
+const showLockDialog = ref(false)
+const lockDialogMode = ref<'set' | 'verify'>('verify')
+const pendingDocAction = ref<{ type: 'select' | 'toggleLock'; docId: string; doc?: Document } | null>(null)
 
 function handleOutlineClick(headingIndex: number) {
   navScrollToHeading(headingIndex)
@@ -265,9 +302,20 @@ async function handleHardDeleteDocument(docId: string) {
 function handleDocContextMenu(event: MouseEvent, docId: string) {
   contextMenuDocId.value = docId
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
-  contextMenuItems.value = isTrashView.value
-    ? [{ label: '清空废纸篓', action: 'emptyTrash' }, { label: '彻底删除', action: 'hardDelete' }]
-    : [{ label: '删除', action: 'delete' }]
+  const doc = store.currentFolderDocuments.find(d => d.id === docId)
+  if (isTrashView.value) {
+    contextMenuItems.value = [
+      { label: '清空废纸篓', action: 'emptyTrash' },
+      { label: '彻底删除', action: 'hardDelete' }
+    ]
+  } else {
+    const items: ContextMenuItem[] = []
+    if (doc?.isLocked !== undefined) {
+      items.push({ label: doc.isLocked ? '解锁' : '加锁', action: 'toggleLock' })
+    }
+    items.push({ label: '删除', action: 'delete' })
+    contextMenuItems.value = items
+  }
   showContextMenu.value = true
 }
 
@@ -284,9 +332,13 @@ async function handleMenuSelect(action: string) {
   }
   if (action === 'delete') {
     await store.deleteDocument(docId)
+    closeContextMenu()
+    return
   }
   if (action === 'hardDelete') {
     await handleHardDeleteDocument(docId)
+    closeContextMenu()
+    return
   }
   if (action === 'emptyTrash') {
     if (!window.confirm('确认清空废纸篓？该操作不可恢复。')) {
@@ -294,8 +346,55 @@ async function handleMenuSelect(action: string) {
       return
     }
     await store.emptyTrash()
+    closeContextMenu()
+    return
+  }
+  if (action === 'toggleLock') {
+    const doc = store.currentFolderDocuments.find(d => d.id === docId)
+    if (doc) {
+      if (lockStore.sessionVerified) {
+        await performDocToggleLock(doc)
+      } else {
+        pendingDocAction.value = { type: 'toggleLock', docId, doc }
+        lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+        showLockDialog.value = true
+      }
+    }
+    closeContextMenu()
+    return
   }
   closeContextMenu()
+}
+
+// ============ 文档加锁/解锁 ============
+async function handleLockConfirm(_password: string) {
+  showLockDialog.value = false
+  const action = pendingDocAction.value
+  pendingDocAction.value = null
+  if (!action) return
+  if (action.type === 'select') {
+    await store.selectDocument(action.docId)
+  } else if (action.type === 'toggleLock' && action.doc) {
+    await performDocToggleLock(action.doc)
+  }
+}
+
+function handleLockCancel() {
+  showLockDialog.value = false
+  pendingDocAction.value = null
+}
+
+async function performDocToggleLock(doc: Document) {
+  try {
+    if (doc.isLocked) {
+      await lockStore.unlockDocument(doc.id)
+    } else {
+      await lockStore.lockDocument(doc.id)
+    }
+    await store.syncRefresh()
+  } catch (e: any) {
+    console.error('Lock operation failed:', e)
+  }
 }
 
 // 当前文稿被删除则自动返回正面
@@ -333,7 +432,19 @@ watch(flipped, (v) => {
   }
 })
 
+// 编辑器滚动时同步大纲高亮（仅在背面展开时）
+watch(() => props.activeHeading, (idx) => {
+  activeHeadingIndex.value = idx ?? null
+})
+
 const handleSelectDocument = (docId: string) => {
+  const doc = store.currentFolderDocuments.find(d => d.id === docId)
+  if (doc?.isLocked && !lockStore.sessionVerified) {
+    pendingDocAction.value = { type: 'select', docId }
+    lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+    showLockDialog.value = true
+    return
+  }
   void store.selectDocument(docId)
 }
 
@@ -382,13 +493,13 @@ function changeTypeLabel(t: string): string {
   opacity: 0;
 }
 
-/* ========== 正反两面：横向滑入 + 淡入 ========== */
+/* ========== 正反两面：横向滑入 + 淡入（Apple 风格） ========== */
 .face {
   position: absolute;
   inset: 0;
   overflow-y: auto;
   box-sizing: border-box;
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  transition: transform 0.5s cubic-bezier(0.42, 0, 0.28, 1), opacity 0.4s ease;
 }
 
 .face-front {
@@ -398,9 +509,8 @@ function changeTypeLabel(t: string): string {
 }
 
 .face-back {
-  /* 网格布局固定比例：返回行(auto) + 版本历史(1fr) + 文稿目录(2fr) */
-  display: grid;
-  grid-template-rows: auto 1fr 2fr;
+  display: flex;
+  flex-direction: column;
   transform: translateX(24px);
   opacity: 0;
   pointer-events: none;
@@ -428,17 +538,26 @@ function changeTypeLabel(t: string): string {
   border-radius: 6px;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: all 0.2s;
+  transition:
+    transform 0.3s cubic-bezier(0.42, 0, 0.28, 1),
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    background-color 0.25s ease;
 }
 
 .note-item:hover {
   border-color: var(--border-primary);
   box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
 }
 
 .note-item.active {
   border-color: var(--accent);
   box-shadow: var(--shadow-card-hover);
+}
+
+.note-item:active {
+  transform: scale(0.985);
 }
 
 .note-item h4 {
@@ -449,6 +568,21 @@ function changeTypeLabel(t: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doc-lock-icon {
+  flex-shrink: 0;
+  color: var(--accent, #409eff);
+  opacity: 0.85;
+}
+
+.locked-label {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-style: italic;
 }
 
 .note-item p {
@@ -574,32 +708,97 @@ function changeTypeLabel(t: string): string {
 .panel {
   display: flex;
   flex-direction: column;
-  min-height: 0; /* 关键：让内部滚动生效 */
+  min-height: 0;
   overflow: hidden;
   box-sizing: border-box;
 }
 
+/*
+ * Apple 风格缓动曲线：cubic-bezier(0.42, 0, 0.28, 1)
+ * 起止平滑、无突兀感，配合 0.5s 时长营造流畅的物理感
+ *
+ * 折叠/展开使用 grid-template-rows 过渡，
+ * 让高度变化跟随内容实际尺寸而非固定的 max-height 值，
+ * 消除「加速-减速」的突兀感。
+ */
+
 .versions-panel {
+  flex-shrink: 0;
+  max-height: 33.33%;
   border-bottom: 1px solid var(--border-primary);
+  transition: border-color 0.35s ease,
+              var(--theme-transition);
 }
 
-/* 折叠时面板在 grid 中的位置和尺寸不变，只隐藏 body */
-.panel.panel-collapsed {
-  /* grid 位置不变，仅隐藏 body */
+.outline-panel {
+  flex: 1;
+  min-height: 0;
+  transition: var(--theme-transition);
+}
+
+/* 折叠：border 淡出 */
+.versions-panel.panel-collapsed {
+  border-color: transparent;
+}
+
+/* ---- collapse-wrap：grid-template-rows 驱动高度过渡 ---- */
+.panel-collapse-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.5s cubic-bezier(0.42, 0, 0.28, 1);
+}
+
+.panel.panel-collapsed .panel-collapse-wrap {
+  grid-template-rows: 0fr;
+}
+
+/* ---- panel-body：内容 fade + slide ---- */
+.panel-body {
+  overflow: hidden;
+  padding: 4px 10px 10px 10px;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.25s ease,
+    transform 0.35s cubic-bezier(0.42, 0, 0.28, 1),
+    padding 0.3s ease;
+}
+.panel:not(.panel-collapsed) .panel-body {
+  overflow-y: auto;
 }
 .panel.panel-collapsed .panel-body {
-  max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
   opacity: 0;
+  transform: translateY(-6px);
 }
 
+/* ---- panel-header：hover 反馈 + 折叠时轻微下沉阴影 ---- */
 .panel-header {
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  margin: 0 4px;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.5s cubic-bezier(0.42, 0, 0.28, 1);
+}
+.panel-header:hover {
+  background-color: var(--bg-hover);
+}
+.panel-header:active {
+  background-color: var(--bg-active);
+}
+/* 折叠后 header 增加轻微阴影，营造「浮起」层次感（Apple 风格） */
+.panel-collapsed .panel-header {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .panel-title {
@@ -609,6 +808,22 @@ function changeTypeLabel(t: string): string {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  transition: color 0.35s ease;
+}
+.panel-collapsed .panel-title {
+  color: var(--text-muted);
+}
+
+/* ---- chevron 旋转 ----
+ * 使用 wrapper 旋转避免与 IconChevron 内部样式冲突 */
+.panel-chevron-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.5s cubic-bezier(0.42, 0, 0.28, 1);
+}
+.panel-chevron-wrap.is-collapsed {
+  transform: rotate(180deg);
 }
 
 .panel-toggle {
@@ -627,14 +842,6 @@ function changeTypeLabel(t: string): string {
 .panel-toggle:hover {
   background-color: var(--bg-hover, rgba(0, 0, 0, 0.06));
   color: var(--accent);
-}
-
-.panel-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 4px 10px 10px 10px;
-  overflow-y: auto;
-  transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.3s ease;
 }
 
 .panel-loading,
@@ -661,14 +868,22 @@ function changeTypeLabel(t: string): string {
   padding: 6px 8px;
   margin-bottom: 4px;
   background-color: var(--bg-elevated);
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.15s;
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    transform 0.25s cubic-bezier(0.42, 0, 0.28, 1);
 }
 
 .version-item:hover {
   border-color: var(--accent);
+  background-color: var(--bg-hover);
+}
+
+.version-item:active {
+  transform: scale(0.98);
 }
 
 .version-row1 {
@@ -718,7 +933,7 @@ function changeTypeLabel(t: string): string {
 /* ===== 版本列表过渡动画 ===== */
 /* 新项进入：从上方淡入下滑 + 短暂强调高亮 */
 .version-enter-active {
-  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.42, 0, 0.28, 1);
   animation: version-pulse 1.2s ease;
 }
 .version-enter-from {
@@ -745,7 +960,7 @@ function changeTypeLabel(t: string): string {
 
 /* 保留项下移：平滑让位 */
 .version-move {
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.5s cubic-bezier(0.42, 0, 0.28, 1);
 }
 
 @keyframes version-pulse {
@@ -774,23 +989,29 @@ function changeTypeLabel(t: string): string {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 3px 4px;
+  padding: 4px 6px;
   font-size: 12px;
   color: var(--text-primary);
   cursor: pointer;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  border-radius: 4px;
-  transition: background-color 0.15s;
+  border-radius: 5px;
+  transition:
+    background-color 0.25s ease,
+    padding-left 0.3s ease;
 }
 
 .outline-item:hover {
   background-color: var(--bg-hover);
 }
 
-.outline-item-active,
 .outline-item:active {
+  background-color: var(--bg-active);
+  transform: scale(0.985);
+}
+
+.outline-item-active {
   background-color: var(--bg-active);
 }
 
@@ -798,10 +1019,16 @@ function changeTypeLabel(t: string): string {
   font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .outline-text {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.doc-list-wrap {
+  position: relative;
 }
 </style>

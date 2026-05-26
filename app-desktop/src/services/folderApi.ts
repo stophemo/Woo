@@ -8,6 +8,7 @@ export interface FolderTreeNodeDTO {
   parentId: string | null
   name: string
   sortOrder: number
+  isLocked: boolean
   children: FolderTreeNodeDTO[] | null
 }
 

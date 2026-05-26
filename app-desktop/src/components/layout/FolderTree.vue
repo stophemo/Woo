@@ -1,15 +1,17 @@
 <template>
     <div class="folder-tree">
-        <FolderItem
-            v-for="folder in folders"
-            :key="folder.id"
-            :folder="folder"
-            :depth="0"
-            :selected-folder-id="selectedFolderId"
-            @context-menu="forwardContextMenu"
-            @folder-select="forwardFolderSelect"
-            @rename="forwardRename"
-        />
+        <TransitionGroup name="folder-item" tag="div">
+            <FolderItem
+                v-for="folder in folders"
+                :key="folder.id"
+                :folder="folder"
+                :depth="0"
+                :selected-folder-id="selectedFolderId"
+                @context-menu="forwardContextMenu"
+                @folder-select="forwardFolderSelect"
+                @rename="forwardRename"
+            />
+        </TransitionGroup>
     </div>
 </template>
 
@@ -45,4 +47,29 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
 </script>
 
 <style scoped>
+.folder-item-enter-active {
+  transition:
+    opacity 0.35s cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.folder-item-leave-active {
+  transition:
+    opacity 0.25s cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.folder-item-move {
+  transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.folder-item-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.folder-item-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
 </style>

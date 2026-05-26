@@ -20,10 +20,14 @@
       <LeftSidebar :is-open="leftSidebarOpen" />
       
       <!-- 中间缩略图列 -->
+<<<<<<< HEAD
       <ThumbnailColumn :is-open="thumbnailSidebarOpen" />
+=======
+      <ThumbnailColumn :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" @outline-select="handleOutlineSelect" />
+>>>>>>> 1d6ea72 (feat(app-desktop): 文件夹/文稿加锁功能 + Apple 风格交互动画)
       
       <!-- 中央编辑区域 -->
-      <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" />
+      <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" @active-heading-change="handleActiveHeadingChange" />
       
       <!-- 右侧AI对话区域 -->
       <RightSidebar :is-open="rightSidebarOpen" @open-settings="openSettings" />
@@ -68,6 +72,7 @@ import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
 import { useSyncStore } from './stores/sync'
 import { isModKey } from './config/shortcutUtils'
+import { useLockStore } from './stores/lock'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
 useThemeStore()
@@ -77,7 +82,14 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 
 const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
+<<<<<<< HEAD
 const editAreaRef = ref<ComponentPublicInstance | null>(null)
+
+// 编辑器滚动 → 大纲高亮联动
+const editorActiveHeading = ref<number | null>(null)
+function handleActiveHeadingChange(headingIndex: number | null) {
+  editorActiveHeading.value = headingIndex
+}
 
 // 处理来自 macOS 原生菜单的动作
 function handleMenuAction(action: string) {
@@ -173,6 +185,9 @@ async function initApp() {
   // 1. 恢复认证 session
   await authStore.bootstrap()
 
+  // 1.5 初始化加锁状态
+  await useLockStore().bootstrap()
+
   // 2. 启动同步监听和提示
   syncStore.listen()
   setupSyncToast()
@@ -208,40 +223,10 @@ function setupSyncToast() {
   }) as EventListener)
 }
 
-// 同步完成后刷新工作区数据（保留选中状态）
+// 同步完成后增量刷新工作区数据（diff 对比，不重置状态）
 function setupSyncDataRefresh() {
   window.addEventListener('sync-data-changed', async () => {
-    const prevFolderId = workspaceStore.selectedFolderId
-    const prevDocId = workspaceStore.selectedDocumentId
-
-    await workspaceStore.bootstrap()
-
-    // 恢复选中状态
-    if (prevFolderId) {
-      try {
-        if (prevFolderId === '__drafts__') {
-          await workspaceStore.openDraftBox()
-        } else if (prevFolderId === '__trash__') {
-          await workspaceStore.openTrashBox()
-        } else if (prevFolderId === '__all__') {
-          await workspaceStore.openAllDocuments()
-        } else if (prevFolderId === '__search__') {
-          return // 搜索状态无法恢复关键词，跳过
-        } else {
-          await workspaceStore.selectFolder(prevFolderId)
-        }
-
-        // 尝试恢复选中文稿
-        if (prevDocId) {
-          const docExists = workspaceStore.currentFolderDocuments.some(d => d.id === prevDocId)
-          if (docExists) {
-            await workspaceStore.selectDocument(prevDocId)
-          }
-        }
-      } catch {
-        // 目录/文稿可能在同步中被删除，静默忽略
-      }
-    }
+    await workspaceStore.syncRefresh()
   })
 }
 const toggleTopMenu = () => {

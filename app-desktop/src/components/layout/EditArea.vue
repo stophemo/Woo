@@ -41,7 +41,11 @@
 
     <div class="editor-body">
       <template v-if="store.currentDocument">
-        <div class="editor-scale-wrap">
+        <div v-if="store.currentDocument.isLocked" class="locked-placeholder">
+          <IconLock class="locked-placeholder-icon" />
+          <p class="locked-placeholder-text">文档已加锁，请在左侧验证密码后查看</p>
+        </div>
+        <div v-else class="editor-scale-wrap">
           <EditorContent :editor="editor" class="editor-content" :style="editorScaleStyle" />
         </div>
       </template>
@@ -63,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, watch, onBeforeUnmount, onMounted, ref, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -75,12 +79,17 @@ import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { setHeadings, registerScrollHandler, type HeadingInfo } from '../../config/editorNavigation'
+import IconLock from '../icons/IconLock.vue'
 
 const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
 
 interface Props { isStatusBarOpen?: boolean }
 withDefaults(defineProps<Props>(), { isStatusBarOpen: true })
+
+const emit = defineEmits<{
+  (e: 'active-heading-change', headingIndex: number | null): void
+}>()
 
 const zoomPercent = ref(100)
 const showSheet = ref(false)
@@ -326,6 +335,7 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   isSettingContent = false
   resetBaselineFromEditor()
   loadSheet()
+<<<<<<< HEAD
   updateHeadings()
 }, { immediate: true })
 
@@ -378,11 +388,136 @@ function scrollToHeading(pos: number) {
 registerScrollHandler(scrollToHeading)
 
 defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading })
+=======
+  // 文档切换后重新绑定 scroll 监听并计算当前高亮
+  void nextTick(() => {
+    setupScrollListener()
+    updateActiveHeading()
+  })
+}, { immediate: true })
+
+function scrollToHeading(headingIndex: number) {
+  const ed = editor.value
+  if (!ed) return
+  const scrollContainer = ed.view.dom.closest('.editor-body') as HTMLElement | null
+  if (!scrollContainer) return
+  const doc = ed.state.doc
+  let hIdx = 0
+  let targetPos: number | null = null
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      if (hIdx === headingIndex) {
+        targetPos = pos
+        return false
+      }
+      hIdx++
+    }
+  })
+  if (targetPos === null) return
+  const coords = ed.view.coordsAtPos(targetPos)
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const offset = coords.top - containerRect.top
+  scrollContainer.scrollTop += offset - 16
+  ed.commands.focus()
+}
+
+/* ======== 编辑器滚动 → 大纲高亮联动 ======== */
+let scrollRAF: number | null = null
+let lastActiveHeading: number | null = null
+let scrollElRef: HTMLElement | null = null
+
+/** 绑定/重新绑定 scroll 监听到 .editor-body */
+function setupScrollListener() {
+  const ed = editor.value
+  if (!ed) return
+  const editorEl = ed.view.dom
+  if (!editorEl || !editorEl.isConnected) return
+  const el = editorEl.closest('.editor-body') as HTMLElement | null
+  if (!el || el === scrollElRef) return
+  // 移除旧监听（防止重复绑定）
+  if (scrollElRef) scrollElRef.removeEventListener('scroll', onEditorScroll)
+  scrollElRef = el
+  scrollElRef.addEventListener('scroll', onEditorScroll, { passive: true })
+}
+
+function updateActiveHeading() {
+  scrollRAF = null
+  const ed = editor.value
+  if (!ed) {
+    if (lastActiveHeading !== null) {
+      lastActiveHeading = null
+      emit('active-heading-change', null)
+    }
+    return
+  }
+  if (!scrollElRef) return
+  const containerRect = scrollElRef.getBoundingClientRect()
+  const referenceTop = containerRect.top + 16
+  const doc = ed.state.doc
+
+  let bestIdx: number | null = null
+  let bestDist = Infinity
+  let hIdx = 0
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      const text = node.textContent.trim()
+      if (text) {
+        const coords = ed.view.coordsAtPos(pos)
+        const dist = Math.abs(coords.top - referenceTop)
+        if (dist < bestDist) {
+          bestDist = dist
+          bestIdx = hIdx
+        }
+      }
+      hIdx++
+    }
+  })
+
+  if (bestIdx !== lastActiveHeading) {
+    lastActiveHeading = bestIdx
+    emit('active-heading-change', bestIdx)
+  }
+}
+
+function onEditorScroll() {
+  if (scrollRAF !== null) return
+  scrollRAF = requestAnimationFrame(updateActiveHeading)
+}
+
+function getHeadings(): { level: number; text: string; pos: number }[] {
+  const ed = editor.value
+  if (!ed) return []
+  const headings: { level: number; text: string; pos: number }[] = []
+  ed.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      const text = node.textContent.trim()
+      if (text) headings.push({ level: node.attrs.level, text, pos })
+    }
+  })
+  return headings
+}
+
+defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading, getHeadings })
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
+  loadSheet()
+  void nextTick(() => {
+    setupScrollListener()
+    updateActiveHeading()
+  })
+})
+>>>>>>> 1d6ea72 (feat(app-desktop): 文件夹/文稿加锁功能 + Apple 风格交互动画)
 
 onBeforeUnmount(() => {
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
   clearIdleTimer()
   window.removeEventListener('keydown', handleGlobalKeydown)
+  if (scrollRAF !== null) cancelAnimationFrame(scrollRAF)
+  if (scrollElRef) {
+    scrollElRef.removeEventListener('scroll', onEditorScroll)
+    scrollElRef = null
+  }
   editor.value?.destroy()
 })
 </script>
@@ -412,6 +547,9 @@ onBeforeUnmount(() => {
 .editor-scale-wrap { display: block; }
 .editor-content { height: 100%; }
 .empty-editor { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
+
+.locked-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
+.locked-placeholder-icon { width: 32px; height: 32px; color: var(--accent, #409eff); opacity: 0.6; }
 .editor-statusbar { height: 28px; background-color: var(--bg-toolbar); border-top: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 12px; color: var(--text-muted); flex-shrink: 0; overflow: hidden; transition: var(--theme-transition), height 0.25s ease, padding 0.25s ease, border-top-color 0.25s ease, opacity 0.2s ease, transform 0.25s ease; transform-origin: bottom; }
 .editor-statusbar.collapsed { height: 0; padding-top: 0; padding-bottom: 0; border-top-color: transparent; transform: translateY(100%); opacity: 0; pointer-events: none; }
 .statusbar-left, .statusbar-right { display: flex; gap: 12px; align-items: center; }

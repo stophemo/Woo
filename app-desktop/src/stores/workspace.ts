@@ -22,7 +22,8 @@ function mapFolder(node: FolderTreeNodeDTO): FolderNode {
     name: node.name,
     parentId: node.parentId,
     isExpanded: false,
-    children: (node.children || []).map(mapFolder)
+    children: (node.children || []).map(mapFolder),
+    isLocked: node.isLocked
   }
 }
 
@@ -34,7 +35,8 @@ function mapDocument(dto: DocumentDTO): Document {
     folderId: dto.folderId,
     folderName: dto.folderName,
     createdAt: dto.createTime,
-    updatedAt: dto.updateTime
+    updatedAt: dto.updateTime,
+    isLocked: dto.isLocked
   }
 }
 
@@ -708,6 +710,177 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  // ============ 同步刷新（diff 增量） ============
+
+  /**
+   * 将新树合并到旧树上，尽量保留对象引用不变（避免 Vue 全量重渲染），
+   * 同时保留 isExpanded 状态。返回 { added, removed } 的 id 集合。
+   */
+  function mergeFolderTree(oldNodes: FolderNode[], newDTOs: FolderTreeNodeDTO[]): { addedIds: Set<string>; removedIds: Set<string> } {
+    const oldMap = new Map<string, FolderNode>()
+    const walkOld = (list: FolderNode[]) => { for (const n of list) { oldMap.set(n.id, n); walkOld(n.children) } }
+    walkOld(oldNodes)
+
+    const newIds = new Set<string>()
+    const addedIds = new Set<string>()
+    const removedIds = new Set<string>()
+
+    function build(nodes: FolderNode[], dtos: FolderTreeNodeDTO[]) {
+      const dtoMap = new Map(dtos.map(d => [d.id, d]))
+      // 移除不存在的
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        if (!dtoMap.has(nodes[i].id)) {
+          removedIds.add(nodes[i].id)
+          nodes.splice(i, 1)
+        }
+      }
+      // 更新/新增
+      let insertIdx = 0
+      for (const dto of dtos) {
+        newIds.add(dto.id)
+        const existing = oldMap.get(dto.id)
+        if (existing && nodes.includes(existing)) {
+          // 已存在 → 更新 name/isLocked（如有变化），保留 isExpanded，递归 children
+          if (existing.name !== dto.name) existing.name = dto.name
+          if (existing.isLocked !== dto.isLocked) existing.isLocked = dto.isLocked
+          build(existing.children, dto.children || [])
+          // 移到正确位置
+          const curIdx = nodes.indexOf(existing)
+          if (curIdx !== insertIdx) {
+            nodes.splice(curIdx, 1)
+            nodes.splice(insertIdx, 0, existing)
+          }
+          insertIdx++
+        } else if (existing && !nodes.includes(existing)) {
+          // 节点存在于旧树但不在当前层级（可能被移动了）→ 当作新增
+          const newNode: FolderNode = {
+            id: dto.id,
+            name: dto.name,
+            parentId: dto.parentId,
+            isExpanded: existing.isExpanded,
+            children: [],
+            isLocked: dto.isLocked
+          }
+          build(newNode.children, dto.children || [])
+          nodes.splice(insertIdx, 0, newNode)
+          addedIds.add(dto.id)
+          insertIdx++
+        } else {
+          // 全新节点
+          const newNode: FolderNode = {
+            id: dto.id,
+            name: dto.name,
+            parentId: dto.parentId,
+            isExpanded: false,
+            children: [],
+            isLocked: dto.isLocked
+          }
+          build(newNode.children, dto.children || [])
+          nodes.splice(insertIdx, 0, newNode)
+          addedIds.add(dto.id)
+          insertIdx++
+        }
+      }
+    }
+    build(oldNodes, newDTOs)
+    return { addedIds, removedIds }
+  }
+
+  /**
+   * diff 增量同步：对比当前云端数据与本地数据，仅对有差异的部分做更新。
+   * 不会清空/重置任何状态，因此不会触发 watcher 误判。
+   */
+  async function syncRefresh() {
+    error.value = ''
+
+    try {
+      // 1. 同步目录树（保留展开状态）
+      const tree = await folderApi.getTree()
+      mergeFolderTree(folders.value, tree)
+
+      // 2. 如果当前在常规目录视图，同步文稿列表
+      const fid = selectedFolderId.value
+      if (fid && fid !== DRAFT_FOLDER_ID && fid !== TRASH_FOLDER_ID
+          && fid !== ALL_FOLDER_ID && fid !== SEARCH_FOLDER_ID) {
+        const list = await documentApi.listByFolder(fid)
+        const newDocs = list.map(mapDocument)
+
+        // 构建旧 id 集合
+        const oldMap = new Map<string, Document>()
+        for (const d of folderDocuments.value) oldMap.set(d.id, d)
+
+        // --- 找出删除的 ---
+        const newIds = new Set(newDocs.map(d => d.id))
+        for (let i = folderDocuments.value.length - 1; i >= 0; i--) {
+          if (!newIds.has(folderDocuments.value[i].id)) {
+            folderDocuments.value.splice(i, 1)
+          }
+        }
+
+        // --- 按新顺序重新构建列表，复用旧引用 ---
+        const merged: Document[] = []
+        for (const nd of newDocs) {
+          const old = oldMap.get(nd.id)
+          if (old) {
+            // 更新可能变化的字段（title、updatedAt），保留对象引用
+            if (old.title !== nd.title) old.title = nd.title
+            if (old.folderId !== nd.folderId) old.folderId = nd.folderId
+            if (old.folderName !== nd.folderName) old.folderName = nd.folderName
+            if (old.updatedAt !== nd.updatedAt) old.updatedAt = nd.updatedAt
+            merged.push(old)
+          } else {
+            merged.push(nd)
+          }
+        }
+
+        // 用 splice 整体替换，Vue 能识别最小变动
+        folderDocuments.value.splice(0, folderDocuments.value.length, ...merged)
+
+        // 3. 冲突检测：当前正在编辑的文稿
+        if (selectedDocumentId.value && !isDraftId(selectedDocumentId.value)) {
+          const cloudDoc = newDocs.find(d => d.id === selectedDocumentId.value)
+          const localDoc = currentDocumentData.value
+          if (cloudDoc && localDoc && cloudDoc.updatedAt !== localDoc.updatedAt) {
+            // 云端有更新 → 检查本地是否有未保存的修改
+            const hasUnsaved = saveTimer !== null || pendingSave !== null || savingPromise !== null
+            if (hasUnsaved) {
+              // 冲突：将本地编辑版另存为同目录下的一份新文稿
+              try {
+                // 先把本地未保存内容写回，确保 conflict 副本内容完整
+                await flushPendingSave()
+                const conflictDTO = await documentApi.create({
+                  title: `${localDoc.title}_conflict`,
+                  folderId: localDoc.folderId || fid
+                })
+                // 用本地编辑的内容覆盖新建文稿的内容
+                await documentApi.updateContent(conflictDTO.id, localDoc.content)
+                const conflictDoc = mapDocument(conflictDTO)
+                conflictDoc.content = localDoc.content
+                // 插入到当前文稿列表
+                folderDocuments.value.unshift(conflictDoc)
+              } catch { /* 冲突备份失败时静默，继续加载云端 */ }
+              // 加载云端数据到编辑器
+              try {
+                const dto = await documentApi.getById(cloudDoc.id)
+                currentDocumentData.value = mapDocument(dto)
+              } catch {
+                // 加载失败时保留本地数据不做变更
+              }
+            } else {
+              // 无未保存修改 → 直接加载云端最新内容
+              try {
+                const dto = await documentApi.getById(cloudDoc.id)
+                currentDocumentData.value = mapDocument(dto)
+              } catch { /* ignore */ }
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      error.value = e?.message || '同步刷新失败'
+    }
+  }
+
   // ============ 辅助 ============
   // 获取指定父节点下的同级目录列表，可选排除某个 id
   function getSiblings(parentId: string | null, excludeId: string | null): FolderNode[] {
@@ -787,6 +960,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // 启动 & 重置
     bootstrap,
     reset,
+    // 同步
+    syncRefresh,
     // 目录操作
     toggleFolder,
     selectFolder,

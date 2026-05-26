@@ -8,8 +8,11 @@
             @click="handleClick"
             @dblclick="handleDoubleClick"
         >
-            <IconFolderOpen v-if="folder.isExpanded" />
-            <IconFolderClosed v-else />
+            <Transition name="icon-swap" mode="out-in">
+                <IconFolderOpen v-if="folder.isExpanded" key="open" />
+                <IconFolderClosed v-else key="closed" />
+            </Transition>
+            <IconLock v-if="folder.isLocked" class="lock-icon" />
             <input 
                 v-if="isEditing"
                 ref="inputRef"
@@ -22,19 +25,21 @@
             <span v-else class="folder-name">{{ folder.name }}</span>
         </div>
         
-        <!-- 递归渲染子目录 -->
-        <div v-if="folder.isExpanded && folder.children.length > 0" class="folder-children">
-            <FolderItem
-                v-for="child in folder.children"
-                :key="child.id"
-                :folder="child"
-                :depth="depth + 1"
-                :selected-folder-id="selectedFolderId"
-                @context-menu="forwardContextMenu"
-                @folder-select="forwardFolderSelect"
-                @rename="forwardRename"
-            />
-        </div>
+        <!-- 递归渲染子目录（带 Apple 风格展开/收起动画） -->
+        <Transition name="folder-children">
+            <div v-if="folder.isExpanded && folder.children.length > 0" class="folder-children">
+                <FolderItem
+                    v-for="child in folder.children"
+                    :key="child.id"
+                    :folder="child"
+                    :depth="depth + 1"
+                    :selected-folder-id="selectedFolderId"
+                    @context-menu="forwardContextMenu"
+                    @folder-select="forwardFolderSelect"
+                    @rename="forwardRename"
+                />
+            </div>
+        </Transition>
     </div>
 </template>
 
@@ -42,6 +47,7 @@
 import { ref, nextTick, watch } from 'vue'
 import IconFolderOpen from '../icons/IconFolderOpen.vue'
 import IconFolderClosed from '../icons/IconFolderClosed.vue'
+import IconLock from '../icons/IconLock.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
 import type { FolderNode, ContextMenuPosition } from '../../types/folder'
 
@@ -153,7 +159,13 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
     gap: 10px;
     user-select: none;
     height: 36px;
-    transition: all 0.2s;
+    transition:
+        background-color 0.25s ease,
+        color 0.25s ease,
+        transform 0.25s cubic-bezier(0.42, 0, 0.28, 1);
+}
+.sidebar-item:active {
+    transform: scale(0.975);
 }
 
 .sidebar-item:hover {
@@ -184,6 +196,12 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
     color: var(--text-on-selected);
 }
 
+.lock-icon {
+    color: var(--accent, #409eff);
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
 .folder-name {
     flex: 1;
     overflow: hidden;
@@ -205,5 +223,46 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
 
 .folder-children {
     width: 100%;
+    overflow: hidden;
+}
+
+/* ===== Apple 风格展开/收起动画 =====
+ * 使用 max-height + opacity 配合 Apple 缓动曲线，
+ * 营造自然的「滑动展开/收起」物理感。
+ */
+.folder-children-enter-active {
+    transition:
+        max-height 0.55s cubic-bezier(0.42, 0, 0.28, 1),
+        opacity 0.35s ease;
+}
+.folder-children-leave-active {
+    transition:
+        max-height 0.45s cubic-bezier(0.42, 0, 0.28, 1),
+        opacity 0.25s ease;
+}
+.folder-children-enter-from,
+.folder-children-leave-to {
+    max-height: 0;
+    opacity: 0;
+}
+.folder-children-enter-to {
+    max-height: 2000px;
+    opacity: 1;
+}
+
+/* ===== 文件夹图标切换动画（Apple 风格轻量淡入淡出） ===== */
+.icon-swap-enter-active {
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.icon-swap-leave-active {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.icon-swap-enter-from {
+    opacity: 0;
+    transform: scale(0.85) rotate(-6deg);
+}
+.icon-swap-leave-to {
+    opacity: 0;
+    transform: scale(0.85) rotate(6deg);
 }
 </style>

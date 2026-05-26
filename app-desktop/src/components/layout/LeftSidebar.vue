@@ -54,7 +54,15 @@
             @select="handleMenuSelect"
             @close="closeContextMenu"
         />
-            
+
+        <!-- 加锁密码弹窗 -->
+        <LockPasswordDialog
+            v-if="showLockDialog"
+            :mode="lockDialogMode"
+            @confirm="handleLockConfirm"
+            @cancel="handleLockCancel"
+        />
+
         <!-- 错误提示 -->
         <div v-if="store.error" class="sidebar-error" @click="store.error = ''">
             {{ store.error }}
@@ -72,6 +80,8 @@ import IconFile from '../icons/IconFile.vue'
 import IconDraft from '../icons/IconDraft.vue'
 import IconTrash from '../icons/IconTrash.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
+import { useLockStore } from '../../stores/lock'
+import LockPasswordDialog from './LockPasswordDialog.vue'
 import type { FolderNode, ContextMenuPosition, ContextMenuItem } from '../../types/folder'
 
 interface Props {
@@ -81,6 +91,12 @@ interface Props {
 defineProps<Props>()
 
 const store = useWorkspaceStore()
+const lockStore = useLockStore()
+
+// 加锁弹窗状态
+const showLockDialog = ref(false)
+const lockDialogMode = ref<'set' | 'verify'>('verify')
+const pendingLockTarget = ref<FolderNode | null>(null)
 
 // 搜索相关状态
 const isSearchMode = ref(false)
@@ -193,6 +209,7 @@ const handleFolderContextMenu = (data: { folder: FolderNode, position: ContextMe
         { label: '创建同级目录', action: 'createSibling' },
         { label: '创建子目录', action: 'createChild' },
         { label: '重命名', action: 'rename' },
+        { label: data.folder.isLocked ? '解锁' : '加锁', action: 'toggleLock' },
         { label: '删除当前目录', action: 'delete', disabled: false }
     ]
     showContextMenu.value = true
@@ -222,8 +239,51 @@ const handleMenuSelect = (action: string) => {
     case 'delete':
       if (selectedFolder.value) store.deleteFolder(selectedFolder.value)
       break
+    case 'toggleLock':
+      if (selectedFolder.value) {
+        handleLockAction(selectedFolder.value)
+      }
+      break
   }
   closeContextMenu()
+}
+
+// ============ 加锁/解锁 ============
+function handleLockAction(folder: FolderNode) {
+  if (lockStore.sessionVerified) {
+    performToggleLock(folder)
+    return
+  }
+  lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+  pendingLockTarget.value = folder
+  showLockDialog.value = true
+}
+
+async function handleLockConfirm(_password: string) {
+  showLockDialog.value = false
+  const target = pendingLockTarget.value
+  pendingLockTarget.value = null
+  if (target) {
+    await performToggleLock(target)
+  }
+}
+
+function handleLockCancel() {
+  showLockDialog.value = false
+  pendingLockTarget.value = null
+}
+
+async function performToggleLock(folder: FolderNode) {
+  try {
+    if (folder.isLocked) {
+      await lockStore.unlockFolder(folder.id)
+    } else {
+      await lockStore.lockFolder(folder.id)
+    }
+    await store.syncRefresh()
+  } catch (e: any) {
+    store.error = e?.message || '操作失败'
+  }
 }
 
 // 关闭右键菜单

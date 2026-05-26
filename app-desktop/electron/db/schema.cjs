@@ -13,7 +13,8 @@ const SCHEMA_SQLS = [
     sort_order INTEGER NOT NULL DEFAULT 0,
     create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    is_locked INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_folder_parent ON note_folder(parent_id)`,
 
@@ -27,7 +28,8 @@ const SCHEMA_SQLS = [
     sort_order INTEGER NOT NULL DEFAULT 0,
     create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
     update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    is_locked INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_doc_folder ON note_document(folder_id)`,
 
@@ -91,7 +93,10 @@ function migrate(db) {
     // 旧格式 create_time 迁移（空格 → ISO T 格式）
     `UPDATE note_folder SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
     `UPDATE note_document SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
-    `UPDATE note_document_version SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`
+    `UPDATE note_document_version SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
+    // 加锁功能：为 note_folder 和 note_document 补充 is_locked 列
+    `ALTER TABLE note_folder ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE note_document ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`
   ]
   for (const sql of migrations) {
     try {
