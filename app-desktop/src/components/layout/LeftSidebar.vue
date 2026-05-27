@@ -135,6 +135,11 @@ const disableSearch = () => {
 
 // 搜索输入失焦处理：输入栏失焦即关闭搜索模式
 const handleSearchBlur = () => {
+    if (!searchKeyword.value.trim()) {
+        // 输入框为空时，直接退出搜索模式，不触发搜索
+        isSearchMode.value = false
+        return
+    }
     // 延时关闭，避免点击输入栏内其他元素时误触
     setTimeout(() => {
         if (isSearchMode.value) {
@@ -203,15 +208,17 @@ const handleContextMenu = (event: MouseEvent) => {
 const handleFolderContextMenu = (data: { folder: FolderNode, position: ContextMenuPosition }) => {
     contextMenuTarget.value = 'folder'
     selectedFolder.value = data.folder
-    
+
     contextMenuPosition.value = data.position
-    contextMenuItems.value = [
-        { label: '创建同级目录', action: 'createSibling' },
-        { label: '创建子目录', action: 'createChild' },
-        { label: '重命名', action: 'rename' },
-        { label: data.folder.isLocked ? '解锁' : '加锁', action: 'toggleLock' },
-        { label: '删除当前目录', action: 'delete', disabled: false }
-    ]
+    contextMenuItems.value = data.folder.isLocked
+      ? [{ label: '解锁', action: 'toggleLock' }]
+      : [
+          { label: '创建同级目录', action: 'createSibling' },
+          { label: '创建子目录', action: 'createChild' },
+          { label: '重命名', action: 'rename' },
+          { label: '加锁', action: 'toggleLock' },
+          { label: '删除当前目录', action: 'delete', disabled: false }
+        ]
     showContextMenu.value = true
 }
 

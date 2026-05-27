@@ -164,15 +164,12 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
         color 0.25s ease,
         transform 0.25s cubic-bezier(0.42, 0, 0.28, 1);
 }
-.sidebar-item:active {
-    transform: scale(0.975);
-}
-
 .sidebar-item:hover {
     background-color: var(--bg-hover);
 }
 
 .sidebar-item:active {
+    transform: scale(0.975);
     background-color: var(--bg-active);
 }
 

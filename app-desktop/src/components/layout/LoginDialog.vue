@@ -52,6 +52,7 @@
           <div class="login-field">
             <label>{{ loginMode === 'login' ? '邮箱 / 用户名' : '邮箱' }}</label>
             <input
+              ref="emailInputRef"
               :type="loginMode === 'login' ? 'text' : 'email'"
               v-model="email"
               :placeholder="loginMode === 'login' ? '邮箱或用户名' : '请输入邮箱'"
@@ -122,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import IconClose from '../icons/IconClose.vue'
 import { useAuthStore } from '../../stores/auth'
@@ -137,6 +138,7 @@ const emit = defineEmits<{ close: [], 'login-success': [], logout: [] }>()
 const authStore = useAuthStore()
 const { user, isLoggedIn } = storeToRefs(authStore)
 
+const emailInputRef = ref<HTMLInputElement | null>(null)
 const loginMode = ref<'login' | 'signup'>('login')
 const email = ref('')
 const username = ref('')
@@ -200,6 +202,7 @@ watch(() => props.visible, (val) => {
     submitting.value = false
     loginMode.value = 'login'
     clearErrors()
+    nextTick(() => emailInputRef.value?.focus())
   }
 })
 
@@ -483,21 +486,6 @@ function handleLogout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.login-footer {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.login-footer a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.login-footer a:hover {
-  text-decoration: underline;
 }
 
 .login-tabs {

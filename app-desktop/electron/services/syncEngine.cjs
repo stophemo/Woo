@@ -639,24 +639,8 @@ function start(intervalMs = 60000) {
   })
 }
 
-/**
- * 停止同步引擎
- */
-function stop() {
-  if (syncTimer) {
-    clearInterval(syncTimer)
-    syncTimer = null
-  }
-  if (authUnsubscribe) {
-    authUnsubscribe()
-    authUnsubscribe = null
-  }
-  console.log('[Sync] 引擎停止')
-}
-
 module.exports = {
   start,
-  stop,
   syncNow: syncNow,
   getStatus,
   setOnStatusChange,

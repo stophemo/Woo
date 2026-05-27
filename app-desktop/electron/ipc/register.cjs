@@ -7,6 +7,7 @@ const folderService = require('../services/folderService.cjs')
 const documentService = require('../services/documentService.cjs')
 const versionService = require('../services/versionService.cjs')
 const authService = require('../services/authService.cjs')
+const lockService = require('../services/lockService.cjs')
 const syncEngine = require('../services/syncEngine.cjs')
 
 /**
@@ -80,56 +81,24 @@ function register() {
   // —— auth ——
   ipcMain.handle('auth:signUp', wrap(authService.signUp))
   ipcMain.handle('auth:signIn', wrap(authService.signIn))
-  ipcMain.handle('auth:signInWithOAuth', wrap(authService.signInWithOAuth))
   ipcMain.handle('auth:signOut', wrap(authService.signOut))
   ipcMain.handle('auth:getUser', wrap(authService.getCurrentUser))
   ipcMain.handle('auth:getSession', wrap(authService.getSession))
 
   // —— lock ——
-  ipcMain.handle('lock:status', wrap(async () => {
-    const lockService = require('../services/lockService.cjs')
-    return {
-      hasPassword: lockService.hasPassword(),
-      mode: lockService.getPasswordMode()
-    }
-  }))
-  ipcMain.handle('lock:setPassword', wrap(async (password) => {
-    const lockService = require('../services/lockService.cjs')
-    lockService.setPassword(password)
-    return null
-  }))
-  ipcMain.handle('lock:verifyPassword', wrap(async (password) => {
-    const lockService = require('../services/lockService.cjs')
-    return lockService.verifyPassword(password)
-  }))
-  ipcMain.handle('lock:lockFolder', wrap(async (folderId) => {
-    const lockService = require('../services/lockService.cjs')
-    lockService.lockFolder(folderId)
-    return null
-  }))
-  ipcMain.handle('lock:unlockFolder', wrap(async (folderId) => {
-    const lockService = require('../services/lockService.cjs')
-    lockService.unlockFolder(folderId)
-    return null
-  }))
-  ipcMain.handle('lock:isFolderLocked', wrap(async (folderId) => {
-    const lockService = require('../services/lockService.cjs')
-    return lockService.isFolderLocked(folderId)
-  }))
-  ipcMain.handle('lock:lockDocument', wrap(async (documentId) => {
-    const lockService = require('../services/lockService.cjs')
-    lockService.lockDocument(documentId)
-    return null
-  }))
-  ipcMain.handle('lock:unlockDocument', wrap(async (documentId) => {
-    const lockService = require('../services/lockService.cjs')
-    lockService.unlockDocument(documentId)
-    return null
-  }))
-  ipcMain.handle('lock:isDocumentLocked', wrap(async (documentId) => {
-    const lockService = require('../services/lockService.cjs')
-    return lockService.isDocumentLocked(documentId)
-  }))
+  ipcMain.handle('lock:status', wrap(async () => ({
+    hasPassword: lockService.hasPassword(),
+    mode: lockService.getPasswordMode()
+  })))
+  ipcMain.handle('lock:setPassword', wrap(async (password) => { lockService.setPassword(password); return null }))
+  ipcMain.handle('lock:verifyPassword', wrap(async (password) => lockService.verifyPassword(password)))
+  ipcMain.handle('lock:lockFolder', wrap(async (folderId) => { lockService.lockFolder(folderId); return null }))
+  ipcMain.handle('lock:unlockFolder', wrap(async (folderId) => { lockService.unlockFolder(folderId); return null }))
+  ipcMain.handle('lock:isFolderLocked', wrap(async (folderId) => lockService.isFolderLocked(folderId)))
+  ipcMain.handle('lock:isFolderEffectivelyLocked', wrap(async (folderId) => lockService.isFolderEffectivelyLocked(folderId)))
+  ipcMain.handle('lock:lockDocument', wrap(async (documentId) => { lockService.lockDocument(documentId); return null }))
+  ipcMain.handle('lock:unlockDocument', wrap(async (documentId) => { lockService.unlockDocument(documentId); return null }))
+  ipcMain.handle('lock:isDocumentLocked', wrap(async (documentId) => lockService.isDocumentLocked(documentId)))
 
   // —— sync ——
   ipcMain.handle('sync:status', wrap(() => {

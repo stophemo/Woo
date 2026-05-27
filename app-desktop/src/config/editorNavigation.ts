@@ -10,10 +10,6 @@ export interface HeadingInfo {
 const headings = ref<HeadingInfo[]>([])
 let scrollHandler: ((pos: number) => void) | null = null
 
-export function setHeadings(list: HeadingInfo[]) {
-  headings.value = list
-}
-
 export function registerScrollHandler(fn: (pos: number) => void) {
   scrollHandler = fn
 }

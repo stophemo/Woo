@@ -2,7 +2,10 @@
   <section class="thumbnail-column" :class="{ 'collapsed': !isOpen, 'flipped': flipped }">
     <!-- 正面：文稿缩略图列表 -->
     <div class="face face-front">
-      <template v-if="store.currentFolderDocuments.length > 0">
+      <div v-if="store.selectedFolderLocked" class="empty-state">
+        <p class="empty-hint">当前目录已加锁，无法查看文稿</p>
+      </div>
+      <template v-else-if="store.currentFolderDocuments.length > 0">
         <div class="doc-list-wrap">
           <div
             v-for="doc in store.currentFolderDocuments"
@@ -168,7 +171,7 @@ interface Props {
   isOpen: boolean
   activeHeading?: number | null
 }
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const { headings } = useEditorNavigation()
 

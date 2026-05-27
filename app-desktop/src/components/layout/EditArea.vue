@@ -49,6 +49,10 @@
           <EditorContent :editor="editor" class="editor-content" :style="editorScaleStyle" />
         </div>
       </template>
+      <div v-else-if="store.selectedFolderLocked" class="locked-placeholder">
+        <IconLock class="locked-placeholder-icon" />
+        <p class="locked-placeholder-text">当前目录已加锁，无法查看文稿</p>
+      </div>
       <div v-else class="empty-editor">Please select a document</div>
     </div>
 
@@ -78,7 +82,7 @@ import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import { useWorkspaceStore } from '../../stores/workspace'
-import { setHeadings, registerScrollHandler, type HeadingInfo } from '../../config/editorNavigation'
+import { registerScrollHandler } from '../../config/editorNavigation'
 import IconLock from '../icons/IconLock.vue'
 
 const store = useWorkspaceStore()
@@ -293,7 +297,7 @@ const editor = useEditor({
     const lineDelta = Math.abs((editorInstance.getJSON().content?.length || 0) - baselineLines)
     if (charDelta >= CHAR_DELTA || lineDelta >= LINE_DELTA) { void triggerCommit('auto'); return }
     clearIdleTimer(); idleTimer = window.setTimeout(() => void triggerCommit('auto'), IDLE_MS)
-    updateHeadings()
+    updateActiveHeading()
   },
   onBlur: () => { void triggerCommit('auto') }
 })
@@ -331,64 +335,15 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
     try { await store.commitDocumentVersion(oldId, 'auto') } catch {}
   }
   isSettingContent = true
-  editor.value.commands.setContent(newDoc ? newDoc.content : '')
+  if (newDoc && newDoc.isLocked) {
+    // 隐私保护：加锁文稿决不加载内容到编辑器
+    editor.value.commands.setContent('')
+  } else {
+    editor.value.commands.setContent(newDoc ? newDoc.content : '')
+  }
   isSettingContent = false
   resetBaselineFromEditor()
   loadSheet()
-<<<<<<< HEAD
-  updateHeadings()
-}, { immediate: true })
-
-onMounted(() => {
-  window.addEventListener('keydown', handleGlobalKeydown)
-  loadSheet()
-})
-
-function updateHeadings() {
-  const ed = editor.value
-  if (!ed) { setHeadings([]); return }
-  const list: HeadingInfo[] = []
-  ed.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'heading') {
-      list.push({
-        level: node.attrs.level,
-        text: node.textContent || `H${node.attrs.level}`,
-        pos
-      })
-    }
-  })
-  setHeadings(list)
-}
-
-function scrollToHeading(pos: number) {
-  const ed = editor.value
-  if (!ed) return
-
-  // Step 1: 选中标题位置 + 聚焦（保证编辑器状态一致）
-  ed.commands.focus()
-  ed.chain().setTextSelection(pos).scrollIntoView().run()
-
-  // Step 2: 用 coordsAtPos 精确计算滚动位置（每次必执行，不受 PM 状态影响）
-  // coordsAtPos 返回视口坐标，与 getBoundingClientRect 同一体系
-  try {
-    const coords = ed.view.coordsAtPos(pos)
-    if (!coords) return
-    const container = (ed.view.dom as HTMLElement).closest('.editor-body') as HTMLElement | null
-    if (!container) return
-    const containerRect = container.getBoundingClientRect()
-    // diff = 标题在容器可见区域内的视觉偏移量
-    const diff = coords.top - containerRect.top
-    // 滚动容器使标题位于顶部 + 24px 间距
-    container.scrollTop = Math.round(container.scrollTop + diff - 24)
-  } catch {
-    // setTextSelection + scrollIntoView 链已兜底
-  }
-}
-
-registerScrollHandler(scrollToHeading)
-
-defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading })
-=======
   // 文档切换后重新绑定 scroll 监听并计算当前高亮
   void nextTick(() => {
     setupScrollListener()
@@ -497,9 +452,27 @@ function getHeadings(): { level: number; text: string; pos: number }[] {
   return headings
 }
 
-defineExpose({ editor, increaseZoom, decreaseZoom, resetZoom, scrollToHeading, getHeadings })
+/** 按 ProseMirror doc position 滚动到指定标题（供 editorNavigation 模块调用） */
+function scrollToPos(pos: number) {
+  const ed = editor.value
+  if (!ed) return
+  ed.commands.focus()
+  ed.chain().setTextSelection(pos).scrollIntoView().run()
+  try {
+    const coords = ed.view.coordsAtPos(pos)
+    if (!coords) return
+    const container = (ed.view.dom as HTMLElement).closest('.editor-body') as HTMLElement | null
+    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+    const diff = coords.top - containerRect.top
+    container.scrollTop = Math.round(container.scrollTop + diff - 24)
+  } catch { /* scrollIntoView 已兜底 */ }
+}
+
+defineExpose({ editor, scrollToHeading, getHeadings })
 
 onMounted(() => {
+  registerScrollHandler(scrollToPos)
   window.addEventListener('keydown', handleGlobalKeydown)
   loadSheet()
   void nextTick(() => {
@@ -507,7 +480,6 @@ onMounted(() => {
     updateActiveHeading()
   })
 })
->>>>>>> 1d6ea72 (feat(app-desktop): 文件夹/文稿加锁功能 + Apple 风格交互动画)
 
 onBeforeUnmount(() => {
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
@@ -524,10 +496,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .edit-area { flex: 1; display: flex; flex-direction: column; background-color: var(--editor-bg); overflow: hidden; transition: var(--theme-transition); }
-.editor-toolbar { height: 36px; border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 12px; }
-.toolbar-right { color: var(--text-muted); }
 .tool-btn { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); border-radius: 4px; height: 24px; padding: 0 8px; cursor: pointer; }
-.zoom-label { min-width: 44px; text-align: center; }
 .sheet-wrap { border-bottom: 1px solid var(--border-primary); background: var(--bg-tertiary); }
 .sheet-tools { display: flex; gap: 6px; padding: 8px; }
 .sheet-grid-wrap { overflow: auto; max-height: 260px; }

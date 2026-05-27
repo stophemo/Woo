@@ -20,11 +20,7 @@
       <LeftSidebar :is-open="leftSidebarOpen" />
       
       <!-- 中间缩略图列 -->
-<<<<<<< HEAD
-      <ThumbnailColumn :is-open="thumbnailSidebarOpen" />
-=======
-      <ThumbnailColumn :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" @outline-select="handleOutlineSelect" />
->>>>>>> 1d6ea72 (feat(app-desktop): 文件夹/文稿加锁功能 + Apple 风格交互动画)
+      <ThumbnailColumn :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" />
       
       <!-- 中央编辑区域 -->
       <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" @active-heading-change="handleActiveHeadingChange" />
@@ -82,7 +78,6 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 
 const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
-<<<<<<< HEAD
 const editAreaRef = ref<ComponentPublicInstance | null>(null)
 
 // 编辑器滚动 → 大纲高亮联动
@@ -385,10 +380,7 @@ onBeforeUnmount(() => {
 .toast-fade-leave-active {
   transition: all 0.3s ease;
 }
-.toast-fade-enter-from {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-10px);
-}
+.toast-fade-enter-from,
 .toast-fade-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(-10px);

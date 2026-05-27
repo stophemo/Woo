@@ -81,7 +81,11 @@ function search(keyword) {
 
 function getById(documentId) {
   const row = verifyExists(documentId)
-  return toDto(row)
+  const dto = toDto(row)
+  // 检查有效锁（含祖先目录锁）
+  const lockService = require('./lockService.cjs')
+  dto.isLocked = lockService.isDocumentEffectivelyLocked(documentId)
+  return dto
 }
 
 function create({ title, folderId }) {

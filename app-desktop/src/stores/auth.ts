@@ -47,6 +47,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => user.value !== null && !!user.value.id)
 
+  // 统一映射 Supabase user 对象 → AuthUser，消除 4 处重复
+  function mapUser(u: any): AuthUser {
+    return {
+      id: u.id,
+      email: u.email,
+      username: u.user_metadata?.username,
+      nickname: u.user_metadata?.full_name || u.user_metadata?.username || u.email?.split('@')[0] || '用户',
+      avatarUrl: u.user_metadata?.avatar_url
+    }
+  }
+
   /**
    * 启动时检查已有 session
    */
@@ -55,15 +66,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const session = await invoke<any>('auth:getSession')
       if (session?.user) {
-        const u = session.user
-        user.value = {
-          id: u.id,
-          email: u.email,
-          username: u.user_metadata?.username,
-          nickname: u.user_metadata?.full_name || u.user_metadata?.username || u.email?.split('@')[0] || '用户',
-          avatarUrl: u.user_metadata?.avatar_url
-        }
-        persistSession(u.id, u.email || '', u.user_metadata?.username || '')
+        user.value = mapUser(session.user)
+        persistSession(session.user.id, session.user.email || '', session.user.user_metadata?.username || '')
       } else {
         // 尝试从 localStorage 恢复
         const cached = loadSession()
@@ -92,15 +96,8 @@ export const useAuthStore = defineStore('auth', () => {
         errorMsg.value = '登录失败'
         return false
       }
-      const u = result.user
-      user.value = {
-        id: u.id,
-        email: u.email,
-        username: u.user_metadata?.username,
-        nickname: u.user_metadata?.full_name || u.user_metadata?.username || u.email?.split('@')[0] || '用户',
-        avatarUrl: u.user_metadata?.avatar_url
-      }
-      persistSession(u.id, u.email || '', u.user_metadata?.username || '')
+      user.value = mapUser(result.user)
+      persistSession(result.user.id, result.user.email || '', result.user.user_metadata?.username || '')
       return true
     } catch (err: any) {
       errorMsg.value = err?.message || '登录失败'
@@ -120,14 +117,8 @@ export const useAuthStore = defineStore('auth', () => {
       const result = await invoke<any>('auth:signUp', email, username, password)
       if (result?.session) {
         // session 存在 → 注册成功且已自动登录
-        const u = result.user
-        user.value = {
-          id: u.id,
-          email: u.email,
-          username: u.user_metadata?.username,
-          nickname: u.email?.split('@')[0] || '用户'
-        }
-        persistSession(u.id, u.email || '', u.user_metadata?.username || '')
+        user.value = mapUser(result.user)
+        persistSession(result.user.id, result.user.email || '', result.user.user_metadata?.username || '')
         return { ok: true }
       }
       // session 为 null → 需要邮箱确认或邮箱已存在
@@ -158,29 +149,6 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = false
   }
 
-  /**
-   * 获取当前用户（用于外部调用刷新状态）
-   */
-  async function fetchMe(): Promise<boolean> {
-    try {
-      const u = await invoke<any>('auth:getUser')
-      if (u) {
-        user.value = {
-          id: u.id,
-          email: u.email,
-          username: u.user_metadata?.username,
-          nickname: u.user_metadata?.full_name || u.user_metadata?.username || u.email?.split('@')[0] || '用户',
-          avatarUrl: u.user_metadata?.avatar_url
-        }
-        return true
-      }
-      user.value = null
-      return false
-    } catch {
-      return false
-    }
-  }
-
   return {
     user,
     loading,
@@ -190,7 +158,6 @@ export const useAuthStore = defineStore('auth', () => {
     bootstrap,
     login,
     signup,
-    logout,
-    fetchMe
+    logout
   }
 })

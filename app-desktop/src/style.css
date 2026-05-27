@@ -30,6 +30,7 @@
 
   /* 强调色 */
   --accent: #5a9acf;
+  --accent-rgb: 90, 154, 207;
   --accent-hover: #4889be;
   --accent-light: rgba(90, 154, 207, 0.12);
 
@@ -99,6 +100,7 @@
 
   /* 强调色 */
   --accent: #7ab0e0;
+  --accent-rgb: 122, 176, 224;
   --accent-hover: #8fc0ee;
   --accent-light: rgba(122, 176, 224, 0.15);
 

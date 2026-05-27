@@ -126,14 +126,6 @@ function getSession() {
 }
 
 /**
- * 获取当前 access token（用于 RLS 认证）
- */
-async function getAccessToken() {
-  const session = await getSession()
-  return session?.access_token || null
-}
-
-/**
  * 监听认证状态变化
  * 返回 unsubscribe 函数
  */
@@ -160,6 +152,5 @@ module.exports = {
   signOut,
   getCurrentUser,
   getSession,
-  getAccessToken,
   onAuthStateChange
 }

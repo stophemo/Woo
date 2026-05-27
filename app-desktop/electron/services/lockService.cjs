@@ -49,24 +49,6 @@ function setPassword(password) {
 }
 
 /**
- * 设置使用账号密码模式（清除自定义密码）
- */
-function setAccountMode() {
-  const db = getDb()
-  db.prepare('DELETE FROM sync_meta WHERE key = ?').run(HASH_KEY)
-  db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)').run(MODE_KEY, 'account')
-}
-
-/**
- * 清除加锁密码配置
- */
-function clearPassword() {
-  const db = getDb()
-  db.prepare('DELETE FROM sync_meta WHERE key = ?').run(HASH_KEY)
-  db.prepare('DELETE FROM sync_meta WHERE key = ?').run(MODE_KEY)
-}
-
-/**
  * 尝试验证密码。
  * 先试自定义密码，若未设置则通过 authService 验证账号密码。
  * @param {string} password
@@ -101,14 +83,6 @@ function verifyPassword(password) {
   }
 }
 
-/**
- * 更新自定义密码（需要旧密码验证）
- */
-function changePassword(oldPassword, newPassword) {
-  if (!verifyPassword(oldPassword)) throw new Error('旧密码错误')
-  setPassword(newPassword)
-}
-
 // ========== 文件夹加解锁 ==========
 
 function lockFolder(folderId) {
@@ -127,6 +101,14 @@ function isFolderLocked(folderId) {
   const db = getDb()
   const row = db.prepare('SELECT is_locked FROM note_folder WHERE id = ? AND deleted = 0').get(folderId)
   return row ? row.is_locked === 1 : false
+}
+
+/**
+ * 判断目录或任一祖先目录是否被锁定
+ */
+function isFolderEffectivelyLocked(folderId) {
+  const db = getDb()
+  return isFolderOrAncestorLocked(db, folderId)
 }
 
 // ========== 文稿加解锁 ==========
@@ -183,35 +165,6 @@ function isFolderOrAncestorLocked(db, folderId) {
 }
 
 /**
- * 获取所有被锁定的文件夹 ID 集合（含祖先锁定导致的间接锁定）
- */
-function getEffectiveLockedFolderIds() {
-  const db = getDb()
-  const folders = db.prepare('SELECT id, parent_id, is_locked FROM note_folder WHERE deleted = 0').all()
-  const locked = new Set()
-
-  // 先找直接锁定的
-  for (const f of folders) {
-    if (f.is_locked === 1) locked.add(f.id)
-  }
-
-  // 传播：父目录锁定 → 子目录也视为锁定
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const f of folders) {
-      if (locked.has(f.id)) continue
-      if (f.parent_id && locked.has(f.parent_id)) {
-        locked.add(f.id)
-        changed = true
-      }
-    }
-  }
-
-  return locked
-}
-
-/**
  * 判断文档是否因自身或所在目录被锁定而不可见（用于搜索/全部视图过滤）
  */
 function isDocumentHidden(documentId) {
@@ -222,18 +175,15 @@ module.exports = {
   hasPassword,
   getPasswordMode,
   setPassword,
-  setAccountMode,
-  clearPassword,
   verifyPassword,
-  changePassword,
   lockFolder,
   unlockFolder,
   isFolderLocked,
+  isFolderEffectivelyLocked,
   lockDocument,
   unlockDocument,
   isDocumentLocked,
   isDocumentEffectivelyLocked,
   isFolderOrAncestorLocked,
-  getEffectiveLockedFolderIds,
   isDocumentHidden
 }

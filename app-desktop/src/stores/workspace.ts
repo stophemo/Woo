@@ -13,6 +13,7 @@ import type { FolderNode } from '../types/folder'
 import type { Document } from '../types/document'
 import * as folderApi from '../services/folderApi'
 import * as documentApi from '../services/documentApi'
+import * as lockApi from '../services/lockApi'
 import type { FolderTreeNodeDTO } from '../services/folderApi'
 import type { DocumentDTO } from '../services/documentApi'
 
@@ -87,6 +88,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const folders = ref<FolderNode[]>([])
   const folderDocuments = ref<Document[]>([]) // 当前目录下的文稿（不含 content）
   const selectedFolderId = ref<string | null>(null)
+  const selectedFolderLocked = ref(false)
   const selectedDocumentId = ref<string | null>(null)
   // 新建目录后需要自动进入重命名编辑状态的目录 id
   const editingFolderId = ref<string | null>(null)
@@ -129,6 +131,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectedFolderId.value = null
     selectedDocumentId.value = null
     currentDocumentData.value = null
+    selectedFolderLocked.value = false
     error.value = ''
   }
 
@@ -152,6 +155,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     selectedFolderId.value = folderId
     try {
+      // 隐私保护：检查目录是否被锁定（自身或祖先目录）
+      const effectivelyLocked = await lockApi.isFolderEffectivelyLocked(folderId)
+      if (selectedFolderId.value !== folderId) return
+      if (effectivelyLocked) {
+        selectedFolderLocked.value = true
+        folderDocuments.value = []
+        selectedDocumentId.value = null
+        currentDocumentData.value = null
+        return
+      }
+      selectedFolderLocked.value = false
       const list = await documentApi.listByFolder(folderId)
       // 防竞态：如果用户在此期间切换了目录，放弃本次结果
       if (selectedFolderId.value !== folderId) return
@@ -287,8 +301,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const dto = await documentApi.getById(documentId)
       // 防竞态：如果用户在此期间切换了文稿，放弃本次结果
       if (selectedDocumentId.value !== documentId) return
+      const doc = mapDocument(dto)
+      // 隐私保护：加锁文稿不保留内容在内存中
+      if (doc.isLocked) doc.content = ''
       // 整体赋值，引用变化 → 触发编辑器重载内容
-      currentDocumentData.value = mapDocument(dto)
+      currentDocumentData.value = doc
     } catch (e: any) {
       error.value = e?.message || '加载文稿内容失败'
       currentDocumentData.value = null
@@ -416,6 +433,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 打开草稿箱视图：本地草稿 + 后端遗留文档（无目录/目录不存在）
   async function openDraftBox() {
     selectedFolderId.value = DRAFT_FOLDER_ID
+    selectedFolderLocked.value = false
     const localDrafts = drafts.value.map(d => ({
       ...d,
       folderName: '草稿箱'
@@ -431,16 +449,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     } catch {
       folderDocuments.value = localDrafts
     }
-    if (folderDocuments.value.length > 0) {
-      await selectDocument(folderDocuments.value[0].id)
-    } else {
-      selectedDocumentId.value = null
-      currentDocumentData.value = null
-    }
+    await selectFirstDocOrClear()
   }
 
   async function openTrashBox() {
     selectedFolderId.value = TRASH_FOLDER_ID
+    selectedFolderLocked.value = false
     try {
       const list = await documentApi.listTrash()
       const backendDocs = list.map(d => ({
@@ -455,12 +469,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       folderDocuments.value = [...backendDocs, ...localTrashDrafts].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
-      if (folderDocuments.value.length > 0) {
-        await selectDocument(folderDocuments.value[0].id)
-      } else {
-        selectedDocumentId.value = null
-        currentDocumentData.value = null
-      }
+      await selectFirstDocOrClear()
     } catch (e: any) {
       error.value = e?.message || '加载废纸篓失败'
     }
@@ -468,6 +477,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function openSearch(keyword: string) {
     selectedFolderId.value = SEARCH_FOLDER_ID
+    selectedFolderLocked.value = false
     const q = keyword.trim()
     if (!q) {
       folderDocuments.value = []
@@ -478,12 +488,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       const list = await documentApi.search(q)
       folderDocuments.value = list.map(mapDocument)
-      if (folderDocuments.value.length > 0) {
-        await selectDocument(folderDocuments.value[0].id)
-      } else {
-        selectedDocumentId.value = null
-        currentDocumentData.value = null
-      }
+      await selectFirstDocOrClear()
     } catch (e: any) {
       error.value = e?.message || '搜索文稿失败'
     }
@@ -492,6 +497,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 打开全部文稿视图：后端所有文档 + 本地草稿，带来源标记
   async function openAllDocuments() {
     selectedFolderId.value = ALL_FOLDER_ID
+    selectedFolderLocked.value = false
     try {
       const backendDocs = (await documentApi.listAll()).map(d => ({
         ...mapDocument(d),
@@ -506,12 +512,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
       folderDocuments.value = merged
-      if (merged.length > 0) {
-        await selectDocument(merged[0].id)
-      } else {
-        selectedDocumentId.value = null
-        currentDocumentData.value = null
-      }
+      await selectFirstDocOrClear()
     } catch (e: any) {
       error.value = e?.message || '加载文稿失败'
     }
@@ -533,6 +534,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistDrafts(drafts.value)
     // 确保切到草稿箱视图并同步列表
     selectedFolderId.value = DRAFT_FOLDER_ID
+    selectedFolderLocked.value = false
     folderDocuments.value = drafts.value.map(d => ({ ...d }))
     selectedDocumentId.value = draft.id
     currentDocumentData.value = { ...draft }
@@ -582,15 +584,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         const listIdx = folderDocuments.value.findIndex(d => d.id === documentId)
         if (listIdx !== -1) folderDocuments.value.splice(listIdx, 1)
       }
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
       return
     }
     if (selectedFolderId.value === TRASH_FOLDER_ID) {
@@ -601,15 +595,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       await documentApi.remove(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
     } catch (e: any) {
       error.value = e?.message || '删除文稿失败'
     }
@@ -628,30 +614,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       const listIdx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (listIdx !== -1) folderDocuments.value.splice(listIdx, 1)
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
       return
     }
     try {
       await documentApi.restore(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
     } catch (e: any) {
       error.value = e?.message || '恢复文稿失败'
     }
@@ -667,30 +637,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       const listIdx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (listIdx !== -1) folderDocuments.value.splice(listIdx, 1)
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
       return
     }
     try {
       await documentApi.hardDelete(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
-      if (selectedDocumentId.value === documentId) {
-        const next = folderDocuments.value[0]
-        if (next) {
-          await selectDocument(next.id)
-        } else {
-          selectedDocumentId.value = null
-          currentDocumentData.value = null
-        }
-      }
+      await removeDocFromListAndAdvance(documentId)
     } catch (e: any) {
       error.value = e?.message || '彻底删除失败'
     }
@@ -862,7 +816,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               // 加载云端数据到编辑器
               try {
                 const dto = await documentApi.getById(cloudDoc.id)
-                currentDocumentData.value = mapDocument(dto)
+                const doc = mapDocument(dto)
+                if (doc.isLocked) doc.content = ''
+                currentDocumentData.value = doc
               } catch {
                 // 加载失败时保留本地数据不做变更
               }
@@ -870,7 +826,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               // 无未保存修改 → 直接加载云端最新内容
               try {
                 const dto = await documentApi.getById(cloudDoc.id)
-                currentDocumentData.value = mapDocument(dto)
+                const doc = mapDocument(dto)
+                if (doc.isLocked) doc.content = ''
+                currentDocumentData.value = doc
               } catch { /* ignore */ }
             }
           }
@@ -882,6 +840,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   // ============ 辅助 ============
+  /** 从列表中移除指定文档，若正是当前选中则跳到下一篇 */
+  async function removeDocFromListAndAdvance(documentId: string) {
+    const idx = folderDocuments.value.findIndex(d => d.id === documentId)
+    if (idx !== -1) folderDocuments.value.splice(idx, 1)
+    if (selectedDocumentId.value === documentId) {
+      const next = folderDocuments.value[0]
+      if (next) {
+        await selectDocument(next.id)
+      } else {
+        selectedDocumentId.value = null
+        currentDocumentData.value = null
+      }
+    }
+  }
+
+  /** 列表非空时选中第一篇，否则清空编辑区 */
+  async function selectFirstDocOrClear() {
+    if (folderDocuments.value.length > 0) {
+      await selectDocument(folderDocuments.value[0].id)
+    } else {
+      selectedDocumentId.value = null
+      currentDocumentData.value = null
+    }
+  }
+
   // 获取指定父节点下的同级目录列表，可选排除某个 id
   function getSiblings(parentId: string | null, excludeId: string | null): FolderNode[] {
     const list = parentId === null ? folders.value : findFolderById(folders.value, parentId)?.children || []
@@ -950,6 +933,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // 状态
     folders,
     selectedFolderId,
+    selectedFolderLocked,
     selectedDocumentId,
     editingFolderId,
     loading,

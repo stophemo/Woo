@@ -29,6 +29,10 @@ export function isFolderLocked(folderId: string): Promise<boolean> {
   return invoke<boolean>('lock:isFolderLocked', folderId)
 }
 
+export function isFolderEffectivelyLocked(folderId: string): Promise<boolean> {
+  return invoke<boolean>('lock:isFolderEffectivelyLocked', folderId)
+}
+
 export function lockDocument(documentId: string): Promise<void> {
   return invoke<void>('lock:lockDocument', documentId)
 }

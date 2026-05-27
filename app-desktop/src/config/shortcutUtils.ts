@@ -33,11 +33,3 @@ export function shortcutDisplay(shortcut: string): string {
   return result
 }
 
-/**
- * 将 Electron accelerator 格式转为前端显示（仅用于 macOS 原生菜单）。
- * Electron accelerator 用 Cmd / Ctrl / Shift / Alt + Key。
- */
-export function acceleratorDisplay(accelerator: string): string {
-  if (!isMac) return accelerator.replace(/CmdOrCtrl\+/g, 'Ctrl+').replace(/Cmd\+/g, 'Ctrl+')
-  return accelerator.replace(/CmdOrCtrl\+/g, '⌘').replace(/Cmd\+/g, '⌘')
-}
