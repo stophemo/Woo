@@ -162,3 +162,16 @@ Sync runs every 60s. Auth state changes trigger immediate sync + DB switch.
 - macOS: no code signing (`CSC_IDENTITY_AUTO_DISCOVERY: "false"`)
 - Remote uses HTTPS; use `gh auth git-credential` helper
 - CI generates release notes from conventional commits between tags
+
+## 跨设备记忆同步
+
+记忆文件存储在 `.claude/memory/`（纳入 git），通过 `scripts/sync-memory.sh` 与 Claude 系统路径同步：
+
+```bash
+# 新设备首次拉取后，将项目记忆写入 Claude 系统：
+./scripts/sync-memory.sh --pull
+
+# 每次 Claude 记住新内容后，提交前执行同步：
+./scripts/sync-memory.sh
+git add .claude/memory/ && git commit -m "chore: 同步记忆"
+```
