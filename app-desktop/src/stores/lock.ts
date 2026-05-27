@@ -11,6 +11,8 @@ export const useLockStore = defineStore('lock', () => {
 
   async function bootstrap() {
     try {
+      // 尝试从云端拉取锁密码（仅已登录用户有效）
+      await lockApi.cloudPullSettings().catch(() => {})
       const status = await lockApi.getStatus()
       hasPassword.value = status.hasPassword
       passwordMode.value = status.mode
@@ -37,6 +39,8 @@ export const useLockStore = defineStore('lock', () => {
 
   async function setPassword(password: string): Promise<void> {
     await lockApi.setPassword(password)
+    // 已登录用户同步锁密码到云端
+    await lockApi.cloudPushSettings(password).catch(() => {})
     hasPassword.value = true
     passwordMode.value = 'custom'
     sessionVerified.value = true

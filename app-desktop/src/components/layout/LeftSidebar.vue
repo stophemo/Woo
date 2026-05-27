@@ -257,6 +257,14 @@ const handleMenuSelect = (action: string) => {
 
 // ============ 加锁/解锁 ============
 function handleLockAction(folder: FolderNode) {
+  // 解锁操作始终需要验证密码
+  if (folder.isLocked) {
+    lockDialogMode.value = 'verify'
+    pendingLockTarget.value = folder
+    showLockDialog.value = true
+    return
+  }
+  // 加锁操作：若当前会话已验证过密码可跳过
   if (lockStore.sessionVerified) {
     performToggleLock(folder)
     return

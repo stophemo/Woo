@@ -166,7 +166,9 @@ function openLoginDialog() {
 
 function onLoginSuccess() {
   showLoginDialog.value = false
-  // 登录成功后重新加载工作区数据
+  // 登录成功后重新拉取云端锁密码
+  useLockStore().bootstrap()
+  // 重新加载工作区数据
   workspaceStore.bootstrap()
 }
 

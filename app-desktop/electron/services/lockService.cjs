@@ -171,6 +171,53 @@ function isDocumentHidden(documentId) {
   return isDocumentEffectivelyLocked(documentId)
 }
 
+// ========== 云端同步（通过 Supabase auth user_metadata） ==========
+
+/**
+ * 将锁密码推送到 Supabase 用户元数据
+ * 仅已登录用户有效，用于跨设备同步锁密码
+ */
+async function cloudPushSettings(password) {
+  try {
+    const { getClient } = require('../config/supabase.cjs')
+    const client = getClient()
+    if (!client) return
+
+    const hash = bcrypt.hashSync(password, SALT_ROUNDS)
+    const { error } = await client.auth.updateUser({
+      data: { lock_password_hash: hash, lock_password_mode: 'custom' }
+    })
+    if (error) console.warn('[Lock] 云端保存失败:', error.message)
+  } catch (e) {
+    console.warn('[Lock] 云端保存异常:', e.message)
+  }
+}
+
+/**
+ * 从 Supabase 用户元数据拉取锁密码到本地
+ * 用于新设备首次登录时同步锁密码
+ */
+async function cloudPullSettings() {
+  try {
+    const { getClient } = require('../config/supabase.cjs')
+    const client = getClient()
+    if (!client) return
+
+    const { data: { user } } = await client.auth.getUser()
+    if (!user?.user_metadata?.lock_password_hash) return
+
+    const db = getDb()
+    const hash = user.user_metadata.lock_password_hash
+    const mode = user.user_metadata.lock_password_mode || 'custom'
+
+    // 覆盖本地：云端为可信源
+    db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)').run(HASH_KEY, hash)
+    db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)').run(MODE_KEY, mode)
+  } catch (e) {
+    console.warn('[Lock] 云端拉取异常:', e.message)
+  }
+}
+
 module.exports = {
   hasPassword,
   getPasswordMode,
@@ -185,5 +232,7 @@ module.exports = {
   isDocumentLocked,
   isDocumentEffectivelyLocked,
   isFolderOrAncestorLocked,
-  isDocumentHidden
+  isDocumentHidden,
+  cloudPushSettings,
+  cloudPullSettings
 }

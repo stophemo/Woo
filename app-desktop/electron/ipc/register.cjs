@@ -99,6 +99,8 @@ function register() {
   ipcMain.handle('lock:lockDocument', wrap(async (documentId) => { lockService.lockDocument(documentId); return null }))
   ipcMain.handle('lock:unlockDocument', wrap(async (documentId) => { lockService.unlockDocument(documentId); return null }))
   ipcMain.handle('lock:isDocumentLocked', wrap(async (documentId) => lockService.isDocumentLocked(documentId)))
+  ipcMain.handle('lock:cloudPushSettings', wrap(async (password) => { await lockService.cloudPushSettings(password); return null }))
+  ipcMain.handle('lock:cloudPullSettings', wrap(async () => { await lockService.cloudPullSettings(); return null }))
 
   // —— sync ——
   ipcMain.handle('sync:status', wrap(() => {
