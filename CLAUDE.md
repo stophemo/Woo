@@ -163,15 +163,15 @@ Sync runs every 60s. Auth state changes trigger immediate sync + DB switch.
 - Remote uses HTTPS; use `gh auth git-credential` helper
 - CI generates release notes from conventional commits between tags
 
-## 跨设备记忆同步
+## 跨设备记忆同步（自动）
 
-记忆文件存储在 `.claude/memory/`（纳入 git），通过 `scripts/sync-memory.sh` 与 Claude 系统路径同步：
+记忆文件在 `.claude/memory/`（纳入 git），当我执行 git 操作时自动同步，无需你手动干预。
 
-```bash
-# 新设备首次拉取后，将项目记忆写入 Claude 系统：
-./scripts/sync-memory.sh --pull
+### 自动规则
 
-# 每次 Claude 记住新内容后，提交前执行同步：
-./scripts/sync-memory.sh
-git add .claude/memory/ && git commit -m "chore: 同步记忆"
-```
+- **拉取代码时**：`git pull` 后自动执行 `./scripts/sync-memory.sh --pull`，将远端记忆写入本地系统路径
+- **提交推送时**：提交前自动执行 `./scripts/sync-memory.sh` 将本地系统记忆同步到 `.claude/memory/`，然后 `git add .claude/memory/` 纳入提交
+
+### skill
+
+- `.claude/skills/sync-memory.md` — 可通过 `/sync-memory` 手动调用同步
