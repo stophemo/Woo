@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="edit-area">
     <div v-if="showSheet" class="sheet-wrap">
       <div class="sheet-tools">
@@ -67,6 +67,13 @@
         <span>{{ zoomPercent }}%</span>
       </div>
     </div>
+
+    <!-- 思维导图预览对话框 -->
+    <MindmapDialog
+      v-if="showMindmapDialog && mindmapDialogData"
+      :data="mindmapDialogData"
+      @close="showMindmapDialog = false"
+    />
   </section>
 </template>
 
@@ -81,9 +88,12 @@ import TaskItem from '@tiptap/extension-task-item'
 import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
+import BulletList from '@tiptap/extension-bullet-list'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { registerScrollHandler } from '../../config/editorNavigation'
+import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
+import MindmapDialog from './MindmapDialog.vue'
 
 const store = useWorkspaceStore()
 const TRASH_FOLDER_ID = '__trash__'
@@ -274,17 +284,111 @@ const CustomKeymap = Extension.create({
   }
 })
 
+// ═══════════════════════════════════════════════
+// BulletList NodeView — 每个无序列表块右侧显示思维导图按钮
+// ═══════════════════════════════════════════════
+
+const showMindmapDialog = ref(false)
+const mindmapDialogData = ref<TreeNode | null>(null)
+
+function extractListItems(node: any, target: TreeNode[]) {
+  if (node.type.name !== 'listItem') return
+  let text = ''
+  for (let i = 0; i < node.content.childCount; i++) {
+    const child = node.content.child(i)
+    if (child.type.name === 'paragraph') {
+      text = child.textContent.trim()
+    } else if (child.type.name === 'bulletList') {
+      const subChildren: TreeNode[] = []
+      for (let j = 0; j < child.childCount; j++) extractListItems(child.child(j), subChildren)
+      if (text || subChildren.length > 0) { target.push({ text, children: subChildren }) }
+      text = ''
+    }
+  }
+  if (text) target.push({ text, children: [] })
+}
+
+function buildTreeAuto(listNode: any, rootText?: string): TreeNode {
+  const items: TreeNode[] = []
+  for (let i = 0; i < listNode.childCount; i++) extractListItems(listNode.child(i), items)
+  if (items.length === 0) return { text: '', children: [] }
+  if (rootText) {
+    // 以指定文本为根，所有列表项为子节点
+    return { text: rootText, children: items }
+  }
+  // 无根文本时：第一项为根节点，其余项作为子节点
+  const root = items[0]
+  for (let i = 1; i < items.length; i++) root.children.push(items[i])
+  return root
+}
+
+const mmOpenCb = ref<((node: any, editor: any, getPos: () => number | undefined) => void) | null>(null)
+mmOpenCb.value = (node: any, editor: any, getPos: () => number | undefined) => {
+  // 查找前驱 heading（如果有）
+  let rootText: string | undefined
+  const pos = getPos()
+  if (typeof pos === 'number' && editor) {
+    const $pos = editor.state.doc.resolve(pos)
+    const prev = $pos.nodeBefore
+    if (prev?.type.name === 'heading') rootText = prev.textContent
+  }
+
+  const tree = buildTreeAuto(node, rootText)
+  if (!tree.text && tree.children.length === 0) return
+  mindmapDialogData.value = tree
+  showMindmapDialog.value = true
+}
+
+const MindmapBulletList = BulletList.extend({
+  addNodeView() {
+    return ({ editor, node, getPos }) => {
+      const pos = getPos()
+      const resolved = typeof pos === 'number' ? editor.state.doc.resolve(pos) : null
+
+      // 嵌套列表（在 listItem 内）→ 纯 ul，不加按钮
+      if (resolved?.parent?.type.name === 'listItem') {
+        const ul = document.createElement('ul')
+        return { dom: ul, contentDOM: ul }
+      }
+
+      // 顶级列表 → wrapper + 按钮
+      const wrapper = document.createElement('div')
+      wrapper.className = 'bulletlist-wrapper'
+
+      const btn = document.createElement('span')
+      btn.className = 'bullet-mm-btn'
+      btn.title = '思维导图预览'
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><line x1="9" y1="6" x2="15" y2="6"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/><line x1="9" y1="18" x2="15" y2="18"/></svg>`
+
+      const savedGetPos = getPos
+      const savedEditor = editor
+      btn.addEventListener('mousedown', (e: MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        mmOpenCb.value?.(node, savedEditor, savedGetPos)
+      })
+
+      const ul = document.createElement('ul')
+      wrapper.appendChild(btn)
+      wrapper.appendChild(ul)
+
+      return { dom: wrapper, contentDOM: ul }
+    }
+  },
+})
+
 const editor = useEditor({
   content: '',
   extensions: [
-    StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),
+    StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, bulletList: false }),
     Placeholder.configure({ placeholder: 'Start writing...' }),
     Underline,
     TaskList,
     TaskItem.configure({ nested: true }),
     Highlight.configure({ multicolor: false }),
     Typography,
-    CustomKeymap
+    CustomKeymap,
+    MindmapBulletList,
   ],
   editorProps: { attributes: { class: 'wysiwyg-editor', spellcheck: 'false' } },
   onUpdate: ({ editor: editorInstance }) => {
@@ -321,7 +425,7 @@ const currentBlock = computed(() => {
 const wordCount = computed(() => {
   if (!editor.value) return 0
   const text = editor.value.getText()
-  const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length
+  const chineseChars = (text.match(/[一-龥]/g) || []).length
   const englishWords = (text.match(/[a-zA-Z]+/g) || []).length
   return chineseChars + englishWords
 })
@@ -336,7 +440,6 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   }
   isSettingContent = true
   if (newDoc && newDoc.isLocked) {
-    // 隐私保护：加锁文稿决不加载内容到编辑器
     editor.value.commands.setContent('')
   } else {
     editor.value.commands.setContent(newDoc ? newDoc.content : '')
@@ -381,7 +484,6 @@ let scrollRAF: number | null = null
 let lastActiveHeading: number | null = null
 let scrollElRef: HTMLElement | null = null
 
-/** 绑定/重新绑定 scroll 监听到 .editor-body */
 function setupScrollListener() {
   const ed = editor.value
   if (!ed) return
@@ -389,7 +491,6 @@ function setupScrollListener() {
   if (!editorEl || !editorEl.isConnected) return
   const el = editorEl.closest('.editor-body') as HTMLElement | null
   if (!el || el === scrollElRef) return
-  // 移除旧监听（防止重复绑定）
   if (scrollElRef) scrollElRef.removeEventListener('scroll', onEditorScroll)
   scrollElRef = el
   scrollElRef.addEventListener('scroll', onEditorScroll, { passive: true })
@@ -495,7 +596,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.edit-area { flex: 1; display: flex; flex-direction: column; background-color: var(--editor-bg); overflow: hidden; transition: var(--theme-transition); }
+.edit-area { flex: 1; display: flex; flex-direction: column; background-color: var(--editor-bg); overflow: hidden; position: relative; transition: var(--theme-transition); }
 .tool-btn { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); border-radius: 4px; height: 24px; padding: 0 8px; cursor: pointer; }
 .sheet-wrap { border-bottom: 1px solid var(--border-primary); background: var(--bg-tertiary); }
 .sheet-tools { display: flex; gap: 6px; padding: 8px; }
@@ -570,4 +671,47 @@ onBeforeUnmount(() => {
 .wysiwyg-editor a { color: var(--editor-link); text-decoration: none; }
 .wysiwyg-editor a:hover { text-decoration: underline; }
 .wysiwyg-editor ::selection { background-color: var(--editor-selection); }
+
+/* ═══════════════════════════════════════════════
+   BulletList NodeView — 思维导图按钮
+   ═══════════════════════════════════════════════ */
+.bulletlist-wrapper {
+  position: relative;
+}
+
+.bullet-mm-btn {
+  position: absolute;
+  top: 10px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.bulletlist-wrapper:hover .bullet-mm-btn {
+  opacity: 1;
+}
+
+.bullet-mm-btn:hover {
+  background: var(--bg-elevated, #f5f5f7);
+  border-color: var(--border-primary, #d2d2d7);
+  color: var(--text-secondary, #6e6e73);
+}
+
+.bullet-mm-btn:active {
+  background: var(--accent, #0071e3);
+  border-color: var(--accent, #0071e3);
+  color: #fff;
+}
 </style>
