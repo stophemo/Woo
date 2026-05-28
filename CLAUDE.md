@@ -163,15 +163,12 @@ Woo/
 - 远端使用 HTTPS；使用 `gh auth git-credential` 辅助工具
 - CI 从标签间的约定式提交自动生成发布说明
 
-## 跨设备记忆同步（自动）
+## 交互规则
 
-记忆文件在 `.claude/memory/`（纳入 git），当我执行 git 操作时自动同步，无需你手动干预。
-
-### 自动规则
-
-- **拉取代码时**：`git pull` 后自动执行 `./scripts/sync-memory.sh --pull`，将远端记忆写入本地系统路径
-- **提交推送时**：提交前自动执行 `./scripts/sync-memory.sh` 将本地系统记忆同步到 `.claude/memory/`，然后 `git add .claude/memory/` 纳入提交
-
-### skill
-
-- `.claude/skills/sync-memory.md` — 可通过 `/sync-memory` 手动调用同步
+- 始终使用简体中文对话，保持专业、简洁
+- 不输出 emoji，除非用户明确要求
+- 默认不写代码注释（除非 WHY 不显而易见才加一行）
+- 优先编辑现有文件而非新建
+- 避免防御性代码：不为不可能发生的场景加错误处理、回退或校验
+- 不做预期外的抽象和重构，三个相似行好过一个提前抽象
+- 当前根目录下的 `AGENTS.md` 是已作废的旧文件，不应使用
