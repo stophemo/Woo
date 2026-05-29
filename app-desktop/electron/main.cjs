@@ -375,6 +375,27 @@ app.whenReady().then(() => {
     return { filePath: result.filePath, format }
   })
 
+  // —— 文稿导出 PDF（HTML → 隐藏窗口 → printToPDF） ——
+  ipcMain.handle('document:export-pdf', async (_event, { filePath, html }) => {
+    const pdfWin = new BrowserWindow({ show: false, width: 800, height: 600 })
+    try {
+      const styledHtml = '<!DOCTYPE html>\n<html><meta charset="utf-8"><title>export</title><style>\n' +
+        'body{font:14px/1.7 -apple-system,Segoe UI,Roboto,sans-serif;color:#222;padding:40px;max-width:800px;margin:0 auto}\n' +
+        'pre,code{font-family:SF Mono,Consolas,monospace;font-size:13px}\n' +
+        'pre{background:#f5f5f5;padding:12px;border-radius:6px;overflow-x:auto}\n' +
+        'img{max-width:100%}\ntable{border-collapse:collapse;width:100%}\n' +
+        'td,th{border:1px solid #ccc;padding:6px 10px}\n' +
+        'blockquote{border-left:4px solid #ddd;margin:0;padding:4px 16px;color:#666}\n' +
+        '</style><body>' + html + '</body></html>'
+      await pdfWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(styledHtml))
+      const pdfBuf = await pdfWin.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true })
+      fs.writeFileSync(filePath, pdfBuf)
+      return { ok: true }
+    } finally {
+      if (!pdfWin.isDestroyed()) pdfWin.close()
+    }
+  })
+
   ipcMain.handle('file:write', async (_event, { filePath, data, isBase64 }) => {
     try {
       if (isBase64) {
