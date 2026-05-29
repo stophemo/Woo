@@ -323,18 +323,43 @@ async function handleExportDoc(docId: string) {
     filters: [
       { name: 'Markdown 文件', extensions: ['md'] },
       { name: 'PDF 文件', extensions: ['pdf'] },
+      { name: '图片文件', extensions: ['webp'] },
     ],
   })
   if (result.cancelled) return
 
-  const ext = result.filePath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'md'
-
-  if (ext === 'md') {
+  const ext = result.filePath.toLowerCase()
+  if (ext.endsWith('.md')) {
     const md = _turndown.turndown(html)
     await wooInvoke('file:write', { filePath: result.filePath, data: md, isBase64: false })
-  } else {
+  } else if (ext.endsWith('.pdf')) {
     await wooInvoke('document:export-pdf', { filePath: result.filePath, html })
+  } else if (ext.endsWith('.webp')) {
+    const cap = await wooInvoke('document:capture-image', { html })
+    if (!cap?.data) return
+    const webpBase64 = await pngDataUrlToWebPBase64(cap.data)
+    await wooInvoke('file:write', { filePath: result.filePath, data: webpBase64, isBase64: true })
   }
+}
+
+async function pngDataUrlToWebPBase64(pngDataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      canvas.toBlob(async (blob) => {
+        if (!blob) { reject(new Error('WebP 转换失败')); return }
+        const buf = await blob.arrayBuffer()
+        resolve(btoa(String.fromCharCode(...new Uint8Array(buf))))
+      }, 'image/webp', 0.92)
+    }
+    img.onerror = () => reject(new Error('图片加载失败'))
+    img.src = pngDataUrl
+  })
 }
 
 function handleDocContextMenu(event: MouseEvent, docId: string) {

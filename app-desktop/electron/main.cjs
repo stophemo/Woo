@@ -396,6 +396,37 @@ app.whenReady().then(() => {
     }
   })
 
+  // —— 文稿导出图片（HTML → 隐藏窗口 → capturePage） ——
+  ipcMain.handle('document:capture-image', async (_event, { html }) => {
+    const capWin = new BrowserWindow({ show: false, width: 800, height: 600 })
+    try {
+      const styledHtml = '<!DOCTYPE html>\n<html><meta charset="utf-8"><meta name="color-scheme" content="light">\n' +
+        '<style>\n' +
+        '*{margin:0;padding:0;box-sizing:border-box}\n' +
+        'body{font:15px/1.8 -apple-system,Segoe UI,Roboto,sans-serif;color:#222;padding:48px;max-width:780px;margin:0 auto}\n' +
+        'h1{font-size:26px;margin:24px 0 12px}\nh2{font-size:22px;margin:20px 0 10px}\nh3{font-size:18px;margin:16px 0 8px}\n' +
+        'p{margin:0 0 10px}\n' +
+        'ul,ol{padding-left:24px;margin:8px 0}\n' +
+        'li{margin:4px 0}\n' +
+        'pre{background:#f5f5f5;padding:16px;border-radius:8px;overflow-x:auto;margin:12px 0;font-size:13px}\n' +
+        'code{font-family:SF Mono,Consolas,monospace;font-size:13px}\n' +
+        'p>code,li>code{background:#f0f0f0;padding:2px 6px;border-radius:4px}\n' +
+        'blockquote{border-left:4px solid #ddd;margin:12px 0;padding:4px 20px;color:#666}\n' +
+        'img{max-width:100%;height:auto;margin:12px 0}\n' +
+        'table{border-collapse:collapse;width:100%;margin:12px 0}\n' +
+        'td,th{border:1px solid #ccc;padding:8px 12px;text-align:left}\n' +
+        'th{background:#f9f9f9}\n' +
+        'hr{border:none;border-top:1px solid #eee;margin:24px 0}\n' +
+        '</style><body>' + html + '</body></html>'
+      await capWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(styledHtml))
+      await new Promise(r => setTimeout(r, 300))
+      const img = await capWin.webContents.capturePage()
+      return { data: img.toDataURL() }
+    } finally {
+      if (!capWin.isDestroyed()) capWin.close()
+    }
+  })
+
   ipcMain.handle('file:write', async (_event, { filePath, data, isBase64 }) => {
     try {
       if (isBase64) {
