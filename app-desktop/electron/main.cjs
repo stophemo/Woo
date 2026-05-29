@@ -388,6 +388,28 @@ app.whenReady().then(() => {
     }
   })
 
+  // —— 通用保存对话框（由渲染端指定路径和筛选器） ——
+  ipcMain.handle('dialog:save-file', async (event, { defaultPath, filters }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const dir = path.dirname(defaultPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const result = await dialog.showSaveDialog(win, { defaultPath, filters })
+    if (result.canceled) return { cancelled: true }
+    return { filePath: result.filePath }
+  })
+
+  // —— 文档导出保存对话框（默认路径: 用户文档/woo_export/） ——
+  ipcMain.handle('dialog:save-document', async (event, { defaultName, filters }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const docsPath = app.getPath('documents')
+    const defaultPath = path.join(docsPath, 'woo_export', defaultName || 'untitled.md')
+    const dir = path.dirname(defaultPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const result = await dialog.showSaveDialog(win, { defaultPath, filters })
+    if (result.canceled) return { cancelled: true }
+    return { filePath: result.filePath }
+  })
+
   // 启动同步引擎：设置状态回调 + 数据变更回调 + 启动定时器
   syncEngine.setOnStatusChange((status) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

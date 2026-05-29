@@ -166,6 +166,7 @@ import IconLock from '../icons/IconLock.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 import LockPasswordDialog from './LockPasswordDialog.vue'
+import TurndownService from 'turndown'
 
 interface Props {
   isOpen: boolean
@@ -302,6 +303,30 @@ async function handleHardDeleteDocument(docId: string) {
   await store.hardDeleteDocument(docId)
 }
 
+const _turndown = new TurndownService({
+  headingStyle: 'atx',       // ## 标题
+  codeBlockStyle: 'fenced',  // ``` 代码块
+  emDelimiter: '*',          // *斜体*
+  bulletListMarker: '-',     // - 无序列表
+})
+
+async function handleExportMd(docId: string) {
+  const doc = store.currentFolderDocuments.find(d => d.id === docId)
+  if (!doc) return
+
+  const title = doc.title || '未命名文稿'
+  const md = _turndown.turndown(doc.content || '')
+
+  const wooInvoke = (window as any).woo.invoke as (ch: string, ...a: any[]) => Promise<any>
+  const docPath = await wooInvoke('dialog:save-document', {
+    defaultName: `${title}.md`,
+    filters: [{ name: 'Markdown 文件', extensions: ['md'] }],
+  })
+  if (docPath.cancelled) return
+
+  await wooInvoke('file:write', { filePath: docPath.filePath, data: md, isBase64: false })
+}
+
 function handleDocContextMenu(event: MouseEvent, docId: string) {
   contextMenuDocId.value = docId
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
@@ -316,6 +341,7 @@ function handleDocContextMenu(event: MouseEvent, docId: string) {
     if (doc?.isLocked !== undefined) {
       items.push({ label: doc.isLocked ? '解锁' : '加锁', action: 'toggleLock' })
     }
+    items.push({ label: '导出为 Markdown', action: 'exportMd' })
     items.push({ label: '删除', action: 'delete' })
     contextMenuItems.value = items
   }
@@ -363,6 +389,11 @@ async function handleMenuSelect(action: string) {
         showLockDialog.value = true
       }
     }
+    closeContextMenu()
+    return
+  }
+  if (action === 'exportMd') {
+    await handleExportMd(docId)
     closeContextMenu()
     return
   }
