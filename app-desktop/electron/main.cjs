@@ -4,6 +4,16 @@
  *   1. 初始化 SQLite 数据库
  *   2. 注册所有业务 IPC（folder / document / version）
  */
+
+// [Windows] 强制控制台使用 UTF-8 编码，防止中文日志乱码
+if (process.platform === 'win32') {
+  try {
+    require('child_process').execSync('chcp 65001 > NUL', { stdio: 'ignore' })
+  } catch (_) {}
+  try { process.stdout.setDefaultEncoding('utf8') } catch (_) {}
+  try { process.stderr.setDefaultEncoding('utf8') } catch (_) {}
+}
+
 const { app, BrowserWindow, ipcMain, shell, nativeImage, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')

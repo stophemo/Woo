@@ -1,42 +1,40 @@
 <template>
   <teleport to="body">
-    <transition name="mm-fade">
-      <div class="mm-overlay" @click.self="$emit('close')">
-        <div class="mm-card">
-          <div class="mm-card-header">
-            <span class="mm-card-title">思维导图预览</span>
-            <div class="mm-card-actions">
-              <button class="mm-action-btn" :disabled="!hasData" @click="exportPNG" title="导出 PNG">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                导出 PNG
-              </button>
-              <button class="mm-action-btn" :disabled="!hasData" @click="exportSVG" title="导出 SVG">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
-                导出 SVG
-              </button>
-              <button class="mm-close-btn" @click="$emit('close')" title="关闭">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+    <div class="mm-overlay" :class="{ 'mm-closing': closing }" @click.self="startClose">
+      <div class="mm-card">
+        <div class="mm-card-header">
+          <span class="mm-card-title">思维导图预览</span>
+          <div class="mm-card-actions">
+            <button class="mm-action-btn" :disabled="!hasData" @click="exportPNG" title="导出 PNG">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              导出 PNG
+            </button>
+            <button class="mm-action-btn" :disabled="!hasData" @click="exportSVG" title="导出 SVG">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              导出 SVG
+            </button>
+            <button class="mm-close-btn" @click="startClose" title="关闭">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
+        </div>
 
-          <div class="mm-card-body">
-            <div v-if="!hasData" class="mm-empty">
-              <p>所选列表为空</p>
-            </div>
-            <div v-else class="mm-canvas">
-              <svg ref="svgRef" class="mm-svg"></svg>
-            </div>
+        <div class="mm-card-body">
+          <div v-if="!hasData" class="mm-empty">
+            <p>所选列表为空</p>
+          </div>
+          <div v-else class="mm-canvas">
+            <svg ref="svgRef" class="mm-svg"></svg>
           </div>
         </div>
       </div>
-    </transition>
+    </div>
   </teleport>
 </template>
 
@@ -50,31 +48,65 @@ const props = defineProps<{
   data: TreeNode
 }>()
 
-defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [] }>()
+const closing = ref(false)
+
+function startClose() {
+  // 先销毁 markmap，断开 SVG DOM，避免 unmount 时集中清理导致闪屏
+  mm?.destroy()
+  mm = null
+  closing.value = true
+  // 动画结束后再 emit close
+  const el = document.querySelector('.mm-overlay')
+  const handler = () => {
+    el?.removeEventListener('transitionend', handler)
+    emit('close')
+  }
+  el?.addEventListener('transitionend', handler)
+  setTimeout(() => {
+    el?.removeEventListener('transitionend', handler)
+    emit('close')
+  }, 600)
+}
 
 const svgRef = ref<SVGSVGElement | null>(null)
 let mm: Markmap | null = null
 
-// ── Apple 风格色板 ──
-const colorPalette = [
-  '#007AFF', // 蓝色
-  '#34C759', // 绿色
-  '#FF9F0A', // 橙色
-  '#FF375F', // 玫红
-  '#5E5CE6', // 紫色
-  '#64D2FF', // 天蓝
-  '#BF5AF2', // 洋红
-  '#00C7BE', // 青绿
+// ── 主题感知色板 ──
+const lightPalette = [
+  '#007AFF', '#34C759', '#FF9F0A', '#FF375F',
+  '#5E5CE6', '#64D2FF', '#BF5AF2', '#00C7BE',
+]
+const darkPalette = [
+  '#5AB0FF', '#5CD974', '#FFB340', '#FF6B85',
+  '#8B8AFF', '#80DFFF', '#D98AFF', '#5CE0D8',
 ]
 
+function isDarkMode(): boolean {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+}
+
 function pickColor(node: INode): string {
+  const dark = isDarkMode()
   const depth = node.state.depth
-  if (depth === 0) return '#1d1d1f'
-  // 根据内容和深度算出色板索引，保证同节点颜色一致
+  if (depth === 0) return dark ? '#d5d0c8' : '#37342f'
+  const palette = dark ? darkPalette : lightPalette
   let hash = 0
   for (const ch of node.content) hash = ((hash << 5) - hash) + ch.charCodeAt(0)
-  const idx = (Math.abs(hash) + depth) % colorPalette.length
-  return colorPalette[idx]
+  const idx = (Math.abs(hash) + depth) % palette.length
+  return palette[idx]
+}
+
+/** markmap 的 style 选项：注入 CSS 到 SVG 内，确保文字和线条随主题变化 */
+function themeStyle(id: string): string {
+  const dark = isDarkMode()
+  const textClr = dark ? '#d5d0c8' : '#37342f'
+  const dim = dark ? '#6a6560' : '#9a9690'
+  return `
+#${id} { background: ${dark ? '#2a2926' : '#f0ede9'} !important; }
+#${id} .markmap-node { color: ${textClr} !important; fill: ${textClr} !important; }
+#${id} .markmap-link { stroke: ${dim} !important; }
+`
 }
 
 function toMarkmapNode(text: string, children: any[]): IPureNode {
@@ -104,14 +136,16 @@ async function render() {
   if (!mm) {
     mm = Markmap.create(svgRef.value, {
       autoFit: true,
-      duration: 0,                // 无动画，即刻渲染
-      initialExpandLevel: 999,    // 全部展开
+      duration: 0,
+      initialExpandLevel: 999,
       maxInitialScale: 1.2,
       pan: true,
       zoom: true,
       scrollForPan: true,
       toggleRecursively: true,
+      id: 'mm-canvas',
       color: pickColor,
+      style: themeStyle,
       spacingHorizontal: 50,      // 水平间距（Apple 风格宽敞）
       spacingVertical: 6,         // 垂直间距紧凑
       paddingX: 16,               // 节点内边距
@@ -125,8 +159,23 @@ async function render() {
   }
 }
 
+function applyThemeToSvg() {
+  if (!svgRef.value) return
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+  const textColor = isDark ? '#d5d0c8' : '#37342f'
+  const dimColor = isDark ? '#6a6560' : '#9a9690'
+  // 遍历 SVG 中所有 text 元素，强制设置 fill
+  const texts = svgRef.value.querySelectorAll<SVGTextElement>('text')
+  for (const t of texts) t.setAttribute('fill', textColor)
+  // 遍历所有 link 线条
+  const links = svgRef.value.querySelectorAll<SVGPathElement>('.markmap-link')
+  for (const l of links) l.setAttribute('stroke', dimColor)
+}
+
 onMounted(() => {
   if (hasData.value) void render()
+  // 渲染完成后强制应用主题色
+  setTimeout(applyThemeToSvg, 50)
 })
 
 onBeforeUnmount(() => {
@@ -195,7 +244,7 @@ function exportSVG() {
   max-width: 900px;
   height: 80vh;
   max-height: 700px;
-  background: var(--card-bg, #ffffff);
+  background: var(--bg-surface);
   border-radius: 16px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
   display: flex;
@@ -274,7 +323,7 @@ function exportSVG() {
   flex: 1;
   display: flex;
   overflow: hidden;
-  background: var(--card-body-bg, #fafafa);
+  background: var(--bg-tertiary);
 }
 
 .mm-empty {
@@ -282,7 +331,7 @@ function exportSVG() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted, #999);
+  color: var(--text-muted);
   font-size: 14px;
 }
 
@@ -298,45 +347,48 @@ function exportSVG() {
   height: 100%;
 }
 
-/* ── 弹窗淡入动画 ── */
-.mm-fade-enter-active {
-  transition: opacity 0.2s ease;
+/* ── 弹窗淡入淡出动画 ── */
+.mm-overlay {
+  opacity: 1;
+  transition: opacity 0.4s ease;
 }
-.mm-fade-enter-active .mm-card {
-  transition: transform 0.2s ease, opacity 0.2s ease;
+.mm-overlay .mm-card {
+  opacity: 1;
+  transform: scale(1);
+  transition: transform 0.4s ease, opacity 0.4s ease;
 }
-.mm-fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-.mm-fade-enter-from {
+.mm-overlay.mm-closing {
   opacity: 0;
+  pointer-events: none;
 }
-.mm-fade-enter-from .mm-card {
+.mm-overlay.mm-closing .mm-card {
   opacity: 0;
   transform: scale(0.97);
-}
-.mm-fade-leave-to {
-  opacity: 0;
-}
-
-/* Dark theme adjustments */
-:root[data-theme="dark"] .mm-overlay {
-  background: rgba(0, 0, 0, 0.5);
 }
 </style>
 
 <!-- 非 scoped 样式，用于 markmap SVG 内部元素 -->
 <style>
-.mm-svg text {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-  font-size: 13px;
+.mm-svg {
+  background: var(--bg-tertiary) !important;
 }
-
+.mm-svg .markmap-node {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+.mm-svg .markmap-node text {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-size: 14px;
+  fill: inherit;
+  color: inherit;
+}
 .mm-svg .markmap-node circle {
   stroke-width: 2;
+  fill: var(--accent) !important;
+  stroke: var(--accent) !important;
 }
-
 .mm-svg .markmap-link {
-  stroke-width: 1.5;
+  stroke: var(--text-muted) !important;
+  stroke-width: 1.7;
 }
 </style>

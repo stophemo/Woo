@@ -322,18 +322,20 @@ function buildTreeAuto(listNode: any, rootText?: string): TreeNode {
   return root
 }
 
-const mmOpenCb = ref<((node: any, editor: any, getPos: () => number | undefined) => void) | null>(null)
-mmOpenCb.value = (node: any, editor: any, getPos: () => number | undefined) => {
-  // 查找前驱 heading（如果有）
-  let rootText: string | undefined
-  const pos = getPos()
-  if (typeof pos === 'number' && editor) {
-    const $pos = editor.state.doc.resolve(pos)
-    const prev = $pos.nodeBefore
-    if (prev?.type.name === 'heading') rootText = prev.textContent
-  }
+const mmOpenCb = ref<((pos: number, editor: any) => void) | null>(null)
+mmOpenCb.value = (pos: number, editor: any) => {
+  // 从 editor state 取当前 node（而非闭包中可能过时的 node）
+  const currentNode = editor.state.doc.nodeAt(pos)
+  if (!currentNode || currentNode.type.name !== 'bulletList') return
+  const listNode = currentNode
 
-  const tree = buildTreeAuto(node, rootText)
+  // 查找前驱 heading
+  let rootText: string | undefined
+  const $pos = editor.state.doc.resolve(pos)
+  const prev = $pos.nodeBefore
+  if (prev?.type.name === 'heading') rootText = prev.textContent
+
+  const tree = buildTreeAuto(listNode, rootText)
   if (!tree.text && tree.children.length === 0) return
   mindmapDialogData.value = tree
   showMindmapDialog.value = true
@@ -341,7 +343,7 @@ mmOpenCb.value = (node: any, editor: any, getPos: () => number | undefined) => {
 
 const MindmapBulletList = BulletList.extend({
   addNodeView() {
-    return ({ editor, node, getPos }) => {
+    return ({ editor, getPos }) => {
       const pos = getPos()
       const resolved = typeof pos === 'number' ? editor.state.doc.resolve(pos) : null
 
@@ -358,14 +360,13 @@ const MindmapBulletList = BulletList.extend({
       const btn = document.createElement('span')
       btn.className = 'bullet-mm-btn'
       btn.title = '思维导图预览'
-      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><line x1="9" y1="6" x2="15" y2="6"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/><line x1="9" y1="18" x2="15" y2="18"/></svg>`
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><line x1="8.5" y1="6" x2="15.5" y2="6"/><line x1="8.5" y1="8" x2="11" y2="15.5"/><line x1="15.5" y1="8" x2="13" y2="15.5"/></svg>`
 
-      const savedGetPos = getPos
-      const savedEditor = editor
       btn.addEventListener('mousedown', (e: MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        mmOpenCb.value?.(node, savedEditor, savedGetPos)
+        const currentPos = getPos()
+        if (typeof currentPos === 'number') mmOpenCb.value?.(currentPos, editor)
       })
 
       const ul = document.createElement('ul')
@@ -676,14 +677,15 @@ onBeforeUnmount(() => {
    BulletList NodeView — 思维导图按钮
    ═══════════════════════════════════════════════ */
 .bulletlist-wrapper {
-  position: relative;
+  display: flex;
+  align-items: flex-start;
 }
 
 .bullet-mm-btn {
-  position: absolute;
-  top: 10px;
-  right: 6px;
-  z-index: 5;
+  flex-shrink: 0;
+  order: 2;
+  margin-top: 14px;
+  margin-left: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -699,8 +701,10 @@ onBeforeUnmount(() => {
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.bulletlist-wrapper:hover .bullet-mm-btn {
-  opacity: 1;
+.bulletlist-wrapper ul {
+  order: 1;
+  flex: 1;
+  min-width: 0;
 }
 
 .bullet-mm-btn:hover {
