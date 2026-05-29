@@ -63,6 +63,31 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function bootstrap() {
     initializing.value = true
+
+    // 开发模式自动登录（由 Woo/.env.local 控制，走真实 Supabase 认证）
+    if (import.meta.env.VITE_DEV_AUTO_LOGIN === 'true') {
+      const devUser = import.meta.env.VITE_DEV_USERNAME as string | undefined
+      const devPass = import.meta.env.VITE_DEV_PASSWORD as string | undefined
+      if (devUser && devPass) {
+        try {
+          const result = await invoke<any>('auth:signIn', devUser, devPass)
+          if (result?.user) {
+            user.value = mapUser(result.user)
+            persistSession(result.user.id, result.user.email || '', result.user.user_metadata?.username || '')
+            initializing.value = false
+            return
+          }
+        } catch {
+          // 自动登录失败（离线/无网络），降级为本地开发用户
+        }
+        // 降级：本地开发用户（仅离线场景）
+        user.value = { id: 'dev-user', email: '553497027@qq.com', username: 'huojie' }
+        persistSession('dev-user', '553497027@qq.com', 'huojie')
+        initializing.value = false
+        return
+      }
+    }
+
     try {
       const session = await invoke<any>('auth:getSession')
       if (session?.user) {

@@ -14,7 +14,7 @@ if (process.platform === 'win32') {
   try { process.stderr.setDefaultEncoding('utf8') } catch (_) {}
 }
 
-const { app, BrowserWindow, ipcMain, shell, nativeImage, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, nativeImage, Menu, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -94,7 +94,10 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    mainWindow.webContents.openDevTools()
+    // 默认不打开调试窗口，设置 ELECTRON_DEVTOOLS=1 环境变量可启用
+    if (process.env.ELECTRON_DEVTOOLS === '1') {
+      mainWindow.webContents.openDevTools()
+    }
   } else {
     // 打包后使用 app.getAppPath() 获取 asar 包根目录
     const appPath = app.getAppPath()
@@ -340,6 +343,49 @@ app.whenReady().then(() => {
   ipcMain.on('window:close', () => mainWindow.close())
   ipcMain.handle('window:set-fullscreen', (_e, fullscreen) => {
     mainWindow.setFullScreen(fullscreen)
+  })
+
+  // —— 图片导出：保存对话框 + 文件写入 ——
+  ipcMain.handle('dialog:save-image', async (event, { defaultName }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const picsPath = app.getPath('pictures')
+    const defaultPath = path.join(picsPath, 'woo_export', defaultName || 'mindmap.png')
+
+    const dir = path.dirname(defaultPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath,
+      filters: [
+        { name: 'PNG 图片', extensions: ['png'] },
+        { name: 'JPEG 图片', extensions: ['jpg', 'jpeg'] },
+        { name: 'WebP 图片', extensions: ['webp'] },
+        { name: 'SVG 图片', extensions: ['svg'] },
+      ]
+    })
+
+    if (result.canceled) return { cancelled: true }
+
+    const ext = path.extname(result.filePath).toLowerCase()
+    let format = 'png'
+    if (ext === '.svg') format = 'svg'
+    else if (ext === '.jpg' || ext === '.jpeg') format = 'jpg'
+    else if (ext === '.webp') format = 'webp'
+
+    return { filePath: result.filePath, format }
+  })
+
+  ipcMain.handle('file:write', async (_event, { filePath, data, isBase64 }) => {
+    try {
+      if (isBase64) {
+        fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+      } else {
+        fs.writeFileSync(filePath, data, 'utf-8')
+      }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, message: err.message }
+    }
   })
 
   // 启动同步引擎：设置状态回调 + 数据变更回调 + 启动定时器

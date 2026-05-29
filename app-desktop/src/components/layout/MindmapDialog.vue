@@ -5,17 +5,11 @@
         <div class="mm-card-header">
           <span class="mm-card-title">思维导图预览</span>
           <div class="mm-card-actions">
-            <button class="mm-action-btn" :disabled="!hasData" @click="exportPNG" title="导出 PNG">
+            <button class="mm-action-btn" :disabled="!hasData" @click="exportImage" title="导出为图片">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
-              导出 PNG
-            </button>
-            <button class="mm-action-btn" :disabled="!hasData" @click="exportSVG" title="导出 SVG">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-              </svg>
-              导出 SVG
+              导出为图片
             </button>
             <button class="mm-close-btn" @click="startClose" title="关闭">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,45 +177,51 @@ onBeforeUnmount(() => {
   mm = null
 })
 
-async function exportPNG() {
+async function exportImage() {
   if (!svgRef.value || !mm) return
+
   const svgData = new XMLSerializer().serializeToString(svgRef.value)
+  const wooInvoke = (window as any).woo.invoke as (ch: string, ...a: any[]) => Promise<any>
+
+  const result = await wooInvoke('dialog:save-image', { defaultName: 'mindmap.png' })
+  if (result.cancelled) return
+
+  const { filePath, format } = result
+
+  if (format === 'svg') {
+    await wooInvoke('file:write', { filePath, data: svgData, isBase64: false })
+    return
+  }
+
+  // 栅格格式：png / jpg / webp — 通过 canvas 渲染导出
+  const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
+  const mimeType = mimeMap[format] || 'image/png'
   const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(svgBlob)
   const img = new Image()
-  img.onload = () => {
-    const canvas = document.createElement('canvas')
+  img.onload = async () => {
     const rect = svgRef.value!.getBoundingClientRect()
     const scale = 2
-    canvas.width = rect.width * scale || 1200
-    canvas.height = rect.height * scale || 800
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(rect.width * scale, 1200)
+    canvas.height = Math.max(rect.height * scale, 800)
     const ctx = canvas.getContext('2d')!
     ctx.scale(scale, scale)
-    ctx.fillStyle = '#ffffff'
+    // JPG 不支持透明，用白色背景；其余格式沿用主题背景色
+    ctx.fillStyle = format === 'jpg' ? '#ffffff' : isDarkMode() ? '#2a2926' : '#f0ede9'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(img, 0, 0)
-    canvas.toBlob((blob) => {
+    const quality = format === 'jpg' ? 0.92 : format === 'webp' ? 0.9 : undefined
+    canvas.toBlob(async (blob) => {
       if (!blob) return
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'mindmap.png'
-      a.click()
-      URL.revokeObjectURL(a.href)
-    }, 'image/png')
-    URL.revokeObjectURL(url)
+      const buf = await blob.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      await wooInvoke('file:write', { filePath, data: base64, isBase64: true })
+      URL.revokeObjectURL(url)
+    }, mimeType, quality)
   }
+  img.onerror = () => { URL.revokeObjectURL(url) }
   img.src = url
-}
-
-function exportSVG() {
-  if (!svgRef.value) return
-  const svgData = new XMLSerializer().serializeToString(svgRef.value)
-  const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = 'mindmap.svg'
-  a.click()
-  URL.revokeObjectURL(a.href)
 }
 </script>
 
