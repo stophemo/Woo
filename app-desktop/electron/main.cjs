@@ -396,21 +396,22 @@ app.whenReady().then(() => {
     }
   })
 
-  // —— 文稿导出图片（HTML → 隐藏窗口 → capturePage） ——
+  // —— 文稿导出图片（HTML → 隐藏窗口 → 全页 capturePage） ——
   ipcMain.handle('document:capture-image', async (_event, { html }) => {
     const capWin = new BrowserWindow({ show: false, width: 800, height: 600 })
     try {
       const styledHtml = '<!DOCTYPE html>\n<html><meta charset="utf-8"><meta name="color-scheme" content="light">\n' +
         '<style>\n' +
         '*{margin:0;padding:0;box-sizing:border-box}\n' +
-        'body{font:15px/1.8 -apple-system,Segoe UI,Roboto,sans-serif;color:#222;padding:48px;max-width:780px;margin:0 auto}\n' +
+        'body{font:15px/1.8 -apple-system,Segoe UI,Roboto,sans-serif;color:#222;padding:48px 56px;max-width:100%;width:780px;margin:0 auto}\n' +
+        'body::-webkit-scrollbar{display:none}\n' +
         'h1{font-size:26px;margin:24px 0 12px}\nh2{font-size:22px;margin:20px 0 10px}\nh3{font-size:18px;margin:16px 0 8px}\n' +
         'p{margin:0 0 10px}\n' +
         'ul,ol{padding-left:24px;margin:8px 0}\n' +
         'li{margin:4px 0}\n' +
-        'pre{background:#f5f5f5;padding:16px;border-radius:8px;overflow-x:auto;margin:12px 0;font-size:13px}\n' +
-        'code{font-family:SF Mono,Consolas,monospace;font-size:13px}\n' +
-        'p>code,li>code{background:#f0f0f0;padding:2px 6px;border-radius:4px}\n' +
+        'pre,pre code{font-family:SF Mono,Consolas,monospace;font-size:13px}\n' +
+        'pre{background:#f7f7f8;padding:16px;border-radius:8px;overflow-x:auto;margin:12px 0}\n' +
+        'p>code,li>code{background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:13px}\n' +
         'blockquote{border-left:4px solid #ddd;margin:12px 0;padding:4px 20px;color:#666}\n' +
         'img{max-width:100%;height:auto;margin:12px 0}\n' +
         'table{border-collapse:collapse;width:100%;margin:12px 0}\n' +
@@ -420,6 +421,12 @@ app.whenReady().then(() => {
         '</style><body>' + html + '</body></html>'
       await capWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(styledHtml))
       await new Promise(r => setTimeout(r, 300))
+      // 获取内容实际尺寸，缩放窗口以捕获完整长图
+      const dims = await capWin.webContents.executeJavaScript('({w:document.body.scrollWidth,h:document.body.scrollHeight})')
+      const w = Math.max(780, Math.min(dims.w, 1200))
+      const h = Math.max(100, Math.min(dims.h, 20000))
+      capWin.setContentSize(w, h)
+      await new Promise(r => setTimeout(r, 100))
       const img = await capWin.webContents.capturePage()
       return { data: img.toDataURL() }
     } finally {
