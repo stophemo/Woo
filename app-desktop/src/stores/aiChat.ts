@@ -59,12 +59,13 @@ export const useAiChatStore = defineStore('aiChat', () => {
     try { localStorage.setItem(KB_STORAGE_KEY, val ? 'true' : 'false') } catch {}
   }
 
-  async function rebuildKb(): Promise<{ totalDocs: number; totalChunks: number }> {
+  async function rebuildKb(): Promise<{ totalDocs: number; totalChunks: number; embedSuccess?: number }> {
     kbBuilding.value = true
     try {
-      const result = await ipc<{ totalDocs: number; totalChunks: number }>('kb:rebuild')
+      const result = await ipc<{ totalDocs: number; totalChunks: number; embedSuccess: number }>('kb:rebuild')
       kbDocCount.value = result.totalDocs
       kbChunkCount.value = result.totalChunks
+      kbEmbedCount.value = result.embedSuccess ?? 0
       return result
     } finally {
       kbBuilding.value = false

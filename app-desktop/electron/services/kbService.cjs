@@ -74,6 +74,9 @@ async function rebuild() {
   ).all()
 
   let totalChunks = 0
+  const errors = []
+  let embedSuccess = 0
+  let embedFail = 0
 
   const insertChunk = db.prepare(
     `INSERT INTO kb_chunks (id, document_id, document_title, chunk_index, content)
@@ -99,10 +102,15 @@ async function rebuild() {
 
       // 2. 生成向量 → 写入 kb_vectors (vec0)
       try {
+        console.log('[KB] 嵌入块:', chunk.title, `(${chunk.content.length}字)`)
         const vec = await generateEmbedding(chunk.content)
         insertVec.run(rowid, vecToJson(vec))
+        embedSuccess++
       } catch (e) {
-        console.warn('[KB] 嵌入失败:', chunk.title, e.message)
+        embedFail++
+        const msg = `${chunk.title}: ${e.message || e}`
+        console.error('[KB] 嵌入失败:', msg)
+        errors.push(msg)
       }
 
       // 3. 写入 FTS5
@@ -112,7 +120,11 @@ async function rebuild() {
     }
   }
 
-  return { totalDocs: docs.length, totalChunks }
+  console.log(`[KB] 重建完成: ${totalChunks}块, 嵌入成功${embedSuccess}, 失败${embedFail}`)
+  if (errors.length > 0) {
+    console.error('[KB] 嵌入失败详情:', errors.join('; '))
+  }
+  return { totalDocs: docs.length, totalChunks, embedSuccess, embedFail, errors: errors.length > 0 ? errors.slice(0, 5) : undefined }
 }
 
 /**

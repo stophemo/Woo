@@ -29,14 +29,19 @@ async function getEmbedder() {
   if (loadPromise) return loadPromise
 
   loading = true
+  console.log('[Embed] 加载嵌入模型中...')
   loadPromise = (async () => {
     try {
       const fn = await ensureTransformers()
-      // pipeline('feature-extraction', modelName) 返回一个函数，输入文本输出向量
+      const start = Date.now()
       embedder = await fn('feature-extraction', MODEL_NAME, {
-        quantized: true, // 量化版本，缩小体积加快速度
+        quantized: true,
       })
+      console.log(`[Embed] 模型加载完成 (${Date.now() - start}ms)`)
       return embedder
+    } catch (err) {
+      console.error('[Embed] 模型加载失败:', err)
+      throw err
     } finally {
       loading = false
       loadPromise = null
@@ -63,7 +68,9 @@ async function generateEmbedding(text) {
     normalize: true,
   })
 
-  // result.data 是 Float32Array
+  if (!result || !result.data) {
+    throw new Error('嵌入模型返回空结果')
+  }
   return result.data
 }
 
