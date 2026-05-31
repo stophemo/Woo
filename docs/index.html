@@ -378,8 +378,84 @@
       font-weight: 600;
       margin-top: 8px;
       transition: background 0.2s;
+      cursor: pointer;
+      border: none;
+      min-width: 100px;
     }
     .download-card .dl-link:hover { background: var(--accent-hover); }
+
+    /* ===== Download Dropdown ===== */
+    .dl-dropdown {
+      position: relative;
+      display: inline-block;
+      margin-top: 8px;
+    }
+    .dl-dropdown .dl-link {
+      margin-top: 0;
+    }
+    .dl-menu {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 100%;
+      width: max-content;
+      max-width: 220px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: max-height 0.28s ease, opacity 0.2s ease, margin 0.28s ease;
+      z-index: 20;
+    }
+    .dl-dropdown:hover .dl-menu,
+    .dl-dropdown:focus-within .dl-menu {
+      max-height: 200px;
+      opacity: 1;
+      pointer-events: auto;
+      margin-top: 6px;
+    }
+    .dl-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      text-decoration: none;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .dl-menu-item:hover {
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+    .dl-menu-item .badge {
+      font-size: 0.7rem;
+      padding: 1px 7px;
+      border-radius: 99px;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+      margin-left: auto;
+    }
+    .dl-menu-item + .dl-menu-item {
+      border-top: 1px solid rgba(0,0,0,0.04);
+    }
+    /* Arrow indicator */
+    .dl-trigger-arrow {
+      display: inline-block;
+      margin-left: 4px;
+      font-size: 0.7rem;
+      transition: transform 0.2s;
+    }
+    .dl-dropdown:hover .dl-trigger-arrow {
+      transform: rotate(180deg);
+    }
     .download-more {
       text-align: center;
     }
@@ -682,7 +758,23 @@
           </div>
           <h3>Windows</h3>
           <span class="chip">可用</span>
-          <div><a href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noopener" class="dl-link" id="dl-win">下载安装包</a></div>
+          <div class="dl-dropdown" id="dl-win">
+            <button class="dl-link">下载 <span class="dl-trigger-arrow">&#9660;</span></button>
+            <div class="dl-menu">
+              <a class="dl-menu-item" data-match="-setup.exe" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                安装版 <span class="badge">exe</span>
+              </a>
+              <a class="dl-menu-item" data-match="-portable.exe" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                便携版 <span class="badge">exe</span>
+              </a>
+              <a class="dl-menu-item" data-match="-win-x64.zip" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                压缩包 <span class="badge">zip</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         <!-- macOS -->
@@ -694,7 +786,19 @@
           </div>
           <h3>macOS</h3>
           <span class="chip">可用</span>
-          <div><a href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noopener" class="dl-link" id="dl-mac">下载 DMG</a></div>
+          <div class="dl-dropdown" id="dl-mac">
+            <button class="dl-link">下载 <span class="dl-trigger-arrow">&#9660;</span></button>
+            <div class="dl-menu">
+              <a class="dl-menu-item" data-match="-mac-arm64.dmg" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                DMG <span class="badge">Apple Silicon</span>
+              </a>
+              <a class="dl-menu-item" data-match="-mac-arm64.zip" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                压缩包 <span class="badge">zip</span>
+              </a>
+            </div>
+          </div>
         </div>
 
 <!-- Mobile -->
@@ -767,36 +871,34 @@
       });
     })();
 
-    // Fetch latest release from GitHub and update download links automatically
+    // Fetch latest release from GitHub and populate download dropdowns
     (function() {
       const API = 'https://api.github.com/repos/stophemo/Woo/releases/latest';
       fetch(API)
         .then(res => res.ok ? res.json() : Promise.reject('HTTP ' + res.status))
         .then(data => {
-          const tag = data.tag_name;  // e.g. "v0.4.6"
-          const ver = tag.replace(/^v/, '');  // "0.4.6"
+          const tag = data.tag_name;
           document.getElementById('version-label').textContent =
             '最新版本 ' + tag + ' · 免费开源 · MIT 许可证';
 
-          data.assets.forEach(asset => {
-            const name = asset.name;
-            // Windows: non-portable setup.exe
-            if (name.endsWith('-setup.exe') && name.includes('win')) {
-              const btn = document.getElementById('dl-win');
-              btn.href = asset.browser_download_url;
-              btn.textContent = '下载安装包 (' + name.replace(/^woo-desktop-/, '').replace(/\.exe$/, '') + ')';
-            }
-            // macOS: .dmg (prefer arm64)
-            if (name.endsWith('.dmg') && name.includes('mac')) {
-              const btn = document.getElementById('dl-mac');
-              btn.href = asset.browser_download_url;
-              const arch = name.includes('arm64') ? 'Apple Silicon' : 'Intel';
-              btn.textContent = '下载 DMG (' + arch + ')';
+          // Index assets by filename substring match
+          const assets = {};
+          data.assets.forEach(a => { assets[a.name] = a; });
+
+          // Populate each dropdown item: match by data-match substring
+          document.querySelectorAll('.dl-menu-item[data-match]').forEach(item => {
+            const pattern = item.getAttribute('data-match');
+            const match = data.assets.find(a => a.name.includes(pattern));
+            if (match) {
+              item.href = match.browser_download_url;
+            } else {
+              // Fallback: disable this item
+              item.style.opacity = '0.3';
+              item.style.pointerEvents = 'none';
             }
           });
         })
         .catch(function(err) {
-          // Fallback: keep links pointing to the Releases page (already set in HTML)
           document.getElementById('version-label').textContent =
             '免费开源 · MIT 许可证';
           console.warn('Failed to fetch latest release:', err);
