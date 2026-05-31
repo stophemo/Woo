@@ -19,8 +19,8 @@ async function ipc<T = unknown>(channel: string, ...args: any[]): Promise<T> {
 
 /* ========== 各供应商的预设模型 ========== */
 const DEEPSEEK_MODELS: ModelConfig[] = [
-  { id: 'deepseek-chat',     name: 'v4 flash', provider: 'deepseek', model: 'deepseek-chat' },
-  { id: 'deepseek-reasoner', name: 'v4 pro',   provider: 'deepseek', model: 'deepseek-reasoner' },
+  { id: 'deepseek-v4-flash', name: 'v4 flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'deepseek-v4-pro',   name: 'v4 pro',   provider: 'deepseek', model: 'deepseek-v4-pro' },
 ]
 
 const GEMINI_MODELS: ModelConfig[] = [
@@ -35,7 +35,7 @@ const OPENAI_MODELS: ModelConfig[] = [
 
 export const useAiChatStore = defineStore('aiChat', () => {
   const messages = ref<ChatMessage[]>([])
-  const selectedModelId = ref<string>('deepseek-chat')
+  const selectedModelId = ref<string>('deepseek-v4-flash')
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
