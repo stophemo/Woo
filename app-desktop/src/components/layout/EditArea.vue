@@ -39,7 +39,7 @@
       </div>
     </div>
 
-    <div class="editor-body">
+    <div class="editor-body" @contextmenu="onEditorContextMenu">
       <template v-if="store.currentDocument">
         <div v-if="store.currentDocument.isLocked" class="locked-placeholder">
           <IconLock class="locked-placeholder-icon" />
@@ -74,6 +74,15 @@
       :data="mindmapDialogData"
       @close="showMindmapDialog = false"
     />
+
+    <!-- 右键 AI 菜单 -->
+    <ContextMenu
+      v-if="contextMenuVisible"
+      :position="contextMenuPos"
+      :items="contextMenuItems"
+      @select="handleContextMenuSelect"
+      @close="contextMenuVisible = false"
+    />
   </section>
 </template>
 
@@ -92,10 +101,16 @@ import BulletList from '@tiptap/extension-bullet-list'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { registerScrollHandler, useEditorNavigation } from '../../config/editorNavigation'
 import type { TreeNode } from '../../types/mindmap'
+import type { ContextMenuPosition, ContextMenuItem } from '../../types/folder'
 import IconLock from '../icons/IconLock.vue'
 import MindmapDialog from './MindmapDialog.vue'
+import ContextMenu from '../ui/ContextMenu.vue'
+import { useAiChatStore } from '../../stores/aiChat'
+import { sendAiPrompt } from '../../services/aiPrompt'
+import { AiComplete, setAiCompleteFn } from '../../services/aiComplete'
 
 const store = useWorkspaceStore()
+const aiStore = useAiChatStore()
 const { headings } = useEditorNavigation()
 const TRASH_FOLDER_ID = '__trash__'
 
@@ -105,6 +120,95 @@ withDefaults(defineProps<Props>(), { isStatusBarOpen: true })
 const emit = defineEmits<{
   (e: 'active-heading-change', headingIndex: number | null): void
 }>()
+
+/* ========== 右键 AI 菜单 ========== */
+const contextMenuVisible = ref(false)
+const contextMenuPos = ref<ContextMenuPosition>({ x: 0, y: 0 })
+const contextMenuItems = ref<ContextMenuItem[]>([])
+const contextMenuCallback = ref<((action: string) => void) | null>(null)
+
+function onEditorContextMenu(e: MouseEvent) {
+  // 确保编辑区有内容且有 AI Key
+  if (!aiStore.hasApiKey || !editor.value) return
+
+  e.preventDefault()
+  const selectedText = window.getSelection()?.toString()?.trim() || ''
+  const hasSelection = selectedText.length > 0
+
+  if (hasSelection) {
+    contextMenuItems.value = [
+      { label: 'AI 优化格式', action: 'ai-format-selection' },
+      { label: 'AI 续写段落', action: 'ai-continue-selection' },
+      { label: 'AI 翻译为中文', action: 'ai-translate-zh' },
+      { label: 'AI 翻译为英文', action: 'ai-translate-en' },
+    ]
+  } else {
+    contextMenuItems.value = [
+      { label: 'AI 调整全文格式', action: 'ai-format-all' },
+    ]
+  }
+
+  contextMenuPos.value = { x: e.clientX, y: e.clientY }
+  contextMenuVisible.value = true
+}
+
+async function handleContextMenuSelect(action: string) {
+  contextMenuVisible.value = false
+  if (!editor.value || !aiStore.hasApiKey) return
+
+  const ed = editor.value
+  const { from, to } = ed.state.selection
+  const hasSelection = from !== to
+
+  let targetText = ''
+  let systemPrompt = ''
+
+  if (action === 'ai-format-selection' || action === 'ai-format-all') {
+    targetText = hasSelection
+      ? ed.state.doc.textBetween(from, to, '\n\n')
+      : ed.state.doc.textBetween(0, ed.state.doc.content.size, '\n\n')
+    systemPrompt = '请优化以下文本的格式，使用合适的 Markdown 语法（标题、列表、代码块等）。保持原意不变，只改善结构和可读性。直接输出修改后的文本，不要添加额外说明。'
+  } else if (action === 'ai-continue-selection') {
+    targetText = ed.state.doc.textBetween(Math.max(0, from - 500), to, '\n\n')
+    systemPrompt = '请根据上下文续写以下文本，保持风格一致。直接输出续写内容，不要重复已有内容。'
+  } else if (action === 'ai-translate-zh') {
+    targetText = ed.state.doc.textBetween(from, to, '\n\n')
+    systemPrompt = '请将以下文本翻译为简体中文。直接输出翻译结果。'
+  } else if (action === 'ai-translate-en') {
+    targetText = ed.state.doc.textBetween(from, to, '\n\n')
+    systemPrompt = '请将以下文本翻译为英文。直接输出翻译结果。'
+  }
+
+  if (!targetText.trim()) return
+
+  try {
+    const result = await sendAiPrompt(systemPrompt, targetText)
+
+    if (action === 'ai-format-all' && !hasSelection) {
+      // 替换全文
+      const fullSize = ed.state.doc.content.size
+      ed.chain().focus().deleteRange({ from: 0, to: fullSize }).insertContent(result).run()
+    } else if (hasSelection) {
+      // 替换选中内容
+      ed.chain().focus().deleteRange({ from, to }).insertContent(result).run()
+    }
+  } catch (err: any) {
+    console.error('[AI] 格式调整失败:', err)
+  }
+}
+/* ============================== */
+
+// 初始化 AI 续写补全
+setAiCompleteFn(() => ({
+  send: async (systemPrompt: string, context: string) => {
+    if (!aiStore.hasApiKey) return ''
+    try {
+      return await sendAiPrompt(systemPrompt, context)
+    } catch {
+      return ''
+    }
+  },
+}))
 
 const zoomPercent = ref(100)
 const showSheet = ref(false)
@@ -391,6 +495,7 @@ const editor = useEditor({
     Typography,
     CustomKeymap,
     MindmapBulletList,
+    AiComplete,
   ],
   editorProps: { attributes: { class: 'wysiwyg-editor', spellcheck: 'false' } },
   onUpdate: ({ editor: editorInstance }) => {
@@ -643,6 +748,17 @@ onBeforeUnmount(() => {
 .editor-body::-webkit-scrollbar-track { background: var(--editor-bg); }
 .editor-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 .editor-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+</style>
+
+<style>
+/* AI 续写幽灵文字 */
+.ai-complete-ghost {
+  color: rgba(128, 128, 128, 0.45) !important;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+  font-style: italic;
+}
 </style>
 
 <style>
