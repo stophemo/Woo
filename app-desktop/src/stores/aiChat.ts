@@ -19,8 +19,8 @@ async function ipc<T = unknown>(channel: string, ...args: any[]): Promise<T> {
 
 /* ========== 各供应商的预设模型 ========== */
 const DEEPSEEK_MODELS: ModelConfig[] = [
-  { id: 'deepseek-chat',     name: 'DeepSeek Chat',     provider: 'deepseek', model: 'deepseek-chat' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek', model: 'deepseek-reasoner' },
+  { id: 'deepseek-chat',     name: 'v4 flash', provider: 'deepseek', model: 'deepseek-chat' },
+  { id: 'deepseek-reasoner', name: 'v4 pro',   provider: 'deepseek', model: 'deepseek-reasoner' },
 ]
 
 const GEMINI_MODELS: ModelConfig[] = [
