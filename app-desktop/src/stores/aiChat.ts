@@ -19,8 +19,8 @@ async function ipc<T = unknown>(channel: string, ...args: any[]): Promise<T> {
 
 /* ========== 各供应商的预设模型 ========== */
 const DEEPSEEK_MODELS: ModelConfig[] = [
-  { id: 'deepseek-chat',     name: 'DeepSeek V3',     provider: 'deepseek', model: 'deepseek-chat' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek R1',      provider: 'deepseek', model: 'deepseek-reasoner' },
+  { id: 'deepseek-chat',     name: 'DeepSeek Chat',     provider: 'deepseek', model: 'deepseek-chat' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek', model: 'deepseek-reasoner' },
 ]
 
 const GEMINI_MODELS: ModelConfig[] = [
@@ -441,7 +441,10 @@ export const useAiChatStore = defineStore('aiChat', () => {
   loadKbToggle()
   void refreshKbStatus()
 
-  const hasApiKey = computed(() => !!getApiKey())
+  const hasApiKey = computed(() => {
+    void _apiKeyVersion.value
+    return !!getApiKey()
+  })
 
   function setModel(modelId: string) {
     if (!availableModels.value.some(m => m.id === modelId)) return
