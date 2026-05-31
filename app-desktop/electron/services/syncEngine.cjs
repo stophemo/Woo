@@ -446,33 +446,37 @@ async function doSync() {
   try {
     const userId = session.user.id
     const lastSync = getLastSyncTime()
-    // console.log("[Sync] 开始同步, lastSync:', lastSync)
 
     // === 1. PULL 云端墓碑（其他设备的真删 → 本地真删）===
     const tombstoneResult = await pullTombstones(userId)
-    // console.log("[Sync] 墓碑拉取完成:', tombstoneResult)
 
     // === 2. PULL 云端变更（先拉取再推送，避免过时数据覆盖云端）===
     const pullResult = await pullChanges(userId, lastSync)
-    // console.log("[Sync] 拉取完成:', pullResult)
 
     // === 3. PUSH 本地变更（跳过本轮拉取的记录，避免回显）===
     const pushResult = await pushChanges(userId, lastSync, pullResult.pulledIds)
-    // console.log("[Sync] 推送完成:', pushResult)
 
     // === 4. 超期清理（本地 deleted=2 且过期 → 云端真删 + 写墓碑）===
     const cleanupResult = await cleanupExpiredDeletes(userId)
-    // console.log("[Sync] 超期清理完成:', cleanupResult)
 
     // 5. 更新同步时间戳
     const now = new Date().toISOString()
     setLastSyncTime(now)
 
+    const summary = {
+      push: pushResult.pushedCount || 0,
+      pull: pullResult.pulledCount || 0,
+      conflict: pullResult.conflictCount || 0,
+      cleanup: cleanupResult.cleanupCount || 0,
+    }
+    const pushErr = pushResult.errors?.length || 0
+    console.log(`[Sync] ⇄ 推${summary.push} 拉${summary.pull} 冲突${summary.conflict}${pushErr ? ` 推送错误${pushErr}(${pushResult.errors[0]?.slice(0,60)}...)` : ''}`)
+
     return {
-      pushedCount: pushResult.pushedCount || 0,
-      pulledCount: pullResult.pulledCount || 0,
-      conflictCount: pullResult.conflictCount || 0,
-      cleanupCount: cleanupResult.cleanupCount || 0,
+      pushedCount: summary.push,
+      pulledCount: summary.pull,
+      conflictCount: summary.conflict,
+      cleanupCount: summary.cleanup,
       tombstoneCount: tombstoneResult.pulledDeleteCount || 0,
       syncTime: now
     }

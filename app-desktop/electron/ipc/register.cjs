@@ -12,135 +12,99 @@ const syncEngine = require('../services/syncEngine.cjs')
 const kbService = require('../services/kbService.cjs')
 
 /**
- * 截断日志中的 content 字段，只保留标题和摘要。
- * 完整文稿内容在日志中无意义且刷屏。
+ * 简要日志包装：只输出做了什么和结果摘要，不打印详参。
+ *
+ * 格式:  [IPC] folder:tree → 2 folders
+ *        [IPC] document:get → ok
+ *        [IPC] ERROR folder:remove → xxx (错误信息)
  */
-function sanitizeLog(val) {
-  if (Array.isArray(val)) return val.map(sanitizeLog)
-  if (val && typeof val === 'object') {
-    const copy = { ...val }
-    if (copy.content && typeof copy.content === 'string' && copy.content.length > 100) {
-      copy.content = `[content: ${copy.content.length} chars]`
-    }
-    return copy
-  }
-  return val
-}
-
-function wrap(fn) {
+function wrap(fn, label) {
   return async (_event, ...args) => {
     try {
-      console.log('[IPC] called with args:', sanitizeLog(args))
       const data = await fn(...args)
-      console.log('[IPC] success:', sanitizeLog(data))
+      // 简要摘要：根据返回值类型和大小智能显示
+      const summary = summarizeResult(data)
+      console.log(`[IPC] ${label} → ${summary}`)
       return { ok: true, data }
     } catch (err) {
-      console.error('[IPC] error:', err)
+      console.log(`[IPC] ERROR ${label} → ${err?.message || '操作失败'}`)
       return { ok: false, message: err?.message || '操作失败' }
     }
   }
 }
 
-/** 不打印日志的 wrap，用于频繁轮询的通道（sync、kb 等） */
-function wrapSilent(fn) {
-  return async (_event, ...args) => {
-    try {
-      const data = await fn(...args)
-      return { ok: true, data }
-    } catch (err) {
-      return { ok: false, message: err?.message || '操作失败' }
-    }
+function summarizeResult(data) {
+  if (data === null || data === undefined) return 'ok'
+  if (Array.isArray(data)) return `${data.length} items`
+  if (typeof data === 'object') {
+    const keys = Object.keys(data)
+    // 列出有意义的数字字段
+    const nums = keys.filter(k => typeof data[k] === 'number' && data[k] > 0)
+    if (nums.length > 0) return nums.map(k => `${k}:${data[k]}`).join(', ')
+    // 布尔字段
+    const bools = keys.filter(k => data[k] === true)
+    if (bools.length > 0) return bools.join(', ')
+    return 'ok'
   }
+  return String(data).slice(0, 60)
+}
+
+/** 便捷注册：自动将通道名作为标签传给 wrap */
+function handle(channel, fn) {
+  ipcMain.handle(channel, wrap(fn, channel))
 }
 
 function register() {
-  // —— folder ——
-  ipcMain.handle('folder:tree', wrap(() => folderService.getFolderTree()))
-  ipcMain.handle('folder:create', wrap((payload) => folderService.createFolder(payload)))
-  ipcMain.handle('folder:rename', wrap((folderId, name) => {
-    folderService.renameFolder(folderId, name); return null
-  }))
-  ipcMain.handle('folder:remove', wrap((folderId) => {
-    folderService.deleteFolder(folderId); return null
-  }))
+  handle('folder:tree', () => folderService.getFolderTree())
+  handle('folder:create', (payload) => folderService.createFolder(payload))
+  handle('folder:rename', (folderId, name) => { folderService.renameFolder(folderId, name) })
+  handle('folder:remove', (folderId) => { folderService.deleteFolder(folderId) })
 
-  // —— document ——
-  ipcMain.handle('document:listByFolder', wrap((folderId) => documentService.listByFolder(folderId)))
-  ipcMain.handle('document:listAll', wrap(() => documentService.listAll()))
-  ipcMain.handle('document:listTrash', wrap(() => documentService.listTrash()))
-  ipcMain.handle('document:listOrphans', wrap(() => documentService.listOrphans()))
-  ipcMain.handle('document:search', wrap((keyword) => documentService.search(keyword)))
-  ipcMain.handle('document:get', wrap((id) => documentService.getById(id)))
-  ipcMain.handle('document:create', wrap((payload) => documentService.create(payload)))
-  ipcMain.handle('document:rename', wrap((id, title) => {
-    documentService.rename(id, title); return null
-  }))
-  ipcMain.handle('document:updateContent', wrap((id, content) => {
-    documentService.updateContent(id, content); return null
-  }))
-  ipcMain.handle('document:remove', wrap((id) => {
-    documentService.remove(id); return null
-  }))
-  ipcMain.handle('document:restore', wrap((id) => {
-    documentService.restore(id); return null
-  }))
-  ipcMain.handle('document:hardDelete', wrap((id) => {
-    documentService.hardDelete(id); return null
-  }))
-  ipcMain.handle('document:emptyTrash', wrap(() => {
-    documentService.emptyTrash(); return null
-  }))
+  handle('document:listByFolder', (folderId) => documentService.listByFolder(folderId))
+  handle('document:listAll', () => documentService.listAll())
+  handle('document:listTrash', () => documentService.listTrash())
+  handle('document:listOrphans', () => documentService.listOrphans())
+  handle('document:search', (keyword) => documentService.search(keyword))
+  handle('document:get', (id) => documentService.getById(id))
+  handle('document:create', (payload) => documentService.create(payload))
+  handle('document:rename', (id, title) => { documentService.rename(id, title) })
+  handle('document:updateContent', (id, content) => { documentService.updateContent(id, content) })
+  handle('document:remove', (id) => { documentService.remove(id) })
+  handle('document:restore', (id) => { documentService.restore(id) })
+  handle('document:hardDelete', (id) => { documentService.hardDelete(id) })
+  handle('document:emptyTrash', () => { documentService.emptyTrash() })
 
-  // —— auth ——
-  ipcMain.handle('auth:signUp', wrap(authService.signUp))
-  ipcMain.handle('auth:signIn', wrap(authService.signIn))
-  ipcMain.handle('auth:signOut', wrap(authService.signOut))
-  ipcMain.handle('auth:getUser', wrap(authService.getCurrentUser))
-  ipcMain.handle('auth:getSession', wrap(authService.getSession))
+  handle('auth:signUp', authService.signUp)
+  handle('auth:signIn', authService.signIn)
+  handle('auth:signOut', authService.signOut)
+  handle('auth:getUser', authService.getCurrentUser)
+  handle('auth:getSession', authService.getSession)
 
-  // —— lock ——
-  ipcMain.handle('lock:status', wrapSilent(async () => ({
-    hasPassword: lockService.hasPassword(),
-    mode: lockService.getPasswordMode()
-  })))
-  ipcMain.handle('lock:setPassword', wrap(async (password) => { lockService.setPassword(password); return null }))
-  ipcMain.handle('lock:verifyPassword', wrap(async (password) => lockService.verifyPassword(password)))
-  ipcMain.handle('lock:lockFolder', wrap(async (folderId) => { lockService.lockFolder(folderId); return null }))
-  ipcMain.handle('lock:unlockFolder', wrap(async (folderId) => { lockService.unlockFolder(folderId); return null }))
-  ipcMain.handle('lock:isFolderLocked', wrap(async (folderId) => lockService.isFolderLocked(folderId)))
-  ipcMain.handle('lock:isFolderEffectivelyLocked', wrap(async (folderId) => lockService.isFolderEffectivelyLocked(folderId)))
-  ipcMain.handle('lock:lockDocument', wrap(async (documentId) => { lockService.lockDocument(documentId); return null }))
-  ipcMain.handle('lock:unlockDocument', wrap(async (documentId) => { lockService.unlockDocument(documentId); return null }))
-  ipcMain.handle('lock:isDocumentLocked', wrap(async (documentId) => lockService.isDocumentLocked(documentId)))
-  ipcMain.handle('lock:cloudPushSettings', wrap(async (password) => { await lockService.cloudPushSettings(password); return null }))
-  ipcMain.handle('lock:cloudPullSettings', wrap(async () => { await lockService.cloudPullSettings(); return null }))
+  handle('lock:status', async () => ({ hasPassword: lockService.hasPassword(), mode: lockService.getPasswordMode() }))
+  handle('lock:setPassword', async (password) => { lockService.setPassword(password) })
+  handle('lock:verifyPassword', async (password) => lockService.verifyPassword(password))
+  handle('lock:lockFolder', async (folderId) => { lockService.lockFolder(folderId) })
+  handle('lock:unlockFolder', async (folderId) => { lockService.unlockFolder(folderId) })
+  handle('lock:isFolderLocked', async (folderId) => lockService.isFolderLocked(folderId))
+  handle('lock:isFolderEffectivelyLocked', async (folderId) => lockService.isFolderEffectivelyLocked(folderId))
+  handle('lock:lockDocument', async (documentId) => { lockService.lockDocument(documentId) })
+  handle('lock:unlockDocument', async (documentId) => { lockService.unlockDocument(documentId) })
+  handle('lock:isDocumentLocked', async (documentId) => lockService.isDocumentLocked(documentId))
+  handle('lock:cloudPushSettings', async (password) => { await lockService.cloudPushSettings(password) })
+  handle('lock:cloudPullSettings', async () => { await lockService.cloudPullSettings() })
 
-  // —— knowledge base ——
-  ipcMain.handle('kb:rebuild', wrap(kbService.rebuild))
-  ipcMain.handle('kb:search', wrapSilent((query, limit) => kbService.search(query, limit)))
-  ipcMain.handle('kb:status', wrapSilent(kbService.status))
+  handle('kb:rebuild', kbService.rebuild)
+  handle('kb:search', (query, limit) => kbService.search(query, limit))
+  handle('kb:status', kbService.status)
 
-  // —— sync ——
-  ipcMain.handle('sync:status', wrapSilent(() => {
-    const s = syncEngine.getStatus()
-    return {
-      isSyncing: s.isSyncing,
-      lastSyncTime: s.lastSyncTime,
-      pendingChanges: s.pendingChanges
-    }
-  }))
-  ipcMain.handle('sync:trigger', wrapSilent(syncEngine.syncNow))
+  handle('sync:status', () => { const s = syncEngine.getStatus(); return { isSyncing: s.isSyncing, lastSyncTime: s.lastSyncTime, pendingChanges: s.pendingChanges } })
+  handle('sync:trigger', syncEngine.syncNow)
 
-  // —— version ——
-  ipcMain.handle('version:list', wrap((documentId) => versionService.listVersions(documentId)))
-  ipcMain.handle('version:get', wrap((documentId, versionNo) => versionService.getVersion(documentId, versionNo)))
-  ipcMain.handle('version:saveManual', wrap((documentId) => {
-    versionService.saveManual(documentId); return null
-  }))
-  ipcMain.handle('version:commit', wrap((documentId, changeType) => {
-    versionService.commit(documentId, changeType); return null
-  }))
-  ipcMain.handle('version:restore', wrap((documentId, versionNo) => versionService.restore(documentId, versionNo)))
+  handle('version:list', (documentId) => versionService.listVersions(documentId))
+  handle('version:get', (documentId, versionNo) => versionService.getVersion(documentId, versionNo))
+  handle('version:saveManual', (documentId) => { versionService.saveManual(documentId) })
+  handle('version:commit', (documentId, changeType) => { versionService.commit(documentId, changeType) })
+  handle('version:restore', (documentId, versionNo) => versionService.restore(documentId, versionNo))
 }
 
 module.exports = { register }
