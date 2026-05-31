@@ -593,7 +593,8 @@ function start(intervalMs = 60000) {
       const safeName = username.toLowerCase().replace(/[^a-z0-9_-]/g, '_')
       const localDb = path.join(dbDir, 'woo.db')
       const userDb = path.join(dbDir, `woo-${safeName}.db`)
-      if (fs.existsSync(localDb) && !fs.existsSync(userDb)) {
+      const isFirstLogin = fs.existsSync(localDb) && !fs.existsSync(userDb)
+      if (isFirstLogin) {
         closeDb()
         fs.copyFileSync(localDb, userDb)
         for (const ext of ['-wal', '-shm']) {
@@ -607,13 +608,15 @@ function start(intervalMs = 60000) {
       setCurrentUser(username)
       lastSyncTime = null
 
-      // 清除 sync_meta 中的旧 last_sync_time，确保全量推送
-      try {
-        const db = getDb()
-        db.prepare('DELETE FROM sync_meta WHERE key = ?').run('last_sync_time')
-        console.log('[Sync] 已清除旧 last_sync_time，即将全量同步')
-      } catch (e) {
-        console.warn('[Sync] 清除 last_sync_time 失败:', e.message)
+      // 仅首次登录才清空 sync_time 做全量推送
+      if (isFirstLogin) {
+        try {
+          const db = getDb()
+          db.prepare('DELETE FROM sync_meta WHERE key = ?').run('last_sync_time')
+          console.log('[Sync] 已清除旧 last_sync_time，即将全量同步')
+        } catch (e) {
+          console.warn('[Sync] 清除 last_sync_time 失败:', e.message)
+        }
       }
 
       setTimeout(() => syncNow(), 500)
