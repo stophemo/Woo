@@ -7,13 +7,21 @@
  * 模型：Xenova/bge-small-zh-v1.5（中文优化，约 33MB）
  * 向量维度：512
  */
-const { pipeline } = require('@xenova/transformers')
 
 const MODEL_NAME = 'Xenova/bge-small-zh-v1.5'
 
 let embedder = null
 let loading = false
 let loadPromise = null
+let pipeline = null
+
+/** 懒加载 @xenova/transformers（ESM 模块，必须动态 import） */
+async function ensureTransformers() {
+  if (pipeline) return pipeline
+  const tf = await import('@xenova/transformers')
+  pipeline = tf.pipeline
+  return pipeline
+}
 
 /** 获取或初始化嵌入模型（懒加载+单例） */
 async function getEmbedder() {
@@ -23,8 +31,9 @@ async function getEmbedder() {
   loading = true
   loadPromise = (async () => {
     try {
+      const fn = await ensureTransformers()
       // pipeline('feature-extraction', modelName) 返回一个函数，输入文本输出向量
-      embedder = await pipeline('feature-extraction', MODEL_NAME, {
+      embedder = await fn('feature-extraction', MODEL_NAME, {
         quantized: true, // 量化版本，缩小体积加快速度
       })
       return embedder
