@@ -7,7 +7,7 @@
  *
  * 分块策略：
  *   - 按段落（连续两个换行）分割
- *   - 合并相邻段落，每块约 150-400 字符（匹配嵌入模型 512 token 上限）
+ *   - 合并相邻段落，每块约 150-350 字符（中文约 1.5 token/字，512 token 上限）
  *
  * 搜索策略（双路混合）：
  *   - 向量搜索：query → 嵌入 → 余弦相似度 → top 6
@@ -37,7 +37,7 @@ function chunkText(text, title) {
     const trimmed = para.trim()
     if (!trimmed) continue
 
-    if (current.length + trimmed.length > 400 && current.length > 150) {
+    if (current.length + trimmed.length > 350 && current.length > 150) {
       chunks.push({ title, content: current.trim(), chunkIndex: idx++ })
       current = trimmed
     } else {
