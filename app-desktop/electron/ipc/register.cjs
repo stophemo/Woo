@@ -22,9 +22,11 @@ function wrap(fn, label) {
   return async (_event, ...args) => {
     try {
       const data = await fn(...args)
-      // 简要摘要：根据返回值类型和大小智能显示
-      const summary = summarizeResult(data)
-      console.log(`[IPC] ${label} → ${summary}`)
+      if (logLevel === 'verbose') {
+        console.log(`[IPC] ${label}`, args, '→', data)
+      } else {
+        console.log(`[IPC] ${label} → ${summarizeResult(data)}`)
+      }
       return { ok: true, data }
     } catch (err) {
       console.log(`[IPC] ERROR ${label} → ${err?.message || '操作失败'}`)
@@ -48,6 +50,9 @@ function summarizeResult(data) {
   }
   return String(data).slice(0, 60)
 }
+
+/** 运行时日志级别，可通过 IPC 动态切换 */
+let logLevel = process.env.LOG_LEVEL === 'verbose' ? 'verbose' : 'brief'
 
 /** 便捷注册：自动将通道名作为标签传给 wrap */
 function handle(channel, fn) {
@@ -92,6 +97,16 @@ function register() {
   handle('lock:isDocumentLocked', async (documentId) => lockService.isDocumentLocked(documentId))
   handle('lock:cloudPushSettings', async (password) => { await lockService.cloudPushSettings(password) })
   handle('lock:cloudPullSettings', async () => { await lockService.cloudPullSettings() })
+
+  // —— system ——
+  ipcMain.handle('system:setLogLevel', wrap(async (level) => {
+    if (level === 'verbose' || level === 'brief') {
+      logLevel = level
+      console.log(`[IPC] 日志级别已切换为: ${level}`)
+    }
+    return { level: logLevel }
+  }, 'system:setLogLevel'))
+  ipcMain.handle('system:getLogLevel', wrap(async () => ({ level: logLevel }), 'system:getLogLevel'))
 
   handle('kb:rebuild', kbService.rebuild)
   handle('kb:search', (query, limit) => kbService.search(query, limit))
