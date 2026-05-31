@@ -45,6 +45,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
   const kbEnabled = ref(false)
   const kbDocCount = ref(0)
   const kbChunkCount = ref(0)
+  const kbEmbedCount = ref(0)
   const kbBuilding = ref(false)
 
   function loadKbToggle() {
@@ -72,9 +73,10 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   async function refreshKbStatus() {
     try {
-      const st = await ipc<{ docCount: number; chunkCount: number }>('kb:status')
+      const st = await ipc<{ docCount: number; chunkCount: number; embedCount: number }>('kb:status')
       kbDocCount.value = st.docCount
       kbChunkCount.value = st.chunkCount
+      kbEmbedCount.value = st.embedCount ?? 0
     } catch {}
   }
 
@@ -481,6 +483,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
     kbEnabled,
     kbDocCount,
     kbChunkCount,
+    kbEmbedCount,
     kbBuilding,
     setKbEnabled,
     rebuildKb,

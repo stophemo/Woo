@@ -22,6 +22,7 @@
       </label>
       <div class="kb-actions">
         <span v-if="aiStore.kbChunkCount > 0" class="kb-status">{{ aiStore.kbDocCount }} 篇 / {{ aiStore.kbChunkCount }} 块</span>
+        <span v-if="aiStore.kbEmbedCount > 0 && aiStore.kbEmbedCount < aiStore.kbChunkCount" class="kb-status" style="color:#e53935;">嵌入中...</span>
         <button class="kb-build-btn" @click="handleRebuildKb" :disabled="aiStore.kbBuilding" :title="aiStore.kbBuilding ? '构建中...' : '重建索引'">
           <svg v-if="aiStore.kbBuilding" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
             <circle cx="12" cy="12" r="10" stroke-dasharray="31.4 10" stroke-linecap="round"/>
