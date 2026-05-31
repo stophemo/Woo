@@ -446,23 +446,23 @@ async function doSync() {
   try {
     const userId = session.user.id
     const lastSync = getLastSyncTime()
-    console.log('[Sync] 开始同步, lastSync:', lastSync)
+    // console.log("[Sync] 开始同步, lastSync:', lastSync)
 
     // === 1. PULL 云端墓碑（其他设备的真删 → 本地真删）===
     const tombstoneResult = await pullTombstones(userId)
-    console.log('[Sync] 墓碑拉取完成:', tombstoneResult)
+    // console.log("[Sync] 墓碑拉取完成:', tombstoneResult)
 
     // === 2. PULL 云端变更（先拉取再推送，避免过时数据覆盖云端）===
     const pullResult = await pullChanges(userId, lastSync)
-    console.log('[Sync] 拉取完成:', pullResult)
+    // console.log("[Sync] 拉取完成:', pullResult)
 
     // === 3. PUSH 本地变更（跳过本轮拉取的记录，避免回显）===
     const pushResult = await pushChanges(userId, lastSync, pullResult.pulledIds)
-    console.log('[Sync] 推送完成:', pushResult)
+    // console.log("[Sync] 推送完成:', pushResult)
 
     // === 4. 超期清理（本地 deleted=2 且过期 → 云端真删 + 写墓碑）===
     const cleanupResult = await cleanupExpiredDeletes(userId)
-    console.log('[Sync] 超期清理完成:', cleanupResult)
+    // console.log("[Sync] 超期清理完成:', cleanupResult)
 
     // 5. 更新同步时间戳
     const now = new Date().toISOString()
