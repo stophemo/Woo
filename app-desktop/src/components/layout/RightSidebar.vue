@@ -14,6 +14,25 @@
       </button>
     </div>
 
+    <!-- 知识库开关 -->
+    <div class="kb-bar">
+      <label class="kb-toggle" title="启用后将搜索文稿内容作为 AI 上下文">
+        <input type="checkbox" :checked="aiStore.kbEnabled" @change="aiStore.setKbEnabled(($event.target as HTMLInputElement).checked)" />
+        <span class="kb-toggle-label">知识库</span>
+      </label>
+      <div class="kb-actions">
+        <span v-if="aiStore.kbChunkCount > 0" class="kb-status">{{ aiStore.kbDocCount }} 篇 / {{ aiStore.kbChunkCount }} 块</span>
+        <button class="kb-build-btn" @click="handleRebuildKb" :disabled="aiStore.kbBuilding" :title="aiStore.kbBuilding ? '构建中...' : '重建索引'">
+          <svg v-if="aiStore.kbBuilding" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="31.4 10" stroke-linecap="round"/>
+          </svg>
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <div class="chat-messages" ref="messagesContainer">
       <div v-if="aiStore.messages.length === 0" class="chat-empty">
         <h3>有什么我可以帮你的？</h3>
@@ -138,6 +157,15 @@ function scrollToBottom() {
   }
 }
 
+async function handleRebuildKb() {
+  await aiStore.rebuildKb()
+}
+
+// 侧边栏打开时刷新知识库状态
+watch(() => props.isOpen, (val) => {
+  if (val) aiStore.refreshKbStatus()
+})
+
 watch(
   () => aiStore.messages.length,
   () => {
@@ -184,6 +212,60 @@ watch(
   border-bottom: 1px solid var(--border-secondary);
   flex-shrink: 0;
 }
+
+/* ===== 知识库栏 ===== */
+.kb-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  flex-shrink: 0;
+  font-size: 0.81rem;
+  gap: 6px;
+}
+.kb-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+.kb-toggle input { margin: 0; }
+.kb-toggle-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.kb-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-status {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.kb-build-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+.kb-build-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+.kb-build-btn:disabled { opacity: 0.4; cursor: default; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
 
 .model-select {
   flex: 1;

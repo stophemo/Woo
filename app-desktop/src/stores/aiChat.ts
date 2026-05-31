@@ -6,6 +6,16 @@ import { sendGeminiMessage, validateGeminiKey, stripHtml } from '../services/gem
 
 const STORAGE_KEY = 'ai-settings'
 const CHAT_STORAGE_KEY = 'ai-chat-messages'
+const KB_STORAGE_KEY = 'ai-kb-enabled'
+
+/** IPC invoke 的简单包装 */
+async function ipc<T = unknown>(channel: string, ...args: any[]): Promise<T> {
+  const w = (window as any).woo
+  if (!w || typeof w.invoke !== 'function') throw new Error('IPC 未就绪')
+  const res = await w.invoke(channel, ...args)
+  if (!res.ok) throw new Error(res.message || '操作失败')
+  return res.data as T
+}
 
 /* ========== 各供应商的预设模型 ========== */
 const DEEPSEEK_MODELS: ModelConfig[] = [
@@ -30,6 +40,57 @@ export const useAiChatStore = defineStore('aiChat', () => {
   const error = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
   const _apiKeyVersion = ref(0)
+
+  /* ---------- 知识库状态 ---------- */
+  const kbEnabled = ref(false)
+  const kbDocCount = ref(0)
+  const kbChunkCount = ref(0)
+  const kbBuilding = ref(false)
+
+  function loadKbToggle() {
+    try {
+      kbEnabled.value = localStorage.getItem(KB_STORAGE_KEY) === 'true'
+    } catch { kbEnabled.value = false }
+  }
+
+  function setKbEnabled(val: boolean) {
+    kbEnabled.value = val
+    try { localStorage.setItem(KB_STORAGE_KEY, val ? 'true' : 'false') } catch {}
+  }
+
+  async function rebuildKb(): Promise<{ totalDocs: number; totalChunks: number }> {
+    kbBuilding.value = true
+    try {
+      const result = await ipc<{ totalDocs: number; totalChunks: number }>('kb:rebuild')
+      kbDocCount.value = result.totalDocs
+      kbChunkCount.value = result.totalChunks
+      return result
+    } finally {
+      kbBuilding.value = false
+    }
+  }
+
+  async function refreshKbStatus() {
+    try {
+      const st = await ipc<{ docCount: number; chunkCount: number }>('kb:status')
+      kbDocCount.value = st.docCount
+      kbChunkCount.value = st.chunkCount
+    } catch {}
+  }
+
+  /** 搜索知识库，返回相关块内容摘要 */
+  async function searchKb(query: string): Promise<string> {
+    try {
+      const chunks = await ipc<any[]>('kb:search', query, 6)
+      if (!chunks || chunks.length === 0) return ''
+      // 合并为上下文文本
+      return chunks.map((c, i) =>
+        `[文档「${c.document_title}」片段 ${i + 1}]:\n${c.content}`
+      ).join('\n\n---\n\n')
+    } catch {
+      return ''
+    }
+  }
 
   /* ---------- 供应商相关 ---------- */
 
@@ -213,25 +274,46 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
     // 构建 API 消息列表
     const apiMessages: ChatMessage[] = []
-    if (documentContext && messages.value.filter(m => m.role === 'user').length === 1) {
+    const isFirstUserMsg = messages.value.filter(m => m.role === 'user').length === 1
+
+    // 收集上下文片段
+    const contextParts: string[] = []
+
+    // 1. 当前编辑的文档内容
+    if (documentContext && isFirstUserMsg) {
       const plainText = stripHtml(documentContext)
       if (plainText.trim()) {
-        const contextText = plainText.length > 4000 ? plainText.slice(0, 4000) + '...' : plainText
-        apiMessages.push({
-          id: 'ctx',
-          role: 'user',
-          content: `以下是我正在编辑的文档内容，请结合此上下文回答我的问题：\n\n${contextText}\n\n我的问题是：${userText}`,
-          timestamp: Date.now()
-        })
-      } else {
-        apiMessages.push(userMsg)
+        const contextText = plainText.length > 3000 ? plainText.slice(0, 3000) + '...' : plainText
+        contextParts.push(`[当前编辑的文档]:\n${contextText}`)
       }
+    }
+
+    // 2. 知识库检索（仅在首次消息或 KB 启用时）
+    if (kbEnabled.value && isFirstUserMsg) {
+      try {
+        const kbContext = await searchKb(userText)
+        if (kbContext) contextParts.push(`[知识库相关文档]:\n${kbContext}`)
+      } catch { /* KB 搜索失败不影响主流程 */ }
+    }
+
+    if (contextParts.length > 0) {
+      const combinedContext = contextParts.join('\n\n---\n\n')
+      apiMessages.push({
+        id: 'ctx',
+        role: 'user',
+        content: `以下是与问题相关的文档内容，请结合上下文回答我的问题（如有不足可结合自身知识补充，但优先参考以下资料）：\n\n${combinedContext}\n\n我的问题是：${userText}`,
+        timestamp: Date.now()
+      })
     } else {
       for (const msg of messages.value) {
         if (msg.id === assistantMsg.id) continue
         if (msg.content.trim()) {
           apiMessages.push(msg)
         }
+      }
+      // 如果是首次消息但没有上下文，直接推送原始消息
+      if (isFirstUserMsg && apiMessages.length === 0) {
+        apiMessages.push(userMsg)
       }
     }
 
@@ -309,6 +391,8 @@ export const useAiChatStore = defineStore('aiChat', () => {
   // 初始化
   loadMessages()
   loadSettings()
+  loadKbToggle()
+  void refreshKbStatus()
 
   return {
     messages,
@@ -326,6 +410,15 @@ export const useAiChatStore = defineStore('aiChat', () => {
     getCustomModelName,
     sendUserMessage,
     cancelGeneration,
-    clearChat
+    clearChat,
+
+    // 知识库
+    kbEnabled,
+    kbDocCount,
+    kbChunkCount,
+    kbBuilding,
+    setKbEnabled,
+    rebuildKb,
+    refreshKbStatus,
   }
 })

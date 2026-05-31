@@ -9,6 +9,7 @@ const versionService = require('../services/versionService.cjs')
 const authService = require('../services/authService.cjs')
 const lockService = require('../services/lockService.cjs')
 const syncEngine = require('../services/syncEngine.cjs')
+const kbService = require('../services/kbService.cjs')
 
 /**
  * 截断日志中的 content 字段，只保留标题和摘要。
@@ -101,6 +102,11 @@ function register() {
   ipcMain.handle('lock:isDocumentLocked', wrap(async (documentId) => lockService.isDocumentLocked(documentId)))
   ipcMain.handle('lock:cloudPushSettings', wrap(async (password) => { await lockService.cloudPushSettings(password); return null }))
   ipcMain.handle('lock:cloudPullSettings', wrap(async () => { await lockService.cloudPullSettings(); return null }))
+
+  // —— knowledge base ——
+  ipcMain.handle('kb:rebuild', wrap(kbService.rebuild))
+  ipcMain.handle('kb:search', wrap((query, limit) => kbService.search(query, limit)))
+  ipcMain.handle('kb:status', wrap(kbService.status))
 
   // —— sync ——
   ipcMain.handle('sync:status', wrap(() => {

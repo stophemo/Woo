@@ -56,6 +56,23 @@ const SCHEMA_SQLS = [
     value TEXT NOT NULL
   )`,
 
+  // 知识库分块表（RAG 数据源）
+  `CREATE TABLE IF NOT EXISTS kb_chunks (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    document_title TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
+
+  // 知识库 FTS5 全文索引
+  `CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
+    content, title,
+    content='kb_chunks', content_rowid='rowid',
+    tokenize='unicode61'
+  )`,
 ]
 
 function initSchema(db) {
