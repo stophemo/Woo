@@ -91,26 +91,7 @@ function initSchema(db) {
  */
 function migrate(db) {
   const migrations = [
-    // note_folder 缺 update_time（旧版本）—— 只加列，不用函数默认值
-    `ALTER TABLE note_folder ADD COLUMN update_time TEXT`,
-    // note_document_version 缺 update_time（旧版本）
-    `ALTER TABLE note_document_version ADD COLUMN update_time TEXT`,
-    // 给旧版新建的 update_time 列设置初始值
-    `UPDATE note_folder SET update_time = datetime('now') WHERE update_time IS NULL`,
-    `UPDATE note_document SET update_time = datetime('now') WHERE update_time IS NULL`,
-    `UPDATE note_document_version SET update_time = datetime('now') WHERE update_time IS NULL`,
-    // 旧格式时间戳迁移（空格 → ISO T 格式）
-    `UPDATE note_folder SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
-    `UPDATE note_document SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
-    `UPDATE note_document_version SET update_time = REPLACE(update_time, ' ', 'T') WHERE update_time LIKE '% %'`,
-    // 为旧版 note_document_version 补充 deleted 列
-    `ALTER TABLE note_document_version ADD COLUMN deleted INTEGER`,
-    `UPDATE note_document_version SET deleted = 0 WHERE deleted IS NULL`,
-    // 旧格式 create_time 迁移（空格 → ISO T 格式）
-    `UPDATE note_folder SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
-    `UPDATE note_document SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
-    `UPDATE note_document_version SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
-    // 加锁功能：为 note_folder 和 note_document 补充 is_locked 列
+    // 加锁功能：为旧版数据库补 is_locked 列（CREATE TABLE 已有，仅旧库需要）
     `ALTER TABLE note_folder ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE note_document ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
     // 修复 kb_chunks_fts 列名不匹配（旧版 content-sync 模式 → 独立 FTS5）
@@ -119,10 +100,9 @@ function migrate(db) {
   for (const sql of migrations) {
     try {
       db.prepare(sql).run()
-      console.log('[DB] 迁移成功:', sql)
+      console.log('[DB] 迁移:', sql)
     } catch (e) {
-      // 列已存在或表不存在，忽略
-      console.log('[DB] 迁移跳过:', sql, e.message)
+      // 如果列已存在等，静默跳过
     }
   }
 }
