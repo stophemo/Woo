@@ -217,7 +217,7 @@ async function handleValidate() {
   validating.value = true
   validationResult.value = null
   try {
-    const result = await store.testConnection()
+    const result = await store.testConnection(apiKeyInput.value.trim(), baseUrlInput.value.trim() || undefined)
     validationResult.value = result.ok ? 'success' : 'fail'
   } catch {
     validationResult.value = 'fail'

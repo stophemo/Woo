@@ -231,9 +231,9 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   /* ---------- 连接测试 ---------- */
 
-  async function testConnection(): Promise<{ ok: boolean; message: string }> {
+  async function testConnection(apiKeyOverride?: string, baseUrlOverride?: string): Promise<{ ok: boolean; message: string }> {
     const p = props_provider.value
-    const key = getApiKey()
+    const key = apiKeyOverride || getApiKey()
 
     if (p === 'gemini') {
       if (!key) return { ok: false, message: '请输入 Gemini API Key' }
@@ -245,7 +245,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
     // DeepSeek / OpenAI 兼容
     if (!key) return { ok: false, message: '请输入 API Key' }
-    const baseUrl = p === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()
+    const baseUrl = baseUrlOverride || (p === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl())
     const valid = await validateOpenAIKey(key, baseUrl)
     return valid
       ? { ok: true, message: '验证成功！API Key 有效' }
