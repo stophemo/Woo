@@ -392,8 +392,8 @@ function mergeIntoLocal(table, idField, remoteRows) {
       }
     }
 
-    // 本地不存在或本地版本更旧 → 覆盖/插入（只使用本地存在的列）
-    const vals = keys.map(k => row[k])
+    // 本地不存在或本地版本更旧 → 覆盖/插入（只使用本地存在的列，缺失补 null）
+    const vals = keys.map(k => row[k] ?? null)
     upsertStmt.run(...vals)
     pulled++
     pulledIds.push(row[idField])
@@ -622,7 +622,7 @@ function start(intervalMs = 60000) {
           const src = localDb + ext
           if (fs.existsSync(src)) fs.copyFileSync(src, userDb + ext)
         }
-        console.log('[Sync] 首次登录，已迁移本地数据到', `woo-${safeName}.db`)
+        console.log('[Sync] 已创建用户数据库', `woo-${safeName}.db`)
       }
 
       // 切换到用户数据库
