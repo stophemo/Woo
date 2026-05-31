@@ -393,7 +393,13 @@ function mergeIntoLocal(table, idField, remoteRows) {
     }
 
     // 本地不存在或本地版本更旧 → 覆盖/插入（只使用本地存在的列，缺失补 null）
-    const vals = keys.map(k => row[k] ?? null)
+    const vals = keys.map(k => {
+      const v = row[k]
+      if (v === null || v === undefined) return null
+      if (typeof v === 'boolean') return v ? 1 : 0
+      if (typeof v === 'object') return JSON.stringify(v)
+      return v
+    })
     upsertStmt.run(...vals)
     pulled++
     pulledIds.push(row[idField])
