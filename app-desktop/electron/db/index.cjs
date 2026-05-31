@@ -11,6 +11,7 @@ const fs = require('fs')
 const { app } = require('electron')
 const Database = require('better-sqlite3')
 const { initSchema } = require('./schema.cjs')
+const { load: loadVec } = require('sqlite-vec')
 
 let db = null
 let currentDbPath = null
@@ -73,6 +74,8 @@ function getDb() {
   console.log('[DB] 打开数据库:', targetPath)
   db = new Database(targetPath)
   currentDbPath = targetPath
+  // 加载 sqlite-vec 向量搜索扩展
+  try { loadVec(db) } catch (e) { console.warn('[DB] sqlite-vec 加载失败:', e.message) }
   initSchema(db)
   return db
 }

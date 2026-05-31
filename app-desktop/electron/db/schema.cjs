@@ -64,10 +64,15 @@ const SCHEMA_SQLS = [
     document_title TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
-    embedding BLOB,
     create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
+
+  // 向量索引表（sqlite-vec，id 对应 kb_chunks 的 rowid）
+  `CREATE VIRTUAL TABLE IF NOT EXISTS kb_vectors USING vec0(
+    id INTEGER PRIMARY KEY,
+    embedding float[512]
+  )`,
 
   // 知识库 FTS5 全文索引（先删旧表确保结构正确，每次启动重建但不存数据）
   `DROP TABLE IF EXISTS kb_chunks_fts`,
