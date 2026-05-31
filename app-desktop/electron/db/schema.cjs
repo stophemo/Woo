@@ -56,7 +56,8 @@ const SCHEMA_SQLS = [
     value TEXT NOT NULL
   )`,
 
-  // 知识库分块表（RAG 数据源）
+  // 知识库分块表（RAG 数据源，先删后建确保列更新，数据通过重建恢复）
+  `DROP TABLE IF EXISTS kb_chunks`,
   `CREATE TABLE IF NOT EXISTS kb_chunks (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
