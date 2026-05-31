@@ -9,11 +9,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/stophemo/Woo/releases/latest">最新版本</a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/stophemo/Woo/blob/main/LICENSE">MIT 许可证</a>
-  &nbsp;·&nbsp;
-  <a href="https://woo-notes.vercel.app">项目主页</a>
+  <a href="https://github.com/stophemo/Woo/releases/latest">
+    <img src="https://img.shields.io/badge/版本-0.4.7-4f46e5?style=flat" alt="最新版本">
+  </a>
+  <a href="https://github.com/stophemo/Woo/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="MIT 许可证">
+  </a>
+  <a href="https://woo-notes.vercel.app">
+    <img src="https://img.shields.io/badge/website-woo--notes.vercel.app-8b5cf6?style=flat" alt="项目主页">
+  </a>
 </p>
 
 <br>
