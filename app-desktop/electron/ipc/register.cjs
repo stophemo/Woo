@@ -41,6 +41,18 @@ function wrap(fn) {
   }
 }
 
+/** 不打印日志的 wrap，用于频繁轮询的通道（sync、kb 等） */
+function wrapSilent(fn) {
+  return async (_event, ...args) => {
+    try {
+      const data = await fn(...args)
+      return { ok: true, data }
+    } catch (err) {
+      return { ok: false, message: err?.message || '操作失败' }
+    }
+  }
+}
+
 function register() {
   // —— folder ——
   ipcMain.handle('folder:tree', wrap(() => folderService.getFolderTree()))
@@ -87,7 +99,7 @@ function register() {
   ipcMain.handle('auth:getSession', wrap(authService.getSession))
 
   // —— lock ——
-  ipcMain.handle('lock:status', wrap(async () => ({
+  ipcMain.handle('lock:status', wrapSilent(async () => ({
     hasPassword: lockService.hasPassword(),
     mode: lockService.getPasswordMode()
   })))
@@ -105,11 +117,11 @@ function register() {
 
   // —— knowledge base ——
   ipcMain.handle('kb:rebuild', wrap(kbService.rebuild))
-  ipcMain.handle('kb:search', wrap((query, limit) => kbService.search(query, limit)))
-  ipcMain.handle('kb:status', wrap(kbService.status))
+  ipcMain.handle('kb:search', wrapSilent((query, limit) => kbService.search(query, limit)))
+  ipcMain.handle('kb:status', wrapSilent(kbService.status))
 
   // —— sync ——
-  ipcMain.handle('sync:status', wrap(() => {
+  ipcMain.handle('sync:status', wrapSilent(() => {
     const s = syncEngine.getStatus()
     return {
       isSyncing: s.isSyncing,
@@ -117,7 +129,7 @@ function register() {
       pendingChanges: s.pendingChanges
     }
   }))
-  ipcMain.handle('sync:trigger', wrap(syncEngine.syncNow))
+  ipcMain.handle('sync:trigger', wrapSilent(syncEngine.syncNow))
 
   // —— version ——
   ipcMain.handle('version:list', wrap((documentId) => versionService.listVersions(documentId)))
