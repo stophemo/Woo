@@ -60,6 +60,8 @@ const APP_ICON = resolveAppIcon()
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.nonegonotes.woo.local')
 }
+// 设置应用名，确保 app.getPath('userData') 返回正确的路径
+app.setName('Woo')
 
 let mainWindow
 
