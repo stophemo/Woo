@@ -377,7 +377,9 @@ function mergeIntoLocal(table, idField, remoteRows) {
 
   if (localRows.length === 0) return { pulled, conflicts, pulledIds }
 
-  const upsertStmt = buildUpsertStmt(db, table, localRows[0])
+  const upsertResult = buildUpsertStmt(db, table, localRows[0])
+  if (!upsertResult) return { pulled, conflicts, pulledIds }
+  const { stmt: upsertStmt, keys } = upsertResult
 
   for (const row of localRows) {
     const local = checkStmt.get(row[idField])
@@ -390,8 +392,9 @@ function mergeIntoLocal(table, idField, remoteRows) {
       }
     }
 
-    // 本地不存在或本地版本更旧 → 覆盖/插入
-    upsertStmt.run(Object.values(row))
+    // 本地不存在或本地版本更旧 → 覆盖/插入（只使用本地存在的列）
+    const vals = keys.map(k => row[k])
+    upsertStmt.run(...vals)
     pulled++
     pulledIds.push(row[idField])
   }
@@ -400,18 +403,31 @@ function mergeIntoLocal(table, idField, remoteRows) {
 }
 
 /**
+ * 获取本地表的实际列名集合（用于过滤远端多余列）
+ */
+let columnCache = {}
+function getLocalColumns(db, table) {
+  if (columnCache[table]) return columnCache[table]
+  const rows = db.pragma(`table_info(${table})`)
+  const cols = new Set(rows.map(r => r.name))
+  columnCache[table] = cols
+  return cols
+}
+
+/**
  * 动态构建 upsert prepared statement
+ * 只使用本地表实际存在的列，忽略远端多余列（如 created_at、user_id 等）
  */
 function buildUpsertStmt(db, table, sampleRow) {
   if (!sampleRow) return null
-  const keys = Object.keys(sampleRow)
+  const localCols = getLocalColumns(db, table)
+  // 只保留本地存在的列
+  const keys = Object.keys(sampleRow).filter(k => k !== 'user_id' && localCols.has(k))
+  if (keys.length === 0) return null
   const placeholders = keys.map(() => '?').join(', ')
-  const updateSet = keys.map(k => `${k} = ?`).join(', ')
 
-  // 使用 REPLACE 实现 upsert
-  // 注意：REPLACE 会先 DELETE 再 INSERT，这里因为我们有完整数据，效果等同于 upsert
   const sql = `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
-  return db.prepare(sql)
+  return { stmt: db.prepare(sql), keys }
 }
 
 // ============== 对外接口 ==============
@@ -470,7 +486,12 @@ async function doSync() {
       cleanup: cleanupResult.cleanupCount || 0,
     }
     const pushErr = pushResult.errors?.length || 0
-    console.log(`[Sync] ⇄ 推${summary.push} 拉${summary.pull} 冲突${summary.conflict}${pushErr ? ` 推送错误${pushErr}(${pushResult.errors[0]?.slice(0,60)}...)` : ''}`)
+    const pullErr = pullResult.errors?.length || 0
+    let detail = ''
+    if (pushErr) detail += ` 推送失败${pushErr}`
+    if (pullErr) detail += ` 拉取失败${pullErr}`
+    if (detail) detail += `(${(pushResult.errors?.[0] || pullResult.errors?.[0] || '').slice(0,80)})`
+    console.log(`[Sync] ⇄ 推${summary.push} 拉${summary.pull} 冲突${summary.conflict}${detail}`)
 
     return {
       pushedCount: summary.push,
