@@ -230,7 +230,7 @@ async function handleFetchModels() {
   fetchingModels.value = true
   fetchModelStatus.value = ''
   try {
-    const result = await store.fetchAvailableModels()
+    const result = await store.fetchAvailableModels(apiKeyInput.value.trim())
     fetchModelStatus.value = result.message
     fetchModelOk.value = result.ok
     if (result.ok) {

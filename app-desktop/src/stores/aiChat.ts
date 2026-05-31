@@ -202,9 +202,9 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   /* ---------- 动态获取模型 ---------- */
 
-  async function fetchAvailableModels(): Promise<{ ok: boolean; message: string; count: number }> {
+  async function fetchAvailableModels(apiKeyOverride?: string): Promise<{ ok: boolean; message: string; count: number }> {
     const p = props_provider.value
-    const key = getApiKey()
+    const key = apiKeyOverride || getApiKey()
     if (!key) return { ok: false, message: '请先输入 API Key', count: 0 }
 
     try {
