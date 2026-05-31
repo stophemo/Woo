@@ -1,7 +1,12 @@
 /**
  * 认证 Store。
  * 通过 IPC 调用主进程的 Supabase Auth 服务。
- * 状态变化由主进程 auth state change 事件 + 主动拉取双重保障。
+ *
+ * Session 策略：
+ *   - 正常登录后持久化到 localStorage
+ *   - 应用启动时优先尝试 Supabase getSession 恢复
+ *   - 若 Supabase 恢复失败但距离上次登录 ≤7 天，降级使用缓存凭据
+ *   - 超过 7 天未登录才要求重新登录
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -15,10 +20,17 @@ export interface AuthUser {
   avatarUrl?: string
 }
 
-// Session 持久化：Electron 重启后恢复上次登录状态
 const STORAGE_KEY = 'woo:auth'
+const SESSION_DAYS = 7
 
-function loadSession(): { userId: string; email: string; username: string } | null {
+interface SessionData {
+  userId: string
+  email: string
+  username: string
+  loginTime: number // Date.now()
+}
+
+function loadSession(): SessionData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
@@ -29,7 +41,7 @@ function loadSession(): { userId: string; email: string; username: string } | nu
 
 function persistSession(userId: string, email: string, username: string) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId, email, username }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId, email, username, loginTime: Date.now() }))
   } catch { /* ignore */ }
 }
 
@@ -39,15 +51,20 @@ function clearSession() {
   } catch { /* ignore */ }
 }
 
+/** 检查缓存的 session 是否在有效天数内 */
+function isSessionValid(cached: SessionData): boolean {
+  const elapsed = Date.now() - cached.loginTime
+  return elapsed < SESSION_DAYS * 24 * 60 * 60 * 1000
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
   const loading = ref(false)
   const errorMsg = ref<string>('')
-  const initializing = ref(true) // 应用启动时正在恢复 session
+  const initializing = ref(true)
 
   const isLoggedIn = computed(() => user.value !== null && !!user.value.id)
 
-  // 统一映射 Supabase user 对象 → AuthUser，消除 4 处重复
   function mapUser(u: any): AuthUser {
     return {
       id: u.id,
@@ -59,59 +76,42 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 启动时检查已有 session
+   * 启动时尝试恢复 session。
+   *
+   * 路径：
+   *   1. Supabase getSession（主路径）→ 成功则恢复
+   *   2. localStorage 缓存（7天内降级）→ 失败则显示登录
    */
   async function bootstrap() {
     initializing.value = true
 
-    // 开发模式自动登录（由 Woo/.env.local 控制，走真实 Supabase 认证）
-    if (import.meta.env.VITE_DEV_AUTO_LOGIN === 'true') {
-      const devUser = import.meta.env.VITE_DEV_USERNAME as string | undefined
-      const devPass = import.meta.env.VITE_DEV_PASSWORD as string | undefined
-      if (devUser && devPass) {
-        try {
-          const result = await invoke<any>('auth:signIn', devUser, devPass)
-          if (result?.user) {
-            user.value = mapUser(result.user)
-            persistSession(result.user.id, result.user.email || '', result.user.user_metadata?.username || '')
-            initializing.value = false
-            return
-          }
-        } catch {
-          // 自动登录失败（离线/无网络），降级为本地开发用户
-        }
-        // 降级：本地开发用户（仅离线场景）
-        user.value = { id: 'dev-user', email: '553497027@qq.com', username: 'huojie' }
-        persistSession('dev-user', '553497027@qq.com', 'huojie')
-        initializing.value = false
-        return
-      }
-    }
-
     try {
+      // 路径 A：Supabase session 恢复
       const session = await invoke<any>('auth:getSession')
       if (session?.user) {
         user.value = mapUser(session.user)
         persistSession(session.user.id, session.user.email || '', session.user.user_metadata?.username || '')
-      } else {
-        // 尝试从 localStorage 恢复
-        const cached = loadSession()
-        if (cached) {
-          // 有缓存但 session 已过期，标记为未登录
-          clearSession()
-        }
-        user.value = null
+        initializing.value = false
+        return
       }
     } catch {
-      user.value = null
-    } finally {
-      initializing.value = false
+      // 网络错误 / Supabase 不可达，走降级
     }
+
+    // 路径 B：7 天内缓存降级
+    const cached = loadSession()
+    if (cached && isSessionValid(cached)) {
+      user.value = { id: cached.userId, email: cached.email, username: cached.username }
+      initializing.value = false
+      return
+    }
+
+    // 缓存过期或无缓存
+    clearSession()
+    user.value = null
+    initializing.value = false
   }
 
-  /**
-   * 邮箱/用户名密码登录
-   */
   async function login(identifier: string, password: string): Promise<boolean> {
     loading.value = true
     errorMsg.value = ''
@@ -132,21 +132,16 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /**
-   * 注册新用户（使用邮箱 + 用户名 + 密码）
-   */
   async function signup(email: string, username: string, password: string): Promise<{ ok: boolean; message?: string }> {
     loading.value = true
     errorMsg.value = ''
     try {
       const result = await invoke<any>('auth:signUp', email, username, password)
       if (result?.session) {
-        // session 存在 → 注册成功且已自动登录
         user.value = mapUser(result.user)
         persistSession(result.user.id, result.user.email || '', result.user.user_metadata?.username || '')
         return { ok: true }
       }
-      // session 为 null → 需要邮箱确认或邮箱已存在
       return { ok: true, message: '注册成功，请查看邮箱完成确认' }
     } catch (err: any) {
       errorMsg.value = err?.message || '注册失败'
@@ -156,17 +151,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /**
-   * 登出
-   */
   async function logout() {
     loading.value = true
     try {
-      // 登出前先同步一次，避免 60s 空窗期数据未保存
       const { useSyncStore } = await import('./sync')
       const syncStore = useSyncStore()
       await syncStore.triggerSync()
-
       await invoke('auth:signOut')
     } catch { /* ignore */ }
     user.value = null
