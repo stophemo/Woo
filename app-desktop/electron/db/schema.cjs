@@ -67,7 +67,8 @@ const SCHEMA_SQLS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
 
-  // 知识库 FTS5 全文索引（非 content-sync，手动管理）
+  // 知识库 FTS5 全文索引（先删旧表确保结构正确，每次启动重建但不存数据）
+  `DROP TABLE IF EXISTS kb_chunks_fts`,
   `CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
     content, title,
     tokenize='unicode61'
@@ -77,34 +78,9 @@ const SCHEMA_SQLS = [
 function initSchema(db) {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  const trx = db.transaction(() => {
+  db.transaction(() => {
     for (const sql of SCHEMA_SQLS) db.prepare(sql).run()
-  })
-  trx()
-
-  // 迁移：为旧数据库补充缺失的列
-  migrate(db)
-}
-
-/**
- * 数据库迁移：兼容旧版本缺失的列
- */
-function migrate(db) {
-  const migrations = [
-    // 加锁功能：为旧版数据库补 is_locked 列（CREATE TABLE 已有，仅旧库需要）
-    `ALTER TABLE note_folder ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
-    `ALTER TABLE note_document ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
-    // 修复 kb_chunks_fts 列名不匹配（旧版 content-sync 模式 → 独立 FTS5）
-    `DROP TABLE IF EXISTS kb_chunks_fts`
-  ]
-  for (const sql of migrations) {
-    try {
-      db.prepare(sql).run()
-      console.log('[DB] 迁移:', sql)
-    } catch (e) {
-      // 如果列已存在等，静默跳过
-    }
-  }
+  })()
 }
 
 module.exports = { initSchema }
