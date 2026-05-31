@@ -11,37 +11,58 @@
         <div class="settings-body">
           <div v-if="mode === 'ai'" class="settings-section">
             <h3>AI 配置</h3>
+
+            <!-- 1. 选择供应商 -->
             <div class="settings-field">
-              <label>DeepSeek API Key</label>
+              <label>供应商</label>
+              <select v-model="providerInput" class="settings-input" @change="onProviderChange">
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openai-compatible">OpenAI 兼容（Ollama 等）</option>
+              </select>
+            </div>
+
+            <!-- 2. API Key（Gemini / DeepSeek / OpenAI 兼容显示不同 label） -->
+            <div v-if="providerInput !== 'openai-compatible' || showKeyField" class="settings-field">
+              <label>{{ apiKeyLabel }}</label>
               <div class="api-key-input-row">
-                <input :type="showKey ? 'text' : 'password'" v-model="apiKeyInput" placeholder="输入你的 DeepSeek API Key" class="settings-input" />
+                <input :type="showKey ? 'text' : 'password'" v-model="apiKeyInput" :placeholder="apiKeyPlaceholder" class="settings-input" />
                 <button class="toggle-visibility-btn" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
               </div>
             </div>
 
+            <!-- 3. 模型选择 -->
             <div class="settings-field">
-              <label>DeepSeek Base URL</label>
-              <input type="text" v-model="baseUrlInput" placeholder="https://api.deepseek.com" class="settings-input" />
-              <p class="settings-help">默认值: https://api.deepseek.com</p>
+              <label>模型</label>
+              <select v-model="modelInput" class="settings-input">
+                <option v-for="m in filteredModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <input v-if="modelInput === '_custom_'" type="text" v-model="customModelInput" placeholder="输入模型名称（如 llama3.2, qwen2.5）" class="settings-input" style="margin-top:6px;" />
             </div>
 
-            <div class="settings-field">
-              <label>模型说明</label>
-              <p class="settings-help">`deepseek v4 pro` 映射为 <code>deepseek-reasoner</code>；`deepseek v4 flash` 映射为 <code>deepseek-chat</code>（基于当前可用官方模型参数）。</p>
+            <!-- 4. Base URL（DeepSeek / OpenAI 兼容显示） -->
+            <div v-if="providerInput !== 'gemini'" class="settings-field">
+              <label>Base URL</label>
+              <input type="text" v-model="baseUrlInput" :placeholder="baseUrlPlaceholder" class="settings-input" />
+              <p class="settings-help">默认值: {{ baseUrlPlaceholder }}</p>
             </div>
 
+            <!-- 5. 操作按钮 -->
             <div class="api-key-actions">
               <button class="settings-btn validate-btn" @click="handleValidate" :disabled="!apiKeyInput.trim() || validating">
-                {{ validating ? '验证中...' : '验证' }}
+                {{ validating ? '测试中...' : '测试连接' }}
               </button>
-              <button class="settings-btn save-btn" @click="handleSave" :disabled="!apiKeyInput.trim()">保存</button>
+              <button class="settings-btn save-btn" @click="handleSave">保存</button>
               <span v-if="saveSuccess" class="validation-status success">已保存</span>
-              <span v-else-if="validationResult === 'success'" class="validation-status success">有效</span>
-              <span v-else-if="validationResult === 'fail'" class="validation-status fail">无效</span>
+              <span v-else-if="validationResult === 'success'" class="validation-status success">连接正常</span>
+              <span v-else-if="validationResult === 'fail'" class="validation-status fail">连接失败</span>
             </div>
 
             <p class="settings-help">
-              获取 API Key：<a href="#" @click.prevent="openApiKeyLink">DeepSeek Platform</a>
+              获取 API Key：
+              <a href="#" @click.prevent="openApiKeyLink">
+                {{ providerInput === 'gemini' ? 'Google AI Studio' : providerInput === 'deepseek' ? 'DeepSeek Platform' : '参考文档' }}
+              </a>
             </p>
           </div>
 
@@ -68,10 +89,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import IconClose from '../icons/IconClose.vue'
 import { useAiChatStore } from '../../stores/aiChat'
-import { validateApiKey } from '../../services/deepseek'
+import type { ProviderType } from '../../types/ai'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
 
 interface Props {
@@ -85,13 +106,41 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ close: [] }>()
 
 const store = useAiChatStore()
+
+/* ========== AI 配置状态 ========== */
+const providerInput = ref<ProviderType>('deepseek')
 const apiKeyInput = ref('')
 const baseUrlInput = ref('https://api.deepseek.com')
+const modelInput = ref('')
+const customModelInput = ref('')
 const showKey = ref(false)
 const validating = ref(false)
 const validationResult = ref<'success' | 'fail' | null>(null)
 const saveSuccess = ref(false)
 
+/** 模型列表（根据供应商过滤） */
+const filteredModels = computed(() => {
+  return store.availableModels.filter(m => m.provider === providerInput.value)
+})
+
+const apiKeyLabel = computed(() => {
+  if (providerInput.value === 'gemini') return 'Gemini API Key'
+  if (providerInput.value === 'openai-compatible') return 'API Key（Ollama 可留空）'
+  return 'DeepSeek API Key'
+})
+
+const apiKeyPlaceholder = computed(() => {
+  if (providerInput.value === 'gemini') return '输入你的 Gemini API Key'
+  if (providerInput.value === 'openai-compatible') return '留空则使用 Ollama（无需认证）'
+  return '输入你的 DeepSeek API Key'
+})
+
+const baseUrlPlaceholder = computed(() => {
+  if (providerInput.value === 'openai-compatible') return 'http://localhost:11434'
+  return 'https://api.deepseek.com'
+})
+
+/* ========== 资产链接配置状态 ========== */
 const assetProviderInput = ref('custom')
 const assetBaseUrlInput = ref('')
 const assetPathPrefixInput = ref('')
@@ -99,8 +148,19 @@ const assetPathPrefixInput = ref('')
 watch(() => props.visible, (val) => {
   if (val) {
     if (props.mode === 'ai') {
+      const settings = getRawSettings()
+      providerInput.value = (settings.provider as ProviderType) || 'deepseek'
       apiKeyInput.value = store.getApiKey()
-      baseUrlInput.value = store.getBaseUrl()
+      modelInput.value = settings.selectedModelId || filteredModels.value[0]?.id || ''
+      customModelInput.value = settings.customModelName || ''
+
+      if (providerInput.value === 'gemini') {
+        baseUrlInput.value = ''
+      } else if (providerInput.value === 'openai-compatible') {
+        baseUrlInput.value = settings.openaiBaseUrl || 'http://localhost:11434'
+      } else {
+        baseUrlInput.value = settings.deepseekBaseUrl || 'https://api.deepseek.com'
+      }
       validationResult.value = null
       saveSuccess.value = false
     } else {
@@ -112,12 +172,40 @@ watch(() => props.visible, (val) => {
   }
 })
 
+function getRawSettings(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem('ai-settings')
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+/** 切换供应商时更新 UI */
+function onProviderChange() {
+  const models = store.availableModels.filter(m => m.provider === providerInput.value)
+  if (models.length > 0) modelInput.value = models[0].id
+
+  if (providerInput.value === 'gemini') {
+    baseUrlInput.value = ''
+  } else if (providerInput.value === 'openai-compatible') {
+    baseUrlInput.value = 'http://localhost:11434'
+  } else {
+    baseUrlInput.value = 'https://api.deepseek.com'
+  }
+
+  const s = getRawSettings()
+  if (providerInput.value === 'gemini') apiKeyInput.value = s.geminiApiKey || ''
+  else if (providerInput.value === 'openai-compatible') apiKeyInput.value = s.openaiApiKey || ''
+  else apiKeyInput.value = s.deepseekApiKey || ''
+
+  validationResult.value = null
+}
+
 async function handleValidate() {
   validating.value = true
   validationResult.value = null
   try {
-    const valid = await validateApiKey(apiKeyInput.value.trim(), baseUrlInput.value.trim())
-    validationResult.value = valid ? 'success' : 'fail'
+    const result = await store.testConnection()
+    validationResult.value = result.ok ? 'success' : 'fail'
   } catch {
     validationResult.value = 'fail'
   } finally {
@@ -127,8 +215,17 @@ async function handleValidate() {
 
 function handleSave() {
   if (props.mode === 'ai') {
-    store.saveApiKey(apiKeyInput.value.trim())
-    store.saveBaseUrl(baseUrlInput.value.trim())
+    const actualModel = modelInput.value === '_custom_' ? '' : modelInput.value
+    store.saveFullSettings({
+      provider: providerInput.value,
+      deepseekApiKey: apiKeyInput.value.trim(),
+      deepseekBaseUrl: providerInput.value === 'deepseek' ? baseUrlInput.value.trim() : undefined,
+      geminiApiKey: apiKeyInput.value.trim(),
+      openaiBaseUrl: providerInput.value === 'openai-compatible' ? baseUrlInput.value.trim() : undefined,
+      openaiApiKey: apiKeyInput.value.trim(),
+      modelId: actualModel,
+      customModelName: customModelInput.value.trim()
+    })
   } else {
     saveAssetLinkSettings({
       provider: assetProviderInput.value.trim() || 'custom',
@@ -141,10 +238,16 @@ function handleSave() {
 }
 
 function openApiKeyLink() {
+  let url = 'https://platform.deepseek.com/api_keys'
+  if (providerInput.value === 'gemini') {
+    url = 'https://aistudio.google.com/apikey'
+  } else if (providerInput.value === 'openai-compatible') {
+    url = 'https://ollama.ai'
+  }
   if (window.electronAPI) {
-    window.electronAPI.openExternalLink('https://platform.deepseek.com/api_keys')
+    window.electronAPI.openExternalLink(url)
   } else {
-    window.open('https://platform.deepseek.com/api_keys', '_blank')
+    window.open(url, '_blank')
   }
 }
 </script>

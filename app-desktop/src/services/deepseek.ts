@@ -6,6 +6,10 @@ function normalizeBaseUrl(baseUrl?: string): string {
   return (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '')
 }
 
+/**
+ * 验证 API Key（适用于 DeepSeek / OpenAI 兼容接口）。
+ * 通过列出可用模型来判断 key 是否有效。
+ */
 export async function validateApiKey(apiKey: string, baseUrl?: string): Promise<boolean> {
   try {
     const url = `${normalizeBaseUrl(baseUrl)}/v1/models`
@@ -18,6 +22,10 @@ export async function validateApiKey(apiKey: string, baseUrl?: string): Promise<
   }
 }
 
+/**
+ * 发送流式消息（使用 OpenAI 兼容 API 格式）。
+ * DeepSeek / Ollama / 任何 OpenAI 兼容接口均可使用此函数。
+ */
 export async function sendMessage(
   apiKey: string,
   baseUrl: string,
@@ -27,6 +35,7 @@ export async function sendMessage(
   signal?: AbortSignal
 ): Promise<string> {
   const url = `${normalizeBaseUrl(baseUrl)}/v1/chat/completions`
+
   const payloadMessages = messages.map(msg => ({
     role: msg.role,
     content: msg.content

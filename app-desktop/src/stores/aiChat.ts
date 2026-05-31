@@ -1,40 +1,59 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ChatMessage, ModelConfig } from '../types/ai'
-import { sendMessage as deepseekSendMessage } from '../services/deepseek'
-import { stripHtml } from '../services/gemini'
+import type { ChatMessage, ModelConfig, ProviderType } from '../types/ai'
+import { sendMessage as deepseekSendMessage, validateApiKey as validateOpenAIKey } from '../services/deepseek'
+import { sendGeminiMessage, validateGeminiKey, stripHtml } from '../services/gemini'
 
 const STORAGE_KEY = 'ai-settings'
 const CHAT_STORAGE_KEY = 'ai-chat-messages'
-const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
+
+/* ========== 各供应商的预设模型 ========== */
+const DEEPSEEK_MODELS: ModelConfig[] = [
+  { id: 'deepseek-chat',     name: 'DeepSeek V3',     provider: 'deepseek', model: 'deepseek-chat' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek R1',      provider: 'deepseek', model: 'deepseek-reasoner' },
+]
+
+const GEMINI_MODELS: ModelConfig[] = [
+  { id: 'gemini-2.5-flash',      name: 'Gemini 2.5 Flash',     provider: 'gemini', model: 'gemini-2.5-flash' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite',provider: 'gemini', model: 'gemini-2.5-flash-lite' },
+  { id: 'gemini-2.5-pro',        name: 'Gemini 2.5 Pro',       provider: 'gemini', model: 'gemini-2.5-pro' },
+]
+
+const OPENAI_MODELS: ModelConfig[] = [
+  { id: '_custom_', name: '自定义模型名', provider: 'openai-compatible', model: '' },
+]
 
 export const useAiChatStore = defineStore('aiChat', () => {
   const messages = ref<ChatMessage[]>([])
-  const selectedModelId = ref<string>('deepseek-v4-pro')
+  const selectedModelId = ref<string>('deepseek-chat')
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
   const _apiKeyVersion = ref(0)
 
-  const availableModels = computed<ModelConfig[]>(() => [
-    // DeepSeek 暂无公开 "v4 pro/flash" API 模型名，这里映射到当前可用官方模型参数。
-    {
-      id: 'deepseek-v4-pro',
-      name: 'deepseek v4 pro',
-      provider: 'deepseek',
-      model: 'deepseek-reasoner'
-    },
-    { id: 'deepseek-v4-flash', name: 'deepseek v4 flash', provider: 'deepseek', model: 'deepseek-chat' }
-  ])
+  /* ---------- 供应商相关 ---------- */
+
+  /** 当前供应商 */
+  const provider = computed<ProviderType>(() => {
+    return currentModel.value?.provider || 'deepseek'
+  })
+
+  /** 各供应商的模型列表 */
+  const availableModels = computed<ModelConfig[]>(() => {
+    const p = props_provider.value
+    if (p === 'deepseek') return DEEPSEEK_MODELS
+    if (p === 'gemini') return GEMINI_MODELS
+    return OPENAI_MODELS
+  })
+
+  /** 从设置读取的供应商偏好（用于初始化模型列表筛选） */
+  const props_provider = ref<ProviderType>('deepseek')
 
   const currentModel = computed(
     () => availableModels.value.find(m => m.id === selectedModelId.value) || availableModels.value[0]
   )
 
-  const hasApiKey = computed(() => {
-    void _apiKeyVersion.value
-    return !!getApiKey()
-  })
+  /* ---------- 设置读写 ---------- */
 
   function getSettings(): Record<string, string> {
     try {
@@ -49,46 +68,83 @@ export const useAiChatStore = defineStore('aiChat', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
   }
 
+  /** 获取当前供应商对应的 API Key */
   function getApiKey(): string {
-    const settings = getSettings()
-    return settings.deepseekApiKey || ''
+    const s = getSettings()
+    const p = props_provider.value
+    if (p === 'gemini') return s.geminiApiKey || ''
+    if (p === 'openai-compatible') return s.openaiApiKey || ''
+    return s.deepseekApiKey || ''
   }
 
-  function saveApiKey(key: string) {
-    const settings = getSettings()
-    settings.deepseekApiKey = key
-    if (!settings.deepseekBaseUrl) {
-      settings.deepseekBaseUrl = DEFAULT_DEEPSEEK_BASE_URL
-    }
-    saveSettings(settings)
+  /** 保存完整设置（由 SettingsDialog 统一调用） */
+  function saveFullSettings(opts: {
+    provider: ProviderType
+    deepseekApiKey?: string
+    deepseekBaseUrl?: string
+    geminiApiKey?: string
+    openaiBaseUrl?: string
+    openaiApiKey?: string
+    modelId?: string
+    customModelName?: string
+  }) {
+    const s = getSettings()
+    s.provider = opts.provider
+    if (opts.deepseekApiKey !== undefined) s.deepseekApiKey = opts.deepseekApiKey
+    if (opts.deepseekBaseUrl !== undefined) s.deepseekBaseUrl = opts.deepseekBaseUrl
+    if (opts.geminiApiKey !== undefined) s.geminiApiKey = opts.geminiApiKey
+    if (opts.openaiBaseUrl !== undefined) s.openaiBaseUrl = opts.openaiBaseUrl
+    if (opts.openaiApiKey !== undefined) s.openaiApiKey = opts.openaiApiKey
+    if (opts.modelId !== undefined) s.selectedModelId = opts.modelId
+    if (opts.customModelName !== undefined) s.customModelName = opts.customModelName
+    props_provider.value = opts.provider
+    if (opts.modelId) selectedModelId.value = opts.modelId
+    saveSettings(s)
     _apiKeyVersion.value++
   }
 
-  function getBaseUrl(): string {
-    const settings = getSettings()
-    return settings.deepseekBaseUrl || DEFAULT_DEEPSEEK_BASE_URL
+  function loadSettings() {
+    const s = getSettings()
+    props_provider.value = (s.provider as ProviderType) || 'deepseek'
+    if (s.selectedModelId) selectedModelId.value = s.selectedModelId
   }
 
-  function saveBaseUrl(baseUrl: string) {
-    const settings = getSettings()
-    settings.deepseekBaseUrl = baseUrl.trim() || DEFAULT_DEEPSEEK_BASE_URL
-    saveSettings(settings)
+  function getDeepseekBaseUrl(): string {
+    return getSettings().deepseekBaseUrl || 'https://api.deepseek.com'
   }
 
-  function setModel(modelId: string) {
-    if (!availableModels.value.some(model => model.id === modelId)) return
-    selectedModelId.value = modelId
-    const settings = getSettings()
-    settings.selectedModelId = modelId
-    saveSettings(settings)
+  function getOpenaiBaseUrl(): string {
+    return getSettings().openaiBaseUrl || 'http://localhost:11434'
   }
 
-  function loadSelectedModel() {
-    const settings = getSettings()
-    if (settings.selectedModelId && availableModels.value.some(model => model.id === settings.selectedModelId)) {
-      selectedModelId.value = settings.selectedModelId
+  function getCustomModelName(): string {
+    return getSettings().customModelName || ''
+  }
+
+  /* ---------- 连接测试 ---------- */
+
+  async function testConnection(): Promise<{ ok: boolean; message: string }> {
+    const p = props_provider.value
+    const key = getApiKey()
+
+    if (p === 'gemini') {
+      if (!key) return { ok: false, message: '请输入 Gemini API Key' }
+      const valid = await validateGeminiKey(key)
+      return valid
+        ? { ok: true, message: '验证成功！API Key 有效' }
+        : { ok: false, message: 'API Key 无效，请检查后重试' }
     }
+
+    // DeepSeek / OpenAI 兼容
+    if (!key) return { ok: false, message: '请输入 API Key' }
+    const baseUrl = p === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()
+    const valid = await validateOpenAIKey(key, baseUrl)
+    return valid
+      ? { ok: true, message: '验证成功！API Key 有效' }
+      : { ok: false, message: 'API Key 无效或无法连接到服务，请检查后重试' }
   }
+
+  /* ---------- 聊天消息 ---------- */
 
   function saveMessages() {
     localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.value))
@@ -100,7 +156,6 @@ export const useAiChatStore = defineStore('aiChat', () => {
       if (!raw) return
       const parsed = JSON.parse(raw)
       if (!Array.isArray(parsed)) return
-
       messages.value = parsed
         .filter(msg => msg && typeof msg.id === 'string' && (msg.role === 'user' || msg.role === 'assistant'))
         .map(msg => ({
@@ -119,10 +174,17 @@ export const useAiChatStore = defineStore('aiChat', () => {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
   }
 
+  /* ---------- 发送消息 ---------- */
+
   async function sendUserMessage(userText: string, documentContext?: string) {
     const apiKey = getApiKey()
     if (!apiKey) {
-      error.value = '请先在设置中配置 DeepSeek API Key'
+      const labels: Record<ProviderType, string> = {
+        deepseek: 'DeepSeek',
+        gemini: 'Gemini',
+        'openai-compatible': 'OpenAI 兼容'
+      }
+      error.value = `请先在设置中配置 ${labels[props_provider.value] || ''} API Key`
       return
     }
 
@@ -149,6 +211,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
     isStreaming.value = true
 
+    // 构建 API 消息列表
     const apiMessages: ChatMessage[] = []
     if (documentContext && messages.value.filter(m => m.role === 'user').length === 1) {
       const plainText = stripHtml(documentContext)
@@ -176,20 +239,42 @@ export const useAiChatStore = defineStore('aiChat', () => {
     abortController.value = controller
 
     try {
-      await deepseekSendMessage(
-        apiKey,
-        getBaseUrl(),
-        currentModel.value.model,
-        apiMessages,
-        (chunk: string) => {
-          const msg = messages.value.find(m => m.id === assistantMsg.id)
-          if (msg) {
-            msg.content += chunk
-            saveMessages()
-          }
-        },
-        controller.signal
-      )
+      const model = currentModel.value
+      if (!model) throw new Error('未选择模型')
+
+      if (provider.value === 'gemini') {
+        await sendGeminiMessage(
+          apiKey,
+          model.model,  // e.g. "gemini-2.5-flash"
+          apiMessages.map(m => ({ role: m.role, content: m.content })),
+          (chunk: string) => {
+            const msg = messages.value.find(m => m.id === assistantMsg.id)
+            if (msg) {
+              msg.content += chunk
+              saveMessages()
+            }
+          },
+          controller.signal
+        )
+      } else {
+        // DeepSeek / OpenAI 兼容 — 使用相同的 OpenAI 兼容 API
+        const baseUrl = provider.value === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()
+        const actualModel = model.id === '_custom_' ? getCustomModelName() || model.model : model.model
+        await deepseekSendMessage(
+          apiKey,
+          baseUrl,
+          actualModel,
+          apiMessages,
+          (chunk: string) => {
+            const msg = messages.value.find(m => m.id === assistantMsg.id)
+            if (msg) {
+              msg.content += chunk
+              saveMessages()
+            }
+          },
+          controller.signal
+        )
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         error.value = err.message || '请求失败，请稍后重试'
@@ -221,22 +306,24 @@ export const useAiChatStore = defineStore('aiChat', () => {
     saveMessages()
   }
 
+  // 初始化
   loadMessages()
-  loadSelectedModel()
+  loadSettings()
 
   return {
     messages,
     selectedModelId,
     isStreaming,
     error,
+    provider,
     availableModels,
     currentModel,
-    hasApiKey,
     getApiKey,
-    saveApiKey,
-    getBaseUrl,
-    saveBaseUrl,
-    setModel,
+    saveFullSettings,
+    testConnection,
+    getDeepseekBaseUrl,
+    getOpenaiBaseUrl,
+    getCustomModelName,
     sendUserMessage,
     cancelGeneration,
     clearChat
