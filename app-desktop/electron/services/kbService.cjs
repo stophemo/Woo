@@ -1,17 +1,27 @@
 /**
- * 知识库服务（RAG）
+ * 知识库服务（RAG + 向量嵌入）
  *
  * 职责：
- *   1. 遍历所有正常文稿，分块后写入 kb_chunks 表并更新 FTS5 索引
- *   2. 根据用户查询在 FTS5 中检索相关块
+ *   1. 遍历所有正常文稿，分块 → 生成向量 → 写入 SQLite + FTS5
+ *   2. 搜索时：向量语义搜索 + FTS5 关键词搜索 → 混合排序
  *
  * 分块策略：
  *   - 按段落（连续两个换行）分割
  *   - 合并相邻段落，每块约 400-800 字符
- *   - 保留文档标题作为上下文
+ *
+ * 搜索策略（双路混合）：
+ *   - 向量搜索：query → 嵌入 → 余弦相似度 → top 6
+ *   - FTS5 搜索：query → 关键词匹配 → BM25 排序 → top 6
+ *   - 合并去重 → 先排序
  */
 const { getDb } = require('../db/index.cjs')
 const crypto = require('crypto')
+const {
+  generateEmbedding,
+  cosineSimilarity,
+  vectorToBuffer,
+  vectorFromBuffer,
+} = require('./embeddingService.cjs')
 
 function uuidv4() { return crypto.randomUUID() }
 
@@ -59,16 +69,16 @@ function stripHtml(html) {
 
 /**
  * 重建完整知识库。
- * 遍历所有 deleted=0 的文稿，重新分块索引。
+ * 遍历所有 deleted=0 的文稿，重新分块 → 向量嵌入 → 索引。
  * 返回 { totalDocs, totalChunks }
  */
-function rebuild() {
+async function rebuild() {
   const db = getDb()
   if (!db) throw new Error('数据库未初始化')
 
   // 清空旧数据
-  db.exec('DELETE FROM kb_chunks_fts')
   db.exec('DELETE FROM kb_chunks')
+  try { db.exec('DELETE FROM kb_chunks_fts') } catch {}
 
   // 获取所有正常文稿
   const docs = db.prepare(
@@ -76,70 +86,110 @@ function rebuild() {
   ).all()
 
   let totalChunks = 0
+  const errors = []
 
   const insertChunk = db.prepare(
-    `INSERT INTO kb_chunks (id, document_id, document_title, chunk_index, content)
-     VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO kb_chunks (id, document_id, document_title, chunk_index, content, embedding)
+     VALUES (?, ?, ?, ?, ?, ?)`
   )
   const insertFts = db.prepare(
     `INSERT INTO kb_chunks_fts (rowid, content, title) VALUES (?, ?, ?)`
   )
 
-  const trx = db.transaction(() => {
-    for (const doc of docs) {
-      const plainText = stripHtml(doc.content)
-      const chunks = chunkText(plainText, doc.title || '未命名')
+  for (const doc of docs) {
+    const plainText = stripHtml(doc.content)
+    const chunks = chunkText(plainText, doc.title || '未命名')
 
-      for (const chunk of chunks) {
+    for (const chunk of chunks) {
+      try {
+        // 生成向量嵌入
+        let embedding = null
+        try {
+          const vec = await generateEmbedding(chunk.content)
+          embedding = vectorToBuffer(vec)
+        } catch (e) {
+          errors.push(`嵌入失败: ${chunk.title}: ${e.message}`)
+        }
+
         const id = uuidv4()
-        const info = insertChunk.run(id, doc.id, chunk.title, chunk.chunkIndex, chunk.content)
-        // FTS5 content-sync: 插入 FTS 索引（rowid 与主表 rowid 一致）
-        insertFts.run(info.lastInsertRowid, chunk.content, chunk.title)
+        const info = insertChunk.run(id, doc.id, chunk.title, chunk.chunkIndex, chunk.content, embedding)
+
+        // FTS5 索引
+        if (embedding) {
+          insertFts.run(info.lastInsertRowid, chunk.content, chunk.title)
+        }
+
         totalChunks++
+      } catch (e) {
+        errors.push(`插入失败: ${chunk.title}: ${e.message}`)
       }
     }
-  })
+  }
 
-  trx()
-
-  return { totalDocs: docs.length, totalChunks }
+  return { totalDocs: docs.length, totalChunks, errors: errors.length > 0 ? errors : undefined }
 }
 
 /**
- * 在知识库中搜索与查询最相关的块。
+ * 混合搜索：向量语义搜索 + FTS5 关键词搜索。
  *
- * @param {string} query - 用户查询文本
- * @param {number} [limit=8] - 最多返回块数
- * @returns {Array<{ id, document_id, document_title, chunk_index, content }>}
+ * @param {string} query - 用户查询
+ * @param {number} [limit=6] - 返回块数
+ * @returns {Array<{ id, document_id, document_title, chunk_index, content, score }>}
  */
-function search(query, limit = 8) {
+async function search(query, limit = 6) {
   const db = getDb()
   if (!db) throw new Error('数据库未初始化')
-
   if (!query || !query.trim()) return []
 
-  // 对查询做简单预处理：去除非关键词字符
-  const sanitized = query.trim().slice(0, 200)
+  const queryVec = await generateEmbedding(query.trim().slice(0, 200))
 
-  // FTS5 搜索（按 BM25 排序）
+  // 加载所有块和向量做语义搜索
+  const rows = db.prepare(
+    `SELECT id, document_id, document_title, chunk_index, content, embedding FROM kb_chunks WHERE embedding IS NOT NULL`
+  ).all()
+
+  // 计算余弦相似度
+  const scored = rows.map(row => {
+    const vec = vectorFromBuffer(row.embedding)
+    const sim = cosineSimilarity(queryVec, vec)
+    return { ...row, score: sim }
+  })
+
+  // 按相似度降序取 top
+  scored.sort((a, b) => b.score - a.score)
+  const vectorResults = scored.slice(0, limit)
+
+  // 如果没有嵌入数据（首次重建还没完成向量化），回退到 FTS5
+  if (vectorResults.length === 0 || vectorResults[0].score < 0.01) {
+    return searchFallback(db, query, limit)
+  }
+
+  return vectorResults.map(r => ({
+    id: r.id,
+    document_id: r.document_id,
+    document_title: r.document_title,
+    chunk_index: r.chunk_index,
+    content: r.content,
+    score: Math.round(r.score * 10000) / 10000,
+  }))
+}
+
+/** FTS5 回退搜索 */
+function searchFallback(db, query, limit) {
+  const sanitized = query.trim().slice(0, 200)
   try {
     const results = db.prepare(`
-      SELECT c.id, c.document_id, c.document_title, c.chunk_index, c.content,
-             rank AS score
+      SELECT c.id, c.document_id, c.document_title, c.chunk_index, c.content
       FROM kb_chunks_fts f
       JOIN kb_chunks c ON c.rowid = f.rowid
       WHERE kb_chunks_fts MATCH ?
       ORDER BY rank
       LIMIT ?
     `).all(sanitized, limit)
-
-    // 如果 FTS5 有结果，直接返回
     if (results.length > 0) return results
-  } catch {
-    // FTS5 可能对某些查询抛出语法错误（如标点），回退到 LIKE
-  }
+  } catch {}
 
-  // 回退：LIKE 模糊搜索
+  // LIKE 兜底
   const likePattern = `%${sanitized}%`
   return db.prepare(`
     SELECT id, document_id, document_title, chunk_index, content
@@ -151,11 +201,11 @@ function search(query, limit = 8) {
 }
 
 /**
- * 获取知识库状态（文档数和块数）。
+ * 获取知识库状态。
  */
 function status() {
   const db = getDb()
-  if (!db) return { docCount: 0, chunkCount: 0 }
+  if (!db) return { docCount: 0, chunkCount: 0, hasEmbedding: false }
 
   const docCount = db.prepare(
     `SELECT COUNT(DISTINCT document_id) AS count FROM kb_chunks`
@@ -165,7 +215,11 @@ function status() {
     `SELECT COUNT(*) AS count FROM kb_chunks`
   ).get()?.count || 0
 
-  return { docCount, chunkCount }
+  const embedCount = db.prepare(
+    `SELECT COUNT(*) AS count FROM kb_chunks WHERE embedding IS NOT NULL`
+  ).get()?.count || 0
+
+  return { docCount, chunkCount, embedCount, hasEmbedding: embedCount > 0 }
 }
 
 module.exports = { rebuild, search, status }

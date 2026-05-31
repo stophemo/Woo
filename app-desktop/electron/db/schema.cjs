@@ -63,6 +63,7 @@ const SCHEMA_SQLS = [
     document_title TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
+    embedding BLOB,
     create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
