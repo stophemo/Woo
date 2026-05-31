@@ -115,6 +115,13 @@ function register() {
   handle('sync:status', () => { const s = syncEngine.getStatus(); return { isSyncing: s.isSyncing, lastSyncTime: s.lastSyncTime, pendingChanges: s.pendingChanges } })
   handle('sync:trigger', syncEngine.syncNow)
 
+  // Agent 终端日志（渲染进程 → 主进程 → 终端，无需包装）
+  ipcMain.handle('log:agent', async (_event, level, message) => {
+    if (level === 'warn') console.warn('[Agent]', message)
+    else if (level === 'error') console.error('[Agent]', message)
+    else console.log('[Agent]', message)
+  })
+
   handle('version:list', (documentId) => versionService.listVersions(documentId))
   handle('version:get', (documentId, versionNo) => versionService.getVersion(documentId, versionNo))
   handle('version:saveManual', (documentId) => { versionService.saveManual(documentId) })

@@ -1,5 +1,6 @@
 <template>
-  <aside class="right-sidebar" :class="{ collapsed: !isOpen }">
+  <aside class="right-sidebar" :class="[{ collapsed: !isOpen }, { resizing: isResizing }]" :style="{ width: isOpen ? sidebarWidth + 'px' : '0px' }">
+    <div class="resize-handle" @mousedown.prevent="startResize"></div>
     <div class="chat-header">
       <select class="model-select" v-model="aiStore.selectedModelId" @change="aiStore.setModel(($event.target as HTMLSelectElement).value)">
         <option v-for="model in aiStore.availableModels" :key="model.id" :value="model.id">
@@ -45,6 +46,15 @@
       </div>
 
       <ChatMessage v-for="msg in aiStore.messages" :key="msg.id" :message="msg" />
+
+      <!-- 内联确认：紧跟在 AI 回复之后，类似 Claude Code -->
+      <div v-if="confirmPending" class="chat-confirm-inline">
+        <div class="confirm-prompt">{{ confirmPending.details }}</div>
+        <div class="confirm-actions">
+          <button class="confirm-btn" @click="resolveConfirmation(false)">取消</button>
+          <button class="confirm-btn primary" @click="resolveConfirmation(true)">确认</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="aiStore.error" class="chat-error">
@@ -77,15 +87,17 @@
         <IconSend :size="16" />
       </button>
     </div>
+
   </aside>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ChatMessage from './ChatMessage.vue'
 import IconSend from '../icons/IconSend.vue'
 import { useAiChatStore } from '../../stores/aiChat'
 import { useWorkspaceStore } from '../../stores/workspace'
+import { pendingConfirmation, resolveConfirmation } from '../../services/agent/confirmation'
 
 interface Props {
   isOpen: boolean
@@ -100,6 +112,52 @@ const workspaceStore = useWorkspaceStore()
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const messagesContainer = ref<HTMLDivElement | null>(null)
+const confirmPending = computed(() => pendingConfirmation.value)
+
+const STORAGE_KEY = 'right-sidebar-width'
+const MIN_WIDTH = 240
+const MAX_WIDTH = window.innerWidth * 0.5
+
+const sidebarWidth = ref(loadWidth())
+const isResizing = ref(false)
+
+function loadWidth(): number {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const w = parseInt(saved, 10)
+      if (w >= MIN_WIDTH && w <= MAX_WIDTH) return w
+    }
+  } catch {}
+  return 320
+}
+
+function saveWidth(w: number) {
+  try { localStorage.setItem(STORAGE_KEY, String(w)) } catch {}
+}
+
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  isResizing.value = true
+  const startX = e.clientX
+  const startWidth = sidebarWidth.value
+
+  function onMove(ev: MouseEvent) {
+    const newWidth = startWidth - (ev.clientX - startX)
+    const clamped = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth))
+    sidebarWidth.value = clamped
+  }
+
+  function onUp() {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    saveWidth(sidebarWidth.value)
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 const quickActions = [
   '帮我优化这段文本',
@@ -127,6 +185,11 @@ async function handleSend() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+  // Ctrl/Cmd + A: 全选输入框文本
+  if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+    // 让浏览器默认行为生效（textarea 全选）
+    return
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -146,16 +209,20 @@ function resetTextareaHeight() {
   el.style.height = 'auto'
 }
 
+let scrollRafId = 0
+
 function scrollToBottom() {
-  const container = messagesContainer.value
-  if (!container) return
-  const threshold = 60
-  const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold
-  if (isNearBottom) {
-    nextTick(() => {
+  if (scrollRafId) return
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = 0
+    const container = messagesContainer.value
+    if (!container) return
+    const threshold = 60
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+    if (isNearBottom) {
       container.scrollTop = container.scrollHeight
-    })
-  }
+    }
+  })
 }
 
 async function handleRebuildKb() {
@@ -167,42 +234,58 @@ watch(() => props.isOpen, (val) => {
   if (val) aiStore.refreshKbStatus()
 })
 
+// 单一声明式滚动 — 消息数或最后一条内容变化时，防抖滚动到底部
 watch(
-  () => aiStore.messages.length,
-  () => {
-    nextTick(() => {
-      const container = messagesContainer.value
-      if (container) {
-        container.scrollTop = container.scrollHeight
-      }
-    })
-  }
-)
-
-watch(
-  () => {
+  [() => aiStore.messages.length, () => {
     const msgs = aiStore.messages
-    if (msgs.length === 0) return ''
-    return msgs[msgs.length - 1]?.content
-  },
-  () => scrollToBottom()
+    return msgs.length > 0 ? msgs[msgs.length - 1]?.content : ''
+  }],
+  () => scrollToBottom(),
+  { flush: 'post' }
 )
 </script>
 
 <style scoped>
 .right-sidebar {
-  width: 320px;
   background-color: var(--bg-tertiary);
   border-left: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
-  transition: width 0.3s, opacity 0.3s, var(--theme-transition);
+  transition: opacity 0.3s, var(--theme-transition);
   overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.right-sidebar:not(.resizing) {
+  transition: width 0.25s ease, opacity 0.25s ease, var(--theme-transition);
 }
 
 .right-sidebar.collapsed {
-  width: 0;
   opacity: 0;
+  overflow: hidden;
+}
+
+/* ── 拖拽手柄 ── */
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background-color 0.15s;
+}
+
+.resize-handle:hover,
+.right-sidebar.resizing .resize-handle {
+  background-color: var(--accent);
+}
+
+.right-sidebar.collapsed .resize-handle {
+  display: none;
 }
 
 .chat-header {
@@ -309,7 +392,7 @@ watch(
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 0;
 }
 
 .chat-empty {
@@ -480,5 +563,54 @@ watch(
 
 .stop-btn:hover {
   background-color: #dc2626;
+}
+
+/* ── 内联确认（在消息流中） ── */
+
+.chat-confirm-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 16px 16px;
+}
+
+.confirm-prompt {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.confirm-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.confirm-btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.confirm-btn.primary:hover {
+  opacity: 0.9;
+}
+
+.confirm-btn:not(.primary) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.confirm-btn:not(.primary):hover {
+  background: var(--bg-active);
 }
 </style>

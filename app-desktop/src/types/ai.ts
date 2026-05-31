@@ -1,9 +1,17 @@
+export interface ThinkingStep {
+  id: string
+  type: 'tool_call' | 'tool_result'
+  label: string
+  status: 'running' | 'done' | 'error'
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: number
   isStreaming?: boolean
+  thinkingSteps?: ThinkingStep[]
 }
 
 export type ProviderType = 'deepseek' | 'gemini' | 'openai-compatible'

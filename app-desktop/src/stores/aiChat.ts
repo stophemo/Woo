@@ -1,12 +1,34 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ChatMessage, ModelConfig, ProviderType } from '../types/ai'
-import { sendMessage as deepseekSendMessage, validateApiKey as validateOpenAIKey, listModels as listOpenAIModels } from '../services/deepseek'
-import { sendGeminiMessage, validateGeminiKey, stripHtml, listGeminiModels } from '../services/gemini'
+import type { ChatMessage, ThinkingStep, ModelConfig, ProviderType } from '../types/ai'
+import { validateApiKey as validateOpenAIKey, listModels as listOpenAIModels } from '../services/deepseek'
+import { validateGeminiKey, listGeminiModels } from '../services/gemini'
+import { Agent } from '../services/agent'
+import type { AgentProvider } from '../services/agent/types'
+import { clearConfirmation } from '../services/agent/confirmation'
+import { marked } from 'marked'
+import { useWorkspaceStore } from './workspace'
 
 const STORAGE_KEY = 'ai-settings'
 const CHAT_STORAGE_KEY = 'ai-chat-messages'
 const KB_STORAGE_KEY = 'ai-kb-enabled'
+
+marked.setOptions({ breaks: true, gfm: true })
+
+/**
+ * 将 AI 输出的 Markdown 内容转为编辑器兼容的 HTML。
+ * 如果内容已含 HTML 标签则跳过转换，避免双重编码。
+ */
+function mdToHtml(text: string): string {
+  if (!text) return ''
+  // 如果已包含 HTML 块级标签，视为已转换，直接返回
+  if (/<[a-z]+[\s>]/i.test(text)) return text
+  try {
+    return marked.parse(text) as string
+  } catch {
+    return text
+  }
+}
 
 /** IPC invoke 的简单包装 */
 async function ipc<T = unknown>(channel: string, ...args: any[]): Promise<T> {
@@ -40,6 +62,226 @@ export const useAiChatStore = defineStore('aiChat', () => {
   const error = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
   const _apiKeyVersion = ref(0)
+
+  /* ---------- Agent 实例（懒初始化） ---------- */
+  let agent: Agent | null = null
+
+  /** 获取或初始化 Agent */
+  function getAgent(): Agent {
+    if (agent) {
+      // 配置可能已变更，更新之
+      const cm = currentModel.value
+      const actualModel = cm?.id === '_custom_' ? (getCustomModelName() || cm?.model) : cm?.model || 'deepseek-v4-flash'
+      agent.updateConfig({
+        provider: props_provider.value as AgentProvider,
+        apiKey: getApiKey(),
+        baseUrl: provider.value === 'gemini' ? undefined : (provider.value === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()),
+        model: actualModel,
+      })
+      return agent
+    }
+
+    const cm = currentModel.value
+    const actualModel = cm?.id === '_custom_' ? (getCustomModelName() || cm?.model) : cm?.model || 'deepseek-v4-flash'
+    agent = new Agent({
+      provider: props_provider.value as AgentProvider,
+      apiKey: getApiKey(),
+      baseUrl: provider.value === 'gemini' ? undefined : (provider.value === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()),
+      model: actualModel,
+    })
+
+    // 设置上下文提供者（工具执行时用到）
+    agent.setContextProvider({
+      getCurrentDoc: async () => {
+        return documentContextCache || null
+      },
+      searchKb: async (query: string, limit?: number) => {
+        return searchKb(query, limit || 6)
+      },
+      searchDocuments: async (query: string) => {
+        try {
+          const docs = await ipc<any[]>('document:search', query)
+          if (!docs || docs.length === 0) return ''
+          return docs.map((d, i) => {
+            const time = d.update_time ? new Date(d.update_time).toLocaleString('zh-CN') : '未知'
+            return `${i + 1}. 《${d.title}》最后修改: ${time}`
+          }).join('\n')
+        } catch {
+          return ''
+        }
+      },
+      getDocumentDetail: async (title: string) => {
+        try {
+          // 先通过搜索找到匹配标题的文档
+          const docs = await ipc<any[]>('document:search', title)
+          const match = docs?.find((d: any) => d.title === title)
+          if (!match) {
+            // 模糊匹配第一个
+            const fuzzy = docs?.[0]
+            if (!fuzzy) return null
+            const detail = await ipc<any>('document:get', fuzzy.id)
+            if (!detail) return null
+            const created = detail.create_time ? new Date(detail.create_time).toLocaleString('zh-CN') : '未知'
+            const updated = detail.update_time ? new Date(detail.update_time).toLocaleString('zh-CN') : '未知'
+            const contentLen = detail.content ? detail.content.replace(/<[^>]+>/g, '').length : 0
+            return `标题: ${fuzzy.title}\n创建: ${created}\n最后修改: ${updated}\n字数: ${contentLen}`
+          }
+          const detail = await ipc<any>('document:get', match.id)
+          if (!detail) return null
+          const created = detail.create_time ? new Date(detail.create_time).toLocaleString('zh-CN') : '未知'
+          const updated = detail.update_time ? new Date(detail.update_time).toLocaleString('zh-CN') : '未知'
+          const contentLen = detail.content ? detail.content.replace(/<[^>]+>/g, '').length : 0
+          return `标题: ${match.title}\n创建: ${created}\n最后修改: ${updated}\n字数: ${contentLen}\n内容预览: ${(detail.content || '').replace(/<[^>]+>/g, '').slice(0, 500)}`
+        } catch {
+          return null
+        }
+      },
+
+      // ── CRUD 工具上下文方法 ──
+
+      findFolderByName: async (name: string) => {
+        try {
+          const tree = await ipc<any[]>('folder:tree')
+          const queue = [...tree]
+          while (queue.length > 0) {
+            const node = queue.shift()
+            if (node.name === name) return node.id
+            if (node.children) queue.push(...node.children)
+          }
+          return null
+        } catch { return null }
+      },
+
+      findNoteByTitle: async (title: string) => {
+        try {
+          const docs = await ipc<any[]>('document:search', title)
+          // 精确匹配优先
+          const exact = docs?.find(d => d.title === title)
+          if (exact) return { id: exact.id, title: exact.title }
+          // 模糊匹配第一个
+          if (docs && docs.length > 0) return { id: docs[0].id, title: docs[0].title }
+          return null
+        } catch { return null }
+      },
+
+      createNote: async (title: string, folderId?: string) => {
+        try {
+          if (folderId) {
+            const doc = await ipc<any>('document:create', { title, folderId })
+            return doc?.id || null
+          }
+          // 没有指定目录时，用第一个顶级目录
+          const tree = await ipc<any[]>('folder:tree')
+          if (tree && tree.length > 0) {
+            const doc = await ipc<any>('document:create', { title, folderId: tree[0].id })
+            return doc?.id || null
+          }
+          return null
+        } catch { return null }
+      },
+
+      updateNote: async (noteId: string, content: string) => {
+        const ws = useWorkspaceStore()
+        try {
+          const html = mdToHtml(content)
+          // 先切换到目标文档
+          if (ws.selectedDocumentId !== noteId) {
+            await ws.selectDocument(noteId)
+          }
+          // 流式写入编辑器 — 模拟肉眼可见的打字效果
+          const totalLen = html.length
+          // 每批 3~5 字符，总耗时至少 1.5 秒以便用户感知
+          const chunkSize = totalLen > 800 ? 5 : 3
+          const minDuration = 1500
+          const totalChunks = Math.ceil(totalLen / chunkSize)
+          const delayMs = Math.max(25, Math.min(80, Math.ceil(minDuration / totalChunks)))
+          let pos = 0
+          ws.isExternalStreaming = true
+          while (pos < html.length) {
+            let end = Math.min(pos + chunkSize, html.length)
+            // 避免卡在标签中间
+            const frag = html.slice(pos, end)
+            if (frag.includes('<') && !frag.includes('>')) {
+              const rest = html.slice(end)
+              const closeBracket = rest.indexOf('>')
+              if (closeBracket >= 0 && closeBracket < 100) end += closeBracket + 1
+            }
+            while (end < html.length && (html.charCodeAt(end) & 0xC0) === 0x80) end++
+            ws.updateContentStream(noteId, html.slice(0, end))
+            pos = end
+            await new Promise(r => setTimeout(r, delayMs))
+          }
+          // 最终写入后端
+          await ipc('document:updateContent', noteId, html)
+          return true
+        } catch {
+          return false
+        } finally {
+          ws.isExternalStreaming = false
+        }
+      },
+
+      deleteNote: async (noteId: string) => {
+        try {
+          await ipc('document:remove', noteId)
+          return true
+        } catch { return false }
+      },
+
+      createFolder: async (name: string, parentId?: string) => {
+        try {
+          return await ipc<string>('folder:create', { name, parentId: parentId || null })
+        } catch { return null }
+      },
+
+      renameFolder: async (folderId: string, newName: string) => {
+        try {
+          await ipc('folder:rename', folderId, newName)
+          return true
+        } catch { return false }
+      },
+
+      deleteFolder: async (folderId: string) => {
+        try {
+          await ipc('folder:remove', folderId)
+          return true
+        } catch { return false }
+      },
+
+      listFolders: async () => {
+        try {
+          const tree = await ipc<any[]>('folder:tree')
+          if (!tree || tree.length === 0) return '（暂无目录）'
+          function formatTree(nodes: any[], indent: number): string {
+            return nodes.map(n => {
+              const prefix = '  '.repeat(indent)
+              const children = n.children?.length ? '\n' + formatTree(n.children, indent + 1) : ''
+              return `${prefix}📁 ${n.name}${children}`
+            }).join('\n')
+          }
+          return formatTree(tree, 0)
+        } catch { return '获取目录失败' }
+      },
+
+      listRecentNotes: async (limit?: number) => {
+        try {
+          const docs = await ipc<any[]>('document:listAll')
+          if (!docs || docs.length === 0) return '（暂无笔记）'
+          const sorted = docs.slice(0, limit || 10)
+          return sorted.map((d, i) => {
+            const time = d.updateTime ? new Date(d.updateTime).toLocaleString('zh-CN') : '未知'
+            const folder = d.folderName || '未分类'
+            return `${i + 1}. 《${d.title}》 - ${folder} - ${time}`
+          }).join('\n')
+        } catch { return '获取笔记列表失败' }
+      },
+    })
+
+    return agent
+  }
+
+  /** 缓存当前文档内容，供 Agent 工具 read_current_document 使用 */
+  let documentContextCache: string | null = null
 
   /* ---------- 知识库状态 ---------- */
   const kbEnabled = ref(false)
@@ -82,11 +324,10 @@ export const useAiChatStore = defineStore('aiChat', () => {
   }
 
   /** 搜索知识库，返回相关块内容摘要 */
-  async function searchKb(query: string): Promise<string> {
+  async function searchKb(query: string, limit?: number): Promise<string> {
     try {
-      const chunks = await ipc<any[]>('kb:search', query, 6)
+      const chunks = await ipc<any[]>('kb:search', query, limit || 6)
       if (!chunks || chunks.length === 0) return ''
-      // 合并为上下文文本
       return chunks.map((c, i) =>
         `[文档「${c.document_title}」片段 ${i + 1}]:\n${c.content}`
       ).join('\n\n---\n\n')
@@ -285,9 +526,10 @@ export const useAiChatStore = defineStore('aiChat', () => {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
   }
 
-  /* ---------- 发送消息 ---------- */
+  /* ---------- 发送消息（Agent 驱动） ---------- */
 
   async function sendUserMessage(userText: string, documentContext?: string) {
+    clearConfirmation() // 清理上一个待处理的确认
     const apiKey = getApiKey()
     if (!apiKey) {
       const labels: Record<ProviderType, string> = {
@@ -299,7 +541,13 @@ export const useAiChatStore = defineStore('aiChat', () => {
       return
     }
 
+    const model = currentModel.value
+    if (!model) { error.value = '未选择模型'; return }
+
     error.value = null
+
+    // 缓存文档内容供 Agent 工具使用
+    documentContextCache = documentContext || null
 
     const userMsg: ChatMessage = {
       id: generateId(),
@@ -315,102 +563,121 @@ export const useAiChatStore = defineStore('aiChat', () => {
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
-      isStreaming: true
+      isStreaming: true,
+      thinkingSteps: []
     }
     messages.value.push(assistantMsg)
     saveMessages()
 
     isStreaming.value = true
 
-    // 构建 API 消息列表
-    const apiMessages: ChatMessage[] = []
-    const isFirstUserMsg = messages.value.filter(m => m.role === 'user').length === 1
-
-    // 收集上下文片段
-    const contextParts: string[] = []
-
-    // 1. 当前编辑的文档内容
-    if (documentContext && isFirstUserMsg) {
-      const plainText = stripHtml(documentContext)
-      if (plainText.trim()) {
-        const contextText = plainText.length > 3000 ? plainText.slice(0, 3000) + '...' : plainText
-        contextParts.push(`[当前编辑的文档]:\n${contextText}`)
-      }
-    }
-
-    // 2. 知识库检索（仅在首次消息或 KB 启用时）
-    if (kbEnabled.value && isFirstUserMsg) {
-      try {
-        const kbContext = await searchKb(userText)
-        if (kbContext) contextParts.push(`[知识库相关文档]:\n${kbContext}`)
-      } catch { /* KB 搜索失败不影响主流程 */ }
-    }
-
-    if (contextParts.length > 0) {
-      const combinedContext = contextParts.join('\n\n---\n\n')
-      apiMessages.push({
-        id: 'ctx',
-        role: 'user',
-        content: `以下是与问题相关的文档内容，请结合上下文回答我的问题（如有不足可结合自身知识补充，但优先参考以下资料）：\n\n${combinedContext}\n\n我的问题是：${userText}`,
-        timestamp: Date.now()
-      })
-    } else {
-      for (const msg of messages.value) {
-        if (msg.id === assistantMsg.id) continue
-        if (msg.content.trim()) {
-          apiMessages.push(msg)
-        }
-      }
-      // 如果是首次消息但没有上下文，直接推送原始消息
-      if (isFirstUserMsg && apiMessages.length === 0) {
-        apiMessages.push(userMsg)
-      }
-    }
+    // 构建对话历史（排除刚加的 assistant 消息）
+    const history = messages.value
+      .filter(m => m.id !== assistantMsg.id)
+      .map(m => ({ role: m.role, content: m.content }))
 
     const controller = new AbortController()
     abortController.value = controller
 
     try {
-      const model = currentModel.value
-      if (!model) throw new Error('未选择模型')
+      const agt = getAgent()
 
-      if (provider.value === 'gemini') {
-        await sendGeminiMessage(
-          apiKey,
-          model.model,  // e.g. "gemini-2.5-flash"
-          apiMessages.map(m => ({ role: m.role, content: m.content })),
-          (chunk: string) => {
-            const msg = messages.value.find(m => m.id === assistantMsg.id)
-            if (msg) {
-              msg.content += chunk
-              saveMessages()
-            }
-          },
-          controller.signal
-        )
-      } else {
-        // DeepSeek / OpenAI 兼容 — 使用相同的 OpenAI 兼容 API
-        const baseUrl = provider.value === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()
-        const actualModel = model.id === '_custom_' ? getCustomModelName() || model.model : model.model
-        await deepseekSendMessage(
-          apiKey,
-          baseUrl,
-          actualModel,
-          apiMessages,
-          (chunk: string) => {
-            const msg = messages.value.find(m => m.id === assistantMsg.id)
-            if (msg) {
-              msg.content += chunk
-              saveMessages()
-            }
-          },
-          controller.signal
-        )
+      const TOOL_ICONS: Record<string, string> = {
+        search_kb: '🔍',
+        search_documents: '📋',
+        get_document_detail: '📄',
+        read_current_document: '📖',
+        create_note: '✏️',
+        update_note: '📝',
+        delete_note: '🗑️',
+        create_folder: '📁',
+        rename_folder: '✏️',
+        delete_folder: '🗑️',
+        list_folders: '📂',
+        list_recent_notes: '📋',
       }
+      const TOOL_LABELS: Record<string, string> = {
+        search_kb: '搜索知识库',
+        search_documents: '搜索文档',
+        get_document_detail: '获取文档详情',
+        read_current_document: '读取当前文档',
+        create_note: '创建笔记',
+        update_note: '修改笔记',
+        delete_note: '删除笔记',
+        create_folder: '创建目录',
+        rename_folder: '重命名目录',
+        delete_folder: '删除目录',
+        list_folders: '列出目录',
+        list_recent_notes: '列出最近笔记',
+      }
+
+      // 跟踪当前正在运行的 thinking step
+      let currentStepId: string | null = null
+
+      function addStep(type: 'tool_call' | 'tool_result', label: string, status: 'running' | 'done' | 'error') {
+        const msg = messages.value.find(m => m.id === assistantMsg.id)
+        if (!msg) return
+        if (!msg.thinkingSteps) msg.thinkingSteps = []
+        const id = generateId()
+        msg.thinkingSteps.push({ id, type, label, status })
+        return id
+      }
+
+      function updateStep(stepId: string, updates: Partial<ThinkingStep>) {
+        const msg = messages.value.find(m => m.id === assistantMsg.id)
+        if (!msg || !msg.thinkingSteps) return
+        const step = msg.thinkingSteps.find(s => s.id === stepId)
+        if (!step) return
+        Object.assign(step, updates)
+      }
+
+      await agt.chat(
+        userText,
+        history,
+        {
+          onChunk: (chunk: string) => {
+            const msg = messages.value.find(m => m.id === assistantMsg.id)
+            if (msg) {
+              msg.content += chunk
+              // 不在此处 saveMessages() — 流式过程中写 localStorage 会严重阻塞 UI
+            }
+          },
+          onToolCall: (toolName, args) => {
+            const icon = TOOL_ICONS[toolName] || '🔧'
+            const labelBase = TOOL_LABELS[toolName] || toolName
+            let detail = ''
+            try {
+              const parsed = JSON.parse(args)
+              if (parsed.query) detail = parsed.query
+              else if (parsed.title) detail = `「${parsed.title}」`
+              else if (parsed.name) detail = `「${parsed.name}」`
+            } catch {}
+            const label = `${icon} ${labelBase}${detail ? ' ' + detail : ''}`
+            const stepId = addStep('tool_call', label, 'running')
+            currentStepId = stepId || null
+          },
+          onToolResult: (_toolName, result) => {
+            // 完成当前步骤
+            if (currentStepId) {
+              updateStep(currentStepId, { status: result.startsWith('操作已取消') ? 'error' : 'done' })
+              currentStepId = null
+            }
+            // tool_result 步骤只取首行前 50 字
+            const firstLine = result.split('\n')[0] || ''
+            const summary = firstLine.length > 50 ? firstLine.slice(0, 50) + '…' : firstLine
+            if (summary && !summary.includes('服务未就绪') && !summary.includes('未找到')) {
+              addStep('tool_result', summary, 'done')
+            }
+          },
+          onError: (errMsg) => {
+            console.warn('[Agent] 错误:', errMsg)
+          },
+        },
+        controller.signal
+      )
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        const detail = err.cause ? ` (${err.cause})` : ''
-        error.value = (err.message || '请求失败') + detail
+        error.value = err.message || '请求失败'
         const msg = messages.value.find(m => m.id === assistantMsg.id)
         if (msg && !msg.content.trim()) {
           const idx = messages.value.indexOf(msg)
@@ -421,6 +688,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
     } finally {
       isStreaming.value = false
       abortController.value = null
+      documentContextCache = null
       const msg = messages.value.find(m => m.id === assistantMsg.id)
       if (msg) {
         msg.isStreaming = false
@@ -431,6 +699,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   function cancelGeneration() {
     abortController.value?.abort()
+    clearConfirmation()
   }
 
   function clearChat() {

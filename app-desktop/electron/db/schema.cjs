@@ -74,12 +74,8 @@ const SCHEMA_SQLS = [
     embedding float[512]
   )`,
 
-  // 知识库 FTS5 全文索引（先删旧表确保结构正确，每次启动重建但不存数据）
+  // 清理旧版 FTS5（已不再使用，DROP 主表会自动级联删除影子表）
   `DROP TABLE IF EXISTS kb_chunks_fts`,
-  `CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
-    content, title,
-    tokenize='unicode61'
-  )`,
 ]
 
 function initSchema(db) {

@@ -7,8 +7,8 @@
     stroke="currentColor" 
     :stroke-width="strokeWidth"
   >
-    <rect x="3" y="3" width="13" height="18" rx="1"/>
-    <rect x="14" y="3" width="7" height="18" rx="1" opacity="0.3"/>
+    <rect x="3" y="3" width="13" height="18" rx="1" opacity="0.3"/>
+    <rect x="14" y="3" width="7" height="18" rx="1"/>
   </svg>
 </template>
 

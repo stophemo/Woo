@@ -179,26 +179,24 @@ function onLogout() {
 
 // 启动流程：认证恢复 + 工作区加载
 async function initApp() {
-  // 1. 恢复认证 session
-  await authStore.bootstrap()
+  // 并行初始化：认证、工作区、锁状态互不依赖，同时开始
+  // 注：主进程已通过 tryRestoreSession() 在打开数据库前恢复了 session，
+  // 所以数据库已是对应用户的数据库，工作区数据可以直接加载
+  await Promise.all([
+    authStore.bootstrap(),
+    workspaceStore.bootstrap()
+      .then(() => workspaceStore.restoreLastView())
+      .catch(() => {}),
+    useLockStore().bootstrap().catch(() => {})
+  ])
 
-  // 1.5 初始化加锁状态
-  await useLockStore().bootstrap()
-
-  // 2. 启动同步监听和提示
+  // 同步相关初始化（非阻塞，不影响数据展示）
   syncStore.listen()
   setupSyncToast()
   setupSyncDataRefresh()
   try {
     await syncStore.refreshStatus()
   } catch { /* ignore */ }
-
-  // 3. 加载工作区数据
-  try {
-    await workspaceStore.bootstrap()
-  } catch {
-    /* error 已在 store 中保存 */
-  }
 }
 
 const syncToast = ref({ visible: false, message: '', type: 'success' })

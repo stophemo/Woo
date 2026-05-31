@@ -1,3 +1,6 @@
+# ============ Root ============
+node_modules
+
 # ============ App-Desktop ============
 # Dependencies
 app-desktop/node_modules
@@ -85,3 +88,4 @@ Thumbs.db
 
 # IDE
 .trae
+.vercel

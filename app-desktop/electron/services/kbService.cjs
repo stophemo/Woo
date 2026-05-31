@@ -2,10 +2,8 @@
  * 知识库服务（RAG + 向量嵌入）
  *
  * 使用 sqlite-vec (vec0) 存储和搜索向量。
- *
- * 搜索策略：
- *   - 向量搜索：query → 嵌入 → vec0 MATCH → top K
- *   - 回退：FTS5 关键词 → LIKE 模糊
+ * 搜索方式：query → 嵌入 → vec0 KNN → top K
+ * 无降级，失败即报错。
  */
 const { getDb } = require('../db/index.cjs')
 const crypto = require('crypto')
@@ -18,7 +16,7 @@ function vecToJson(vec) {
   return '[' + Array.from(vec).join(',') + ']'
 }
 
-/** 将 HTML 纯文本分割为块 */
+/** 将纯文本按段落分割为 150~350 字的块 */
 function chunkText(text, title) {
   if (!text || !text.trim()) return []
   const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim())
@@ -29,6 +27,8 @@ function chunkText(text, title) {
   for (const para of paragraphs) {
     const trimmed = para.trim()
     if (!trimmed) continue
+
+    // 当前块已够大 → 切分
     if (current.length + trimmed.length > 350 && current.length > 150) {
       chunks.push({ title, content: current.trim(), chunkIndex: idx++ })
       current = trimmed
@@ -36,16 +36,27 @@ function chunkText(text, title) {
       current += (current ? '\n\n' : '') + trimmed
     }
   }
+
+  // 处理最后一块
   if (current.trim()) {
-    chunks.push({ title, content: current.trim(), chunkIndex: idx })
+    // 若最后一块 < 100 字且前面有块，合并到前一块
+    if (current.trim().length < 100 && chunks.length > 0) {
+      chunks[chunks.length - 1].content += '\n\n' + current.trim()
+    } else {
+      chunks.push({ title, content: current.trim(), chunkIndex: idx })
+    }
   }
   return chunks
 }
 
-/** 去除 HTML 标签 */
+/** 去除 HTML 标签，保留段落边界 */
 function stripHtml(html) {
   if (!html) return ''
   return html
+    // 块级标签替换为双换行（确保段落间有空行，chunkText 靠 \n\n 分段落）
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|section|article|pre)>/gi, '\n\n')
+    .replace(/<(br|hr)\s*\/?>/gi, '\n\n')
+    .replace(/<\/(tr|table|thead|tbody|tfoot)>/gi, '\n\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -53,12 +64,13 @@ function stripHtml(html) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{4,}/g, '\n\n\n')
     .trim()
 }
 
 /**
- * 重建知识库：分块 → 向量嵌入 → kb_chunks + kb_vectors(vec0) + FTS5
+ * 重建知识库：分块 → 向量嵌入 → kb_chunks + kb_vectors(vec0)
  */
 async function rebuild() {
   const db = getDb()
@@ -67,7 +79,6 @@ async function rebuild() {
   // 清空旧数据
   db.exec('DELETE FROM kb_vectors')
   db.exec('DELETE FROM kb_chunks')
-  try { db.exec('DELETE FROM kb_chunks_fts') } catch {}
 
   const docs = db.prepare(
     `SELECT id, title, content FROM note_document WHERE deleted = 0 AND content IS NOT NULL AND content != ''`
@@ -77,16 +88,14 @@ async function rebuild() {
   const errors = []
   let embedSuccess = 0
   let embedFail = 0
+  let seqId = 0
 
   const insertChunk = db.prepare(
     `INSERT INTO kb_chunks (id, document_id, document_title, chunk_index, content)
      VALUES (?, ?, ?, ?, ?)`
   )
   const insertVec = db.prepare(
-    `INSERT INTO kb_vectors (id, embedding) VALUES (?, ?)`
-  )
-  const insertFts = db.prepare(
-    `INSERT INTO kb_chunks_fts (rowid, content, title) VALUES (?, ?, ?)`
+    `INSERT INTO kb_vectors (id, embedding) VALUES (CAST(? AS INTEGER), ?)`
   )
 
   for (const doc of docs) {
@@ -95,16 +104,16 @@ async function rebuild() {
 
     for (const chunk of chunks) {
       const id = uuidv4()
+      seqId++
 
       // 1. 写入 kb_chunks
-      const info = insertChunk.run(id, doc.id, chunk.title, chunk.chunkIndex, chunk.content)
-      const rowid = info.lastInsertRowid
+      insertChunk.run(id, doc.id, chunk.title, chunk.chunkIndex, chunk.content)
 
       // 2. 生成向量 → 写入 kb_vectors (vec0)
       try {
         console.log('[KB] 嵌入块:', chunk.title, `(${chunk.content.length}字)`)
         const vec = await generateEmbedding(chunk.content)
-        insertVec.run(rowid, vecToJson(vec))
+        insertVec.run(seqId, vecToJson(vec))
         embedSuccess++
       } catch (e) {
         embedFail++
@@ -112,9 +121,6 @@ async function rebuild() {
         console.error('[KB] 嵌入失败:', msg)
         errors.push(msg)
       }
-
-      // 3. 写入 FTS5
-      insertFts.run(rowid, chunk.content, chunk.title)
 
       totalChunks++
     }
@@ -128,78 +134,49 @@ async function rebuild() {
 }
 
 /**
- * 混合搜索：vec0 语义搜索 → FTS5 回退。
+ * 语义搜索：vec0 KNN。
+ * 失败直接报错，无降级。
  */
 async function search(query, limit = 6) {
   const db = getDb()
   if (!db) throw new Error('数据库未初始化')
   if (!query || !query.trim()) return []
 
-  // 1. 向量搜索（主路径）
-  try {
-    const queryVec = await generateEmbedding(query.trim().slice(0, 200))
-    const vecJson = vecToJson(queryVec)
+  const queryVec = await generateEmbedding(query.trim().slice(0, 200))
+  const vecJson = vecToJson(queryVec)
 
-    // vec0 的 KNN 搜索，返回 distance（L2，归一化后等价于余弦距离: 0=最相似）
-    const vecResults = db.prepare(`
-      SELECT v.id, v.distance
-      FROM kb_vectors v
-      WHERE v.embedding MATCH ?
-      AND v.k = ?
-      ORDER BY v.distance
-    `).all(vecJson, limit)
+  // vec0 KNN 搜索，distance 越小越相似
+  const vecResults = db.prepare(`
+    SELECT v.id, v.distance
+    FROM kb_vectors v
+    WHERE v.embedding MATCH ?
+    AND v.k = ?
+    ORDER BY v.distance
+  `).all(vecJson, limit)
 
-    if (vecResults.length > 0) {
-      const ids = vecResults.map(r => r.id)
-      const placeholders = ids.map(() => '?').join(',')
-      const chunks = db.prepare(`
-        SELECT rowid, id, document_id, document_title, chunk_index, content
-        FROM kb_chunks
-        WHERE rowid IN (${placeholders})
-      `).all(...ids)
+  if (vecResults.length === 0) return []
 
-      // 按 vec0 返回的 id(rowid) 顺序排列
-      const chunkMap = {}
-      for (const c of chunks) chunkMap[c.rowid] = c
-      return ids.map(rowid => {
-        const c = chunkMap[rowid]
-        return c ? {
-          id: c.id,
-          document_id: c.document_id,
-          document_title: c.document_title,
-          chunk_index: c.chunk_index,
-          content: c.content,
-        } : null
-      }).filter(Boolean)
-    }
-  } catch (e) {
-    console.warn('[KB] 向量搜索失败，回退 FTS5:', e.message)
-  }
+  const ids = vecResults.map(r => r.id)
+  const placeholders = ids.map(() => '?').join(',')
+  const chunks = db.prepare(`
+    SELECT rowid, id, document_id, document_title, chunk_index, content
+    FROM kb_chunks
+    WHERE rowid IN (${placeholders})
+  `).all(...ids)
 
-  // 2. 回退：FTS5
-  return searchFallback(db, query.trim().slice(0, 200), limit)
-}
-
-/** FTS5 回退搜索 */
-function searchFallback(db, query, limit) {
-  try {
-    const results = db.prepare(`
-      SELECT c.id, c.document_id, c.document_title, c.chunk_index, c.content
-      FROM kb_chunks_fts f
-      JOIN kb_chunks c ON c.rowid = f.rowid
-      WHERE kb_chunks_fts MATCH ?
-      ORDER BY rank
-      LIMIT ?
-    `).all(query, limit)
-    if (results.length > 0) return results
-  } catch {}
-
-  const likePattern = `%${query}%`
-  return db.prepare(`
-    SELECT id, document_id, document_title, chunk_index, content
-    FROM kb_chunks WHERE content LIKE ?
-    ORDER BY chunk_index LIMIT ?
-  `).all(likePattern, limit)
+  // 按 vec0 返回的 id 顺序排列
+  const chunkMap = {}
+  for (const c of chunks) chunkMap[c.rowid] = c
+  return ids.map(rowid => {
+    const c = chunkMap[rowid]
+    return c ? {
+      id: c.id,
+      document_id: c.document_id,
+      document_title: c.document_title,
+      chunk_index: c.chunk_index,
+      content: c.content,
+    } : null
+  }).filter(Boolean)
 }
 
 /** 知识库状态 */

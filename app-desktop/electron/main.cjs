@@ -229,7 +229,9 @@ function buildMenu() {
         { type: 'separator' },
         { label: '切换主题', click: () => sendAction('theme') },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { role: 'toggleDevTools', label: '开发者工具' }
       ]
     },
     {

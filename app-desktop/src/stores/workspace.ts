@@ -105,6 +105,60 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const currentFolderDocuments = computed<Document[]>(() => folderDocuments.value)
   const currentDocument = computed<Document | null>(() => currentDocumentData.value)
 
+  // ============ 上次打开的视图缓存 ============
+  const LAST_VIEW_KEY = 'woo:lastView'
+  const LAST_DOC_KEY = 'woo:lastDoc'
+
+  function saveLastView(folderId: string | null) {
+    if (folderId) {
+      localStorage.setItem(LAST_VIEW_KEY, folderId)
+    } else {
+      localStorage.removeItem(LAST_VIEW_KEY)
+    }
+  }
+
+  function loadLastView(): string | null {
+    try {
+      return localStorage.getItem(LAST_VIEW_KEY)
+    } catch {
+      return null
+    }
+  }
+
+  function saveLastDoc(docId: string | null) {
+    if (docId) {
+      localStorage.setItem(LAST_DOC_KEY, docId)
+    } else {
+      localStorage.removeItem(LAST_DOC_KEY)
+    }
+  }
+
+  /**
+   * 启动后恢复上次打开的视图。
+   * 优先恢复上次的目录 + 文档，若无缓存则默认打开"全部"视图。
+   */
+  async function restoreLastView() {
+    const lastFolderId = loadLastView()
+    if (lastFolderId) {
+      await selectFolder(lastFolderId)
+      // 恢复目录后，再尝试恢复上次打开的文档
+      const lastDocId = loadLastDoc()
+      if (lastDocId && folderDocuments.value.some(d => d.id === lastDocId)) {
+        await selectDocument(lastDocId)
+      }
+    } else {
+      await openAllDocuments()
+    }
+  }
+
+  function loadLastDoc(): string | null {
+    try {
+      return localStorage.getItem(LAST_DOC_KEY)
+    } catch {
+      return null
+    }
+  }
+
   // ============ 启动 & 重置 ============
   async function bootstrap() {
     loading.value = true
@@ -154,6 +208,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return
     }
     selectedFolderId.value = folderId
+    saveLastView(folderId) // 缓存最近打开的视图
     try {
       // 隐私保护：检查目录是否被锁定（自身或祖先目录）
       const effectivelyLocked = await lockApi.isFolderEffectivelyLocked(folderId)
@@ -285,6 +340,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // ============ 文稿操作 ============
   async function selectDocument(documentId: string) {
     selectedDocumentId.value = documentId
+    saveLastDoc(documentId) // 缓存最近打开的文档
     // 废纸篓视图优先：从当前列表获取（含后端已删文档 + 本地已删草稿）
     if (selectedFolderId.value === TRASH_FOLDER_ID) {
       const trashDoc = folderDocuments.value.find(d => d.id === documentId)
@@ -322,6 +378,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 版本列表刷新信号：每次成功提交版本后自增，供版本面板 watch 实时重载
   const versionRefreshTick = ref(0)
   const lastVersionedDocId = ref<string | null>(null)
+
+  /** AI 流式编辑时设置为 true，告知编辑器跳过 onUpdate 防抖 */
+  const isExternalStreaming = ref(false)
+
+  /**
+   * AI 流式写入内容：每次调用都创建新引用，触发编辑器 watcher 重渲染。
+   * 用于模拟打字效果逐字更新编辑器内容。
+   */
+  function updateContentStream(documentId: string, content: string) {
+    if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
+      const now = new Date().toISOString()
+      currentDocumentData.value = {
+        ...currentDocumentData.value,
+        content,
+        updatedAt: now,
+      }
+    }
+    // 同步更新文档列表中的 meta 数据
+    const meta = folderDocuments.value.find(d => d.id === documentId)
+    if (meta) {
+      meta.updatedAt = new Date().toISOString()
+      meta.content = content
+    }
+  }
 
   function updateDocumentContent(documentId: string, content: string) {
     if (selectedFolderId.value === TRASH_FOLDER_ID) {
@@ -433,6 +513,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 打开草稿箱视图：本地草稿 + 后端遗留文档（无目录/目录不存在）
   async function openDraftBox() {
     selectedFolderId.value = DRAFT_FOLDER_ID
+    saveLastView(DRAFT_FOLDER_ID)
     selectedFolderLocked.value = false
     const localDrafts = drafts.value.map(d => ({
       ...d,
@@ -454,6 +535,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function openTrashBox() {
     selectedFolderId.value = TRASH_FOLDER_ID
+    saveLastView(TRASH_FOLDER_ID)
     selectedFolderLocked.value = false
     try {
       const list = await documentApi.listTrash()
@@ -497,6 +579,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 打开全部文稿视图：后端所有文档 + 本地草稿，带来源标记
   async function openAllDocuments() {
     selectedFolderId.value = ALL_FOLDER_ID
+    saveLastView(ALL_FOLDER_ID) // 缓存"全部"视图
     selectedFolderLocked.value = false
     try {
       const backendDocs = (await documentApi.listAll()).map(d => ({
@@ -944,6 +1027,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // 启动 & 重置
     bootstrap,
     reset,
+    restoreLastView,
     // 同步
     syncRefresh,
     // 目录操作
@@ -958,6 +1042,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // 文稿操作
     selectDocument,
     updateDocumentContent,
+    updateContentStream,
+    isExternalStreaming,
     flushPendingSave,
     commitDocumentVersion,
     versionRefreshTick,
