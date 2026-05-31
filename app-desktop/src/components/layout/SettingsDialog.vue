@@ -31,12 +31,21 @@
               </div>
             </div>
 
-            <!-- 3. 模型选择 -->
+            <!-- 3. 获取模型 + 模型选择 -->
             <div class="settings-field">
-              <label>模型</label>
-              <select v-model="modelInput" class="settings-input">
-                <option v-for="m in filteredModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-              </select>
+              <label>
+                模型
+                <button class="settings-link-btn" @click="handleFetchModels" :disabled="fetchingModels" style="margin-left:8px;font-size:0.78rem;">
+                  {{ fetchingModels ? '获取中...' : '获取模型' }}
+                </button>
+              </label>
+              <div class="model-select-row">
+                <select v-model="modelInput" class="settings-input" :disabled="filteredModels.length === 0">
+                  <option v-if="filteredModels.length === 0" value="">暂无模型，请点击「获取模型」</option>
+                  <option v-for="m in filteredModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+                </select>
+              </div>
+              <span v-if="fetchModelStatus" class="settings-help" :class="fetchModelOk ? 'validation-status success' : 'validation-status fail'">{{ fetchModelStatus }}</span>
               <input v-if="modelInput === '_custom_'" type="text" v-model="customModelInput" placeholder="输入模型名称（如 llama3.2, qwen2.5）" class="settings-input" style="margin-top:6px;" />
             </div>
 
@@ -118,6 +127,9 @@ const showKeyField = ref(false)
 const validating = ref(false)
 const validationResult = ref<'success' | 'fail' | null>(null)
 const saveSuccess = ref(false)
+const fetchingModels = ref(false)
+const fetchModelStatus = ref('')
+const fetchModelOk = ref(false)
 
 /** 模型列表（根据供应商过滤） */
 const filteredModels = computed(() => {
@@ -214,6 +226,27 @@ async function handleValidate() {
   }
 }
 
+async function handleFetchModels() {
+  fetchingModels.value = true
+  fetchModelStatus.value = ''
+  try {
+    const result = await store.fetchAvailableModels()
+    fetchModelStatus.value = result.message
+    fetchModelOk.value = result.ok
+    if (result.ok) {
+      // 自动选中第一个模型
+      if (filteredModels.value.length > 0) {
+        modelInput.value = filteredModels.value[0].id
+      }
+    }
+  } catch (err: any) {
+    fetchModelStatus.value = err.message || '获取失败'
+    fetchModelOk.value = false
+  } finally {
+    fetchingModels.value = false
+  }
+}
+
 function handleSave() {
   if (props.mode === 'ai') {
     const actualModel = modelInput.value === '_custom_' ? '' : modelInput.value
@@ -280,6 +313,19 @@ function openApiKeyLink() {
 .validation-status { font-size: 13px; font-weight: 500; }
 .validation-status.success { color: #4caf50; }
 .validation-status.fail { color: #e53935; }
+.settings-link-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 1px 8px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.78rem;
+  transition: background 0.2s;
+  vertical-align: middle;
+}
+.settings-link-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.settings-link-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .settings-help { font-size: 12px; color: var(--text-muted); margin: 0; }
 .settings-help a { color: var(--accent); text-decoration: none; }
 .settings-help a:hover { text-decoration: underline; }

@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ChatMessage, ModelConfig, ProviderType } from '../types/ai'
-import { sendMessage as deepseekSendMessage, validateApiKey as validateOpenAIKey } from '../services/deepseek'
-import { sendGeminiMessage, validateGeminiKey, stripHtml } from '../services/gemini'
+import { sendMessage as deepseekSendMessage, validateApiKey as validateOpenAIKey, listModels as listOpenAIModels } from '../services/deepseek'
+import { sendGeminiMessage, validateGeminiKey, stripHtml, listGeminiModels } from '../services/gemini'
 
 const STORAGE_KEY = 'ai-settings'
 const CHAT_STORAGE_KEY = 'ai-chat-messages'
@@ -92,6 +92,9 @@ export const useAiChatStore = defineStore('aiChat', () => {
     }
   }
 
+  /** 动态获取的模型列表（覆盖内置预置） */
+  const dynamicModels = ref<{ id: string; name: string }[]>([])
+
   /* ---------- 供应商相关 ---------- */
 
   /** 当前供应商 */
@@ -99,9 +102,24 @@ export const useAiChatStore = defineStore('aiChat', () => {
     return currentModel.value?.provider || 'deepseek'
   })
 
-  /** 各供应商的模型列表 */
+  /** 各供应商的模型列表（动态获取 + 预置回退） */
   const availableModels = computed<ModelConfig[]>(() => {
     const p = props_provider.value
+    // 如果有动态获取的模型，优先使用
+    if (dynamicModels.value.length > 0) {
+      const mapped = dynamicModels.value.map(m => ({
+        id: m.id,
+        name: m.name,
+        provider: p,
+        model: m.id,
+      }))
+      // 为 OpenAI 兼容保留自定义选项
+      if (p === 'openai-compatible') {
+        mapped.push({ id: '_custom_', name: '自定义模型名', provider: 'openai-compatible', model: '' })
+      }
+      return mapped
+    }
+    // 回退到预置
     if (p === 'deepseek') return DEEPSEEK_MODELS
     if (p === 'gemini') return GEMINI_MODELS
     return OPENAI_MODELS
@@ -180,6 +198,35 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   function getCustomModelName(): string {
     return getSettings().customModelName || ''
+  }
+
+  /* ---------- 动态获取模型 ---------- */
+
+  async function fetchAvailableModels(): Promise<{ ok: boolean; message: string; count: number }> {
+    const p = props_provider.value
+    const key = getApiKey()
+    if (!key) return { ok: false, message: '请先输入 API Key', count: 0 }
+
+    try {
+      let ids: string[] = []
+      if (p === 'gemini') {
+        ids = await listGeminiModels(key)
+      } else {
+        const baseUrl = p === 'deepseek' ? getDeepseekBaseUrl() : getOpenaiBaseUrl()
+        ids = await listOpenAIModels(key, baseUrl)
+      }
+
+      if (ids.length === 0) return { ok: false, message: '未获取到可用模型', count: 0 }
+
+      dynamicModels.value = ids.map(id => ({ id, name: id }))
+      // 自动选中第一个
+      if (ids.length > 0) {
+        selectedModelId.value = ids[0]
+      }
+      return { ok: true, message: `获取成功，共 ${ids.length} 个模型`, count: ids.length }
+    } catch (err: any) {
+      return { ok: false, message: err.message || '获取失败', count: 0 }
+    }
   }
 
   /* ---------- 连接测试 ---------- */
@@ -420,6 +467,8 @@ export const useAiChatStore = defineStore('aiChat', () => {
     getDeepseekBaseUrl,
     getOpenaiBaseUrl,
     getCustomModelName,
+    dynamicModels,
+    fetchAvailableModels,
     sendUserMessage,
     cancelGeneration,
     clearChat,

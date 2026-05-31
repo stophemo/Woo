@@ -8,7 +8,6 @@ function normalizeBaseUrl(baseUrl?: string): string {
 
 /**
  * 验证 API Key（适用于 DeepSeek / OpenAI 兼容接口）。
- * 通过列出可用模型来判断 key 是否有效。
  */
 export async function validateApiKey(apiKey: string, baseUrl?: string): Promise<boolean> {
   try {
@@ -20,6 +19,24 @@ export async function validateApiKey(apiKey: string, baseUrl?: string): Promise<
   } catch {
     return false
   }
+}
+
+/**
+ * 获取 DeepSeek / OpenAI 兼容接口的可用模型列表。
+ * 返回模型 ID 数组，按 id 排序。
+ */
+export async function listModels(apiKey: string, baseUrl?: string): Promise<string[]> {
+  const url = `${normalizeBaseUrl(baseUrl)}/v1/models`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` }
+  })
+  if (!res.ok) throw new Error(`获取模型列表失败 (${res.status})`)
+  const body = await res.json()
+  // OpenAI 格式: { data: [{ id: '...' }, ...] }
+  if (body?.data && Array.isArray(body.data)) {
+    return body.data.map((m: any) => m.id).filter(Boolean).sort()
+  }
+  throw new Error('返回格式异常')
 }
 
 /**

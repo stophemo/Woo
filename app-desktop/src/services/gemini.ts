@@ -19,6 +19,24 @@ export async function validateGeminiKey(apiKey: string): Promise<boolean> {
 }
 
 /**
+ * 获取 Gemini 可用模型列表。
+ * 只返回支持文本生成的模型（如 gemini-*），排除 embed、tuning 等。
+ */
+export async function listGeminiModels(apiKey: string): Promise<string[]> {
+  const url = `${DEFAULT_BASE_URL}/v1beta/models?key=${encodeURIComponent(apiKey)}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`获取模型列表失败 (${res.status})`)
+  const body = await res.json()
+  if (body?.models && Array.isArray(body.models)) {
+    return body.models
+      .map((m: any) => m.name?.replace(/^models\//, ''))
+      .filter((id: string) => id && id.includes('gemini') && !id.includes('embed') && !id.includes('tuning'))
+      .sort()
+  }
+  throw new Error('返回格式异常')
+}
+
+/**
  * 发送流式消息到 Gemini API。
  *
  * @param apiKey  - Gemini API Key
