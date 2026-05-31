@@ -54,6 +54,9 @@ app-mobile/.dart_tool/package_config.json
 # Flutter 导出/发布产物
 app-mobile/export/
 
+# ============ Third-party tooling ============
+.qoder
+
 # ============ Common ============
 # Logs
 *.log
