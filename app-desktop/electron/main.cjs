@@ -18,7 +18,7 @@ const { app, BrowserWindow, ipcMain, shell, nativeImage, Menu, dialog } = requir
 const path = require('path')
 const fs = require('fs')
 
-const { getDb, closeDb } = require('./db/index.cjs')
+const { getDb, closeDb, setCurrentUser } = require('./db/index.cjs')
 const ipcRegister = require('./ipc/register.cjs')
 const syncEngine = require('./services/syncEngine.cjs')
 
@@ -307,6 +307,30 @@ function migrateOldUserData() {
   }
 }
 
+/**
+ * 从 supabase-auth.json 中提取已登录用户的用户名，
+ * 存在则直接切换到对应用户数据库，避免启动时先开 woo.db 再切换。
+ */
+function tryRestoreSession() {
+  try {
+    const authPath = path.join(app.getPath('userData'), 'supabase-auth.json')
+    if (!fs.existsSync(authPath)) return
+    const raw = JSON.parse(fs.readFileSync(authPath, 'utf-8'))
+    for (const key of Object.keys(raw)) {
+      if (!key.endsWith('-auth-token')) continue
+      const session = JSON.parse(raw[key])
+      const username = session?.user?.user_metadata?.username
+      if (username) {
+        setCurrentUser(username)
+        console.log(`[Main] session 恢复，直接打开 ${username} 的数据库`)
+        return
+      }
+    }
+  } catch (e) {
+    console.warn('[Main] session 恢复失败:', e.message)
+  }
+}
+
 app.whenReady().then(() => {
   // 构建原生菜单（macOS 系统菜单栏集成，窗口聚焦即生效）
   buildMenu()
@@ -322,7 +346,10 @@ app.whenReady().then(() => {
   // 迁移旧版数据（v0.3.x 及以前，userData 在 exe 同级目录下）
   migrateOldUserData()
 
-  // 初始化数据库（会在 app.getPath('userData') 下创建 woo.db）
+  // 检测已有登录 session，直接打开对应用户的数据库
+  tryRestoreSession()
+
+  // 初始化数据库（如有 session，直接打开 woo-{用户名}.db）
   getDb()
   // 注册业务 IPC
   ipcRegister.register()
