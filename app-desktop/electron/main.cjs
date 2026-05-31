@@ -29,7 +29,7 @@ const syncEngine = require('./services/syncEngine.cjs')
  *   - 不可写 → NSIS 安装模式（数据放标准 app.getPath('userData')，如 %APPDATA%）
  */
 function isPortable() {
-  if (!app.isPackaged) return true // 开发时始终便携
+  if (!app.isPackaged) return false
   try {
     const exeDir = path.dirname(process.execPath)
     const testFile = path.join(exeDir, `.write-test-${Date.now()}`)
@@ -62,6 +62,11 @@ if (process.platform === 'win32') {
 }
 // 设置应用名，确保 app.getPath('userData') 返回正确的路径
 app.setName('Woo')
+// 开发模式下不启用便携模式，确保 userData 使用正确路径
+const isDev = !!process.env.VITE_DEV_SERVER_URL
+if (isDev) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Woo'))
+}
 
 let mainWindow
 
