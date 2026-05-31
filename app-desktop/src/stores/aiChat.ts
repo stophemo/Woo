@@ -406,7 +406,8 @@ export const useAiChatStore = defineStore('aiChat', () => {
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        error.value = err.message || '请求失败，请稍后重试'
+        const detail = err.cause ? ` (${err.cause})` : ''
+        error.value = (err.message || '请求失败') + detail
         const msg = messages.value.find(m => m.id === assistantMsg.id)
         if (msg && !msg.content.trim()) {
           const idx = messages.value.indexOf(msg)

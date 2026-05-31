@@ -58,20 +58,29 @@ export async function sendMessage(
     content: msg.content
   }))
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      messages: payloadMessages,
-      stream: true,
-      temperature: 0.7
-    }),
-    signal
-  })
+  let res
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: payloadMessages,
+        stream: true,
+        temperature: 0.7
+      }),
+      signal
+    })
+  } catch (err: any) {
+    // 网络级错误（CORS、DNS、连接拒绝等）
+    if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+      throw new Error('无法连接到 API 服务，请检查网络连接和 Base URL 配置')
+    }
+    throw err
+  }
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {

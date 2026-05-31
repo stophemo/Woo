@@ -88,7 +88,8 @@ function createWindow() {
       // 不依赖 vite-plugin-electron 编译后的 ESM 版本，避免兼容问题
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false
     }
   })
 
