@@ -670,7 +670,7 @@
   <section class="section download" id="download">
     <div class="section-inner">
       <h2 class="section-title">下载 Woo</h2>
-      <p class="section-sub">最新版本 v0.4.6 &middot; 免费开源 &middot; MIT 许可证</p>
+      <p class="section-sub" id="version-label">加载版本信息中&hellip; &middot; 免费开源 &middot; MIT 许可证</p>
       <div class="download-grid">
 
         <!-- Windows -->
@@ -682,19 +682,19 @@
           </div>
           <h3>Windows</h3>
           <span class="chip">可用</span>
-          <div><a href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noopener" class="dl-link">下载安装包</a></div>
+          <div><a href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noopener" class="dl-link" id="dl-win">下载安装包</a></div>
         </div>
 
         <!-- macOS -->
-        <div class="download-card disabled">
+        <div class="download-card">
           <div class="download-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/>
             </svg>
           </div>
           <h3>macOS</h3>
-          <span class="chip soon">即将推出</span>
-          <div><span style="font-size:0.82rem;color:var(--text-muted);">构建中</span></div>
+          <span class="chip">可用</span>
+          <div><a href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noopener" class="dl-link" id="dl-mac">下载 DMG</a></div>
         </div>
 
         <!-- Linux -->
@@ -723,7 +723,7 @@
 
       </div>
       <div class="download-more">
-        <a href="https://github.com/stophemo/Woo/releases" target="_blank" rel="noopener">
+        <a href="https://github.com/stophemo/Woo/releases" target="_blank" rel="noopener" id="dl-all">
           查看所有版本和发布记录 &rarr;
         </a>
       </div>
@@ -777,6 +777,42 @@
         card.style.transitionDelay = (i % 3) * 0.08 + 's';
         observer.observe(card);
       });
+    })();
+
+    // Fetch latest release from GitHub and update download links automatically
+    (function() {
+      const API = 'https://api.github.com/repos/stophemo/Woo/releases/latest';
+      fetch(API)
+        .then(res => res.ok ? res.json() : Promise.reject('HTTP ' + res.status))
+        .then(data => {
+          const tag = data.tag_name;  // e.g. "v0.4.6"
+          const ver = tag.replace(/^v/, '');  // "0.4.6"
+          document.getElementById('version-label').textContent =
+            '最新版本 ' + tag + ' · 免费开源 · MIT 许可证';
+
+          data.assets.forEach(asset => {
+            const name = asset.name;
+            // Windows: non-portable setup.exe
+            if (name.endsWith('-setup.exe') && name.includes('win')) {
+              const btn = document.getElementById('dl-win');
+              btn.href = asset.browser_download_url;
+              btn.textContent = '下载安装包 (' + name.replace(/^woo-desktop-/, '').replace(/\.exe$/, '') + ')';
+            }
+            // macOS: .dmg (prefer arm64)
+            if (name.endsWith('.dmg') && name.includes('mac')) {
+              const btn = document.getElementById('dl-mac');
+              btn.href = asset.browser_download_url;
+              const arch = name.includes('arm64') ? 'Apple Silicon' : 'Intel';
+              btn.textContent = '下载 DMG (' + arch + ')';
+            }
+          });
+        })
+        .catch(function(err) {
+          // Fallback: keep links pointing to the Releases page (already set in HTML)
+          document.getElementById('version-label').textContent =
+            '免费开源 · MIT 许可证';
+          console.warn('Failed to fetch latest release:', err);
+        });
     })();
   </script>
 </body>
