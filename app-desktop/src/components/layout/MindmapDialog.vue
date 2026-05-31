@@ -64,7 +64,7 @@ function startClose() {
 }
 
 const svgRef = ref<SVGSVGElement | null>(null)
-let mm: Markmap | null = null
+let mm: any = null
 
 // ── 主题感知色板 ──
 const lightPalette = [

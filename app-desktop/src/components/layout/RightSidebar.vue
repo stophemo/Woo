@@ -90,7 +90,7 @@ interface Props {
   isOpen: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 defineEmits<{ 'open-settings': [mode: 'file' | 'ai'] }>()
 
 const aiStore = useAiChatStore()

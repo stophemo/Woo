@@ -394,6 +394,16 @@ export const useAiChatStore = defineStore('aiChat', () => {
   loadKbToggle()
   void refreshKbStatus()
 
+  const hasApiKey = computed(() => !!getApiKey())
+
+  function setModel(modelId: string) {
+    if (!availableModels.value.some(m => m.id === modelId)) return
+    selectedModelId.value = modelId
+    const s = getSettings()
+    s.selectedModelId = modelId
+    saveSettings(s)
+  }
+
   return {
     messages,
     selectedModelId,
@@ -402,7 +412,9 @@ export const useAiChatStore = defineStore('aiChat', () => {
     provider,
     availableModels,
     currentModel,
+    hasApiKey,
     getApiKey,
+    setModel,
     saveFullSettings,
     testConnection,
     getDeepseekBaseUrl,

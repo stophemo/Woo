@@ -125,7 +125,6 @@ const emit = defineEmits<{
 const contextMenuVisible = ref(false)
 const contextMenuPos = ref<ContextMenuPosition>({ x: 0, y: 0 })
 const contextMenuItems = ref<ContextMenuItem[]>([])
-const contextMenuCallback = ref<((action: string) => void) | null>(null)
 
 function onEditorContextMenu(e: MouseEvent) {
   // 确保编辑区有内容且有 AI Key

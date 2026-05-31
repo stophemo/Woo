@@ -7,7 +7,6 @@
 import { Extension } from '@tiptap/vue-3'
 import { Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
-import type { Editor } from '@tiptap/vue-3'
 
 /** 获取当前 AI 服务函数，由外部注入以避免循环依赖 */
 let _getAiFn: (() => { send: (prompt: string, context: string) => Promise<string> }) | null = null
@@ -20,8 +19,6 @@ export const AiComplete = Extension.create({
   name: 'aiComplete',
 
   addProseMirrorPlugins() {
-    const extension = this
-
     return [
       new Plugin({
         key: new PluginKey('aiComplete'),
@@ -57,7 +54,6 @@ export const AiComplete = Extension.create({
               const tr = view.state.tr.insertText(pluginState.suggestion, from)
               view.dispatch(tr)
               // 清除建议
-              const plugin = AiCompletePluginKey?.get(view.state)
               view.dispatch(view.state.tr.setMeta('aiComplete', { type: 'clear' }))
               return true
             }
@@ -73,7 +69,6 @@ export const AiComplete = Extension.create({
             const { from, to } = state.selection
             if (from !== to) return // 有选区时不触发
 
-            const docSize = state.doc.content.size
             // 取光标前 800 字符作为上下文
             const contextStart = Math.max(0, from - 800)
             const context = state.doc.textBetween(contextStart, from, '\n\n')
