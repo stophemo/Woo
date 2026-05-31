@@ -29,15 +29,72 @@ try {
     }
   }
 } catch (e) {
-  // .env 不存在时不报错（生产环境或 CI 使用环境变量或占位符）
   if (e.code !== 'ENOENT') {
     console.warn('[Supabase] 加载 .env 失败:', e.message)
   }
 }
 
-// 最终取值：环境变量 > .env > 编译时占位符
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://urgpunxxupufmygmutxa.supabase.co'
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyZ3B1bnh4dXB1Zm15Z211dHhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MTA1OTYsImV4cCI6MjA5NTA4NjU5Nn0.Ezs2uFwgrxkwCpLVfdByFC8m5PNjjP92i26Sg0YX-RI'
+
+/* ================================================================
+ * 自定义 Storage 适配器
+ *
+ * @supabase/supabase-js 默认使用浏览器 localStorage 持久化 token，
+ * 但在 Electron 主进程（Node.js）中 localStorage 不可用。
+ * 此适配器将 token 持久化到 userData 目录的 JSON 文件，
+ * 使得应用重启后 session 可恢复，无需重新登录。
+ * ================================================================ */
+function createFileStorage() {
+  let storagePath = null
+
+  function getStoragePath() {
+    if (storagePath) return storagePath
+    // 延迟获取 app path — 确保在 app.whenReady() 之后调用
+    try {
+      const { app } = require('electron')
+      const userData = app.getPath('userData')
+      storagePath = path.join(userData, 'supabase-auth.json')
+    } catch (e) {
+      // fallback: 写入项目目录
+      storagePath = path.resolve(__dirname, '../../../.supabase-auth-cache.json')
+    }
+    return storagePath
+  }
+
+  function readAll() {
+    try {
+      const p = getStoragePath()
+      if (!fs.existsSync(p)) return {}
+      return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    } catch { return {} }
+  }
+
+  function writeAll(data) {
+    try {
+      const p = getStoragePath()
+      fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8')
+    } catch (e) {
+      console.warn('[Supabase] 写入 auth 缓存失败:', e.message)
+    }
+  }
+
+  return {
+    getItem(key) {
+      return readAll()[key] || null
+    },
+    setItem(key, value) {
+      const data = readAll()
+      data[key] = value
+      writeAll(data)
+    },
+    removeItem(key) {
+      const data = readAll()
+      delete data[key]
+      writeAll(data)
+    }
+  }
+}
 
 let client = null
 
@@ -51,7 +108,8 @@ function getClient() {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false // Electron 环境下关闭 URL 检测
+      detectSessionInUrl: false,
+      storage: createFileStorage()
     },
     realtime: {
       transport: WebSocket

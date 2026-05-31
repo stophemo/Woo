@@ -90,12 +90,13 @@ import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import BulletList from '@tiptap/extension-bullet-list'
 import { useWorkspaceStore } from '../../stores/workspace'
-import { registerScrollHandler } from '../../config/editorNavigation'
+import { registerScrollHandler, useEditorNavigation } from '../../config/editorNavigation'
 import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
 import MindmapDialog from './MindmapDialog.vue'
 
 const store = useWorkspaceStore()
+const { headings } = useEditorNavigation()
 const TRASH_FOLDER_ID = '__trash__'
 
 interface Props { isStatusBarOpen?: boolean }
@@ -403,6 +404,7 @@ const editor = useEditor({
     if (charDelta >= CHAR_DELTA || lineDelta >= LINE_DELTA) { void triggerCommit('auto'); return }
     clearIdleTimer(); idleTimer = window.setTimeout(() => void triggerCommit('auto'), IDLE_MS)
     updateActiveHeading()
+    syncHeadings()
   },
   onBlur: () => { void triggerCommit('auto') }
 })
@@ -452,6 +454,7 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   void nextTick(() => {
     setupScrollListener()
     updateActiveHeading()
+    syncHeadings()
   })
 }, { immediate: true })
 
@@ -541,17 +544,27 @@ function onEditorScroll() {
   scrollRAF = requestAnimationFrame(updateActiveHeading)
 }
 
-function getHeadings(): { level: number; text: string; pos: number }[] {
+/** 从编辑器中提取标题列表 */
+function produceHeadings(): { level: number; text: string; pos: number }[] {
   const ed = editor.value
   if (!ed) return []
-  const headings: { level: number; text: string; pos: number }[] = []
+  const result: { level: number; text: string; pos: number }[] = []
   ed.state.doc.descendants((node, pos) => {
     if (node.type.name === 'heading') {
       const text = node.textContent.trim()
-      if (text) headings.push({ level: node.attrs.level, text, pos })
+      if (text) result.push({ level: node.attrs.level, text, pos })
     }
   })
-  return headings
+  return result
+}
+
+/** 更新共享的 headings ref（供大纲面板使用） */
+function syncHeadings() {
+  headings.value = produceHeadings()
+}
+
+function getHeadings(): { level: number; text: string; pos: number }[] {
+  return produceHeadings()
 }
 
 /** 按 ProseMirror doc position 滚动到指定标题（供 editorNavigation 模块调用） */
@@ -580,6 +593,7 @@ onMounted(() => {
   void nextTick(() => {
     setupScrollListener()
     updateActiveHeading()
+    syncHeadings()
   })
 })
 
