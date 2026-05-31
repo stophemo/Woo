@@ -67,10 +67,9 @@ const SCHEMA_SQLS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
 
-  // 知识库 FTS5 全文索引
+  // 知识库 FTS5 全文索引（非 content-sync，手动管理）
   `CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
     content, title,
-    content='kb_chunks', content_rowid='rowid',
     tokenize='unicode61'
   )`,
 ]
@@ -113,7 +112,9 @@ function migrate(db) {
     `UPDATE note_document_version SET create_time = REPLACE(create_time, ' ', 'T') WHERE create_time LIKE '% %'`,
     // 加锁功能：为 note_folder 和 note_document 补充 is_locked 列
     `ALTER TABLE note_folder ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
-    `ALTER TABLE note_document ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`
+    `ALTER TABLE note_document ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0`,
+    // 修复 kb_chunks_fts 列名不匹配（旧版 content-sync 模式 → 独立 FTS5）
+    `DROP TABLE IF EXISTS kb_chunks_fts`
   ]
   for (const sql of migrations) {
     try {
