@@ -60,13 +60,13 @@ const APP_ICON = resolveAppIcon()
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.nonegonotes.woo.local')
 }
-// 设置应用名，确保 app.getPath('userData') 返回正确的路径
-app.setName('Woo')
-// 开发模式下不启用便携模式，确保 userData 使用正确路径
+// 显式设置 userData 路径：
+//   - 开发环境 → ~/Library/Application Support/woo-dev/
+//   - 生产环境 → ~/Library/Application Support/Woo/
+// 避免 Electron 默认使用包名（woo-desktop / app-desktop）创建冗余目录。
 const isDev = !!process.env.VITE_DEV_SERVER_URL
-if (isDev) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Woo'))
-}
+const userDataDir = isDev ? 'woo-dev' : 'Woo'
+app.setPath('userData', path.join(app.getPath('appData'), userDataDir))
 
 let mainWindow
 

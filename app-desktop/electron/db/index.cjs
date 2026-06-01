@@ -11,7 +11,22 @@ const fs = require('fs')
 const { app } = require('electron')
 const Database = require('better-sqlite3')
 const { initSchema } = require('./schema.cjs')
-const { load: loadVec } = require('sqlite-vec')
+const { getLoadablePath } = require('sqlite-vec')
+
+/**
+ * 加载 sqlite-vec 向量搜索扩展。
+ * db.loadExtension() 底层调用 dlopen()，不识别 Electron asar 虚拟路径。
+ * 对于 asarUnpacked 的文件，需将 asar 虚拟路径替换为实际文件系统路径。
+ */
+function loadVecExtension(db) {
+  try {
+    const originalPath = getLoadablePath()
+    const loadPath = originalPath.replace(/\.asar(\/|\\)/, '.asar.unpacked$1')
+    db.loadExtension(loadPath)
+  } catch (e) {
+    console.warn('[DB] sqlite-vec 加载失败:', e.message)
+  }
+}
 
 let db = null
 let currentDbPath = null
@@ -75,7 +90,7 @@ function getDb() {
   db = new Database(targetPath)
   currentDbPath = targetPath
   // 加载 sqlite-vec 向量搜索扩展
-  try { loadVec(db) } catch (e) { console.warn('[DB] sqlite-vec 加载失败:', e.message) }
+  loadVecExtension(db)
   initSchema(db)
   return db
 }

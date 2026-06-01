@@ -82,7 +82,18 @@ function initSchema(db) {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.transaction(() => {
-    for (const sql of SCHEMA_SQLS) db.prepare(sql).run()
+    for (const sql of SCHEMA_SQLS) {
+      // kb_vectors 依赖 sqlite-vec 扩展，若加载失败需跳过该表创建
+      if (sql.includes('USING vec0')) {
+        try {
+          db.prepare(sql).run()
+        } catch (e) {
+          console.warn('[DB] 向量扩展未加载，跳过 kb_vectors 表:', e.message)
+        }
+        continue
+      }
+      db.prepare(sql).run()
+    }
   })()
 }
 
