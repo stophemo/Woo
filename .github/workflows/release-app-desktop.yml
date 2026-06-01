@@ -58,18 +58,26 @@ jobs:
         shell: pwsh
         run: |
           $pkg = Get-Content app-desktop/package.json -Raw | ConvertFrom-Json
-          $version = "$($pkg.version)"
-          $tag = "${{ github.ref_name }}"
-          $draft = "false"
-          $prerelease = "false"
+          $pkgVersion = "$($pkg.version)"
 
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          if ("${{ github.event_name }}" -eq "push") {
+            # Tag-push: derive version from tag name, NOT package.json
+            # Handles tag formats: v0.4.7, Woo-desktop-v0.4.7, app-desktop-v0.4.7
+            $version = "${{ github.ref_name }}" -replace '^(Woo-desktop-|app-desktop-)?v', ''
+            $tag = "${{ github.ref_name }}"
+          } else {
+            # workflow_dispatch
+            $version = $pkgVersion
+            $tag = "${{ github.ref_name }}"
             $inputTag = "${{ inputs.tag }}"
-            if ([string]::IsNullOrWhiteSpace($inputTag)) {
-              $tag = "v$version"
-            } else {
+            if (-not [string]::IsNullOrWhiteSpace($inputTag)) {
               $tag = $inputTag.Trim()
             }
+          }
+
+          $draft = "false"
+          $prerelease = "false"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
             if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
           }
@@ -78,6 +86,18 @@ jobs:
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "draft=$draft" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Sync the derived version back to package.json so electron-builder
+      # produces artifact names matching the release tag.
+      - name: Patch package.json version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $pkgPath = "app-desktop/package.json"
+          $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+          $pkg.version = $version
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding utf8
+          Write-Host "patched package.json version → $version"
 
       - name: Install dependencies
         working-directory: app-desktop
@@ -139,18 +159,25 @@ jobs:
         shell: pwsh
         run: |
           $pkg = Get-Content app-desktop/package.json -Raw | ConvertFrom-Json
-          $version = "$($pkg.version)"
-          $tag = "${{ github.ref_name }}"
-          $draft = "false"
-          $prerelease = "false"
+          $pkgVersion = "$($pkg.version)"
 
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          if ("${{ github.event_name }}" -eq "push") {
+            # Tag-push: derive version from tag name
+            $version = "${{ github.ref_name }}" -replace '^(Woo-desktop-|app-desktop-)?v', ''
+            $tag = "${{ github.ref_name }}"
+          } else {
+            # workflow_dispatch
+            $version = $pkgVersion
+            $tag = "${{ github.ref_name }}"
             $inputTag = "${{ inputs.tag }}"
-            if ([string]::IsNullOrWhiteSpace($inputTag)) {
-              $tag = "v$version"
-            } else {
+            if (-not [string]::IsNullOrWhiteSpace($inputTag)) {
               $tag = $inputTag.Trim()
             }
+          }
+
+          $draft = "false"
+          $prerelease = "false"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
             if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
           }
@@ -159,6 +186,17 @@ jobs:
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "draft=$draft" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Sync the derived version to package.json (for release notes context)
+      - name: Patch package.json version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $pkgPath = "app-desktop/package.json"
+          $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+          $pkg.version = $version
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding utf8
+          Write-Host "patched package.json version → $version"
 
       - name: Ensure tag exists (manual run)
         if: ${{ github.event_name == 'workflow_dispatch' }}
