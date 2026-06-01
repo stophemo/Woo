@@ -22,6 +22,10 @@ on:
         required: false
         default: false
         type: boolean
+      notes:
+        description: "Custom release notes (Markdown). If unset, auto-generates brief changelog link. When set by Claude, provides polished, user-facing notes."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -220,61 +224,28 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ steps.meta.outputs.tag }}"
-          $previousTag = git describe --tags --abbrev=0 "$tag^" 2>`$null
-          if ($LASTEXITCODE -ne 0) {
-            $previousTag = ""
-          }
-          
-          $notes = "## $tag`n`n"
-          
-          if ($previousTag) {
-            $commits = git log "$previousTag..$tag" --pretty=format:"%s" --no-merges
-            $featCommits = $commits | Where-Object { $_ -match "^(feat|feature)(\(.*?\))?:" }
-            $fixCommits = $commits | Where-Object { $_ -match "^fix(\(.*?\))?:" }
-            $choreCommits = $commits | Where-Object { $_ -match "^(chore|refactor|style|docs|test|perf)(\(.*?\))?:" }
-            
-            if ($featCommits) {
-              $notes += "### 🚀 新增功能`n"
-              $featCommits | ForEach-Object {
-                $msg = $_ -replace "^(feat|feature)(\(.*?\))?:\s*", ""
-                $notes += "- $msg`n"
-              }
-              $notes += "`n"
-            }
-            
-            if ($fixCommits) {
-              $notes += "### 🐛 问题修复`n"
-              $fixCommits | ForEach-Object {
-                $msg = $_ -replace "^fix(\(.*?\))?:\s*", ""
-                $notes += "- $msg`n"
-              }
-              $notes += "`n"
-            }
-            
-            if ($choreCommits) {
-              $notes += "### 🔧 其他改进`n"
-              $choreCommits | ForEach-Object {
-                $msg = $_ -replace "^(chore|refactor|style|docs|test|perf)(\(.*?\))?:\s*", ""
-                $notes += "- $msg`n"
-              }
-              $notes += "`n"
-            }
+          $customNotes = "${{ inputs.notes }}"
+
+          if (-not [string]::IsNullOrWhiteSpace($customNotes)) {
+            # Custom notes from workflow_dispatch (e.g., written by Claude)
+            $notes = "## $tag`n`n$customNotes"
           } else {
-            $notes += "首次发布`n`n"
+            # Auto-generated brief notes — no commit dump
+            $previousTag = git describe --tags --abbrev=0 "$tag^" 2>`$null
+            if ($LASTEXITCODE -ne 0) { $previousTag = "" }
+
+            $notes = "## $tag`n`n"
+            if ($previousTag) {
+              $notes += "完整变更日志: https://github.com/stophemo/Woo/compare/${previousTag}...${tag}"
+            } else {
+              $notes += "首次发布"
+            }
           }
-          
-          $notes += "---`n`n完整变更日志: https://github.com/stophemo/Woo/compare/"
-          if ($previousTag) {
-            $notes += "${previousTag}...${tag}`n"
-          } else {
-            $notes += "${tag}`n"
-          }
-          
+
           $notesPath = "$env:TEMP\release-notes.md"
           [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.Encoding]::UTF8)
           "path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host "Generated release notes:"
-          Write-Host $notes
+          Write-Host "Release notes saved to $notesPath"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2.6.2
