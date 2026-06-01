@@ -26,7 +26,7 @@ function listByFolder(folderId) {
   const rows = db.prepare(`SELECT d.*, f.name AS folder_name FROM note_document d
                            LEFT JOIN note_folder f ON d.folder_id = f.id
                            WHERE d.folder_id = ? AND d.deleted = 0
-                           ORDER BY d.update_time DESC`).all(folderId)
+                           ORDER BY d.sort_order ASC, d.update_time DESC`).all(folderId)
   const lockService = require('./lockService.cjs')
   return rows.map(r => {
     const dto = { ...toDto(r), folderName: r.folder_name || '' }
@@ -207,6 +207,23 @@ function promoteEmptyFoldersToDeleted2() {
   }
 }
 
+/**
+ * 批量更新同级文稿的 sort_order（同时调整 listByFolder 排序为 sort_order 优先）。
+ * @param {string} folderId
+ * @param {Array<{id: string, sortOrder: number}>} items
+ */
+function reorderDocuments(folderId, items) {
+  const db = getDb()
+  const stmt = db.prepare('UPDATE note_document SET sort_order = ?, update_time = ? WHERE id = ?')
+  const now = nowStr()
+  const trx = db.transaction(() => {
+    for (const item of items) {
+      stmt.run(item.sortOrder, now, item.id)
+    }
+  })
+  trx()
+}
+
 function verifyExists(documentId) {
   const db = getDb()
   const row = db.prepare('SELECT * FROM note_document WHERE id = ? AND deleted = 0').get(documentId)
@@ -256,5 +273,6 @@ module.exports = {
   hardDelete,
   emptyTrash,
   promoteEmptyFoldersToDeleted2,
-  verifyExists
+  verifyExists,
+  reorderDocuments
 }

@@ -13,6 +13,38 @@ const STORAGE_KEY = 'ai-settings'
 const CHAT_STORAGE_KEY = 'ai-chat-messages'
 const KB_STORAGE_KEY = 'ai-kb-enabled'
 
+/* ========== 树遍历工具（用于 AI 操作后同步响应式状态） ========== */
+interface FolderNodeLike {
+  id: string
+  name: string
+  parentId: string | null
+  children: FolderNodeLike[]
+  isExpanded: boolean
+  isLocked?: boolean
+}
+function findFolderInTree(nodes: FolderNodeLike[], id: string): FolderNodeLike | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children.length > 0) {
+      const found = findFolderInTree(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+function removeFolderFromTree(nodes: FolderNodeLike[], id: string): boolean {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    if (nodes[i].id === id) {
+      nodes.splice(i, 1)
+      return true
+    }
+    if (nodes[i].children.length > 0 && removeFolderFromTree(nodes[i].children, id)) {
+      return true
+    }
+  }
+  return false
+}
+
 marked.setOptions({ breaks: true, gfm: true })
 
 /**
@@ -166,17 +198,32 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
       createNote: async (title: string, folderId?: string) => {
         try {
-          if (folderId) {
-            const doc = await ipc<any>('document:create', { title, folderId })
-            return doc?.id || null
+          let targetFolderId = folderId
+          if (!targetFolderId) {
+            // 没有指定目录时，用第一个顶级目录
+            const tree = await ipc<any[]>('folder:tree')
+            if (tree && tree.length > 0) {
+              targetFolderId = tree[0].id
+            }
           }
-          // 没有指定目录时，用第一个顶级目录
-          const tree = await ipc<any[]>('folder:tree')
-          if (tree && tree.length > 0) {
-            const doc = await ipc<any>('document:create', { title, folderId: tree[0].id })
-            return doc?.id || null
+          if (!targetFolderId) return null
+          const doc = await ipc<any>('document:create', { title, folderId: targetFolderId })
+          if (doc?.id) {
+            // 如果当前视图正好是目标目录，立即更新文稿列表
+            const ws = useWorkspaceStore()
+            if (ws.selectedFolderId === targetFolderId) {
+              ws.folderDocuments.unshift({
+                id: doc.id,
+                title: doc.title || title,
+                content: '',
+                folderId: targetFolderId,
+                folderName: '',
+                createdAt: doc.createTime || doc.create_time || new Date().toISOString(),
+                updatedAt: doc.updateTime || doc.update_time || new Date().toISOString(),
+              })
+            }
           }
-          return null
+          return doc?.id || null
         } catch { return null }
       },
 
@@ -224,19 +271,52 @@ export const useAiChatStore = defineStore('aiChat', () => {
       deleteNote: async (noteId: string) => {
         try {
           await ipc('document:remove', noteId)
+          // 立即更新响应式状态，触发 ThumbnailColumn 列表变更
+          const ws = useWorkspaceStore()
+          const idx = ws.folderDocuments.findIndex((d: any) => d.id === noteId)
+          if (idx !== -1) {
+            ws.folderDocuments.splice(idx, 1)
+          }
+          if (ws.selectedDocumentId === noteId) {
+            const next = ws.folderDocuments[0]
+            if (next) {
+              ws.selectedDocumentId = next.id
+              ws.selectDocument(next.id)
+            } else {
+              ws.selectedDocumentId = null
+              ws.currentDocumentData = null
+            }
+          }
           return true
         } catch { return false }
       },
 
       createFolder: async (name: string, parentId?: string) => {
         try {
-          return await ipc<string>('folder:create', { name, parentId: parentId || null })
+          const id = await ipc<string>('folder:create', { name, parentId: parentId || null })
+          // 立即更新响应式状态，触发 FolderTree TransitionGroup 缓入动画
+          const ws = useWorkspaceStore()
+          const newNode = { id, name, parentId: parentId || null, children: [] as any[], isExpanded: false }
+          if (parentId) {
+            const parent = findFolderInTree(ws.folders as any, parentId)
+            if (parent) {
+              parent.children.push(newNode as any)
+              parent.isExpanded = true // 自动展开父目录，让用户看到新目录
+            }
+          } else {
+            ws.folders.push(newNode as any)
+          }
+          return id
         } catch { return null }
       },
 
       renameFolder: async (folderId: string, newName: string) => {
         try {
           await ipc('folder:rename', folderId, newName)
+          // 立即更新响应式状态
+          const ws = useWorkspaceStore()
+          const node = findFolderInTree(ws.folders as any, folderId)
+          if (node) node.name = newName
           return true
         } catch { return false }
       },
@@ -244,6 +324,16 @@ export const useAiChatStore = defineStore('aiChat', () => {
       deleteFolder: async (folderId: string) => {
         try {
           await ipc('folder:remove', folderId)
+          // 立即更新响应式状态，触发 FolderTree TransitionGroup 缓出动画
+          const ws = useWorkspaceStore()
+          removeFolderFromTree(ws.folders as any, folderId)
+          // 如果删除的正是当前选中的目录，清空选择
+          if (ws.selectedFolderId === folderId) {
+            ws.selectedFolderId = null
+            ws.selectedDocumentId = null
+            ws.folderDocuments = []
+            ws.currentDocumentData = null
+          }
           return true
         } catch { return false }
       },

@@ -864,6 +864,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             if (old.folderId !== nd.folderId) old.folderId = nd.folderId
             if (old.folderName !== nd.folderName) old.folderName = nd.folderName
             if (old.updatedAt !== nd.updatedAt) old.updatedAt = nd.updatedAt
+            if (old.isLocked !== nd.isLocked) old.isLocked = nd.isLocked
             merged.push(old)
           } else {
             merged.push(nd)
@@ -1012,9 +1013,35 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return body.length > 80 ? body.substring(0, 80) + '...' : body
   }
 
+  // ============ 拖拽排序 ============
+
+  /** 持久化同级目录排序到后端 */
+  async function reorderFolderSiblings(parentId: string | null, orderedIds: string[]) {
+    const items = orderedIds.map((id, idx) => ({ id, sortOrder: idx }))
+    try {
+      await folderApi.reorderFolders(parentId, items)
+    } catch (e: any) {
+      error.value = e?.message || '保存排序失败'
+    }
+  }
+
+  /** 持久化当前目录下文稿排序到后端 */
+  async function reorderDocumentItems(orderedIds: string[]) {
+    const fid = selectedFolderId.value
+    if (!fid || fid.startsWith('__')) return
+    const items = orderedIds.map((id, idx) => ({ id, sortOrder: idx }))
+    try {
+      await documentApi.reorderDocuments(fid, items)
+    } catch (e: any) {
+      error.value = e?.message || '保存排序失败'
+    }
+  }
+
   return {
     // 状态
     folders,
+    folderDocuments,
+    currentDocumentData,
     selectedFolderId,
     selectedFolderLocked,
     selectedDocumentId,
@@ -1059,7 +1086,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     restoreDocument,
     hardDeleteDocument,
     emptyTrash,
+    // 排序
+    reorderFolderSiblings,
+    reorderDocumentItems,
     // 辅助
+    findFolderById,
     getDocumentPreview
   }
 })

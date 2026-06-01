@@ -315,6 +315,102 @@
       line-height: 1.7;
     }
 
+    /* ========== Keyboard Shortcuts ========== */
+    .shortcuts {
+      background: linear-gradient(180deg, #f0eeff 0%, #f8f7ff 100%);
+    }
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .shortcut-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 28px 20px 24px;
+      text-align: center;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.05);
+      border: 1px solid rgba(79,70,229,0.07);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .shortcut-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 28px rgba(79,70,229,0.10);
+    }
+    .shortcut-keys {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .shortcut-keys kbd,
+    .shortcut-keys .key-mod,
+    .shortcut-keys .key-arrow {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 40px;
+      height: 38px;
+      padding: 0 10px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      background: #f4f3ff;
+      color: var(--accent);
+      border: 1px solid rgba(79,70,229,0.15);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .shortcut-keys .key-arrow {
+      font-size: 1.2rem;
+      min-width: 36px;
+    }
+    .shortcut-keys .key-plus {
+      color: var(--text-muted);
+      font-weight: 300;
+      font-size: 1rem;
+    }
+    .section-sub kbd {
+      display: inline;
+      padding: 2px 7px;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 600;
+      border-radius: 5px;
+      background: #e8e6ff;
+      color: var(--accent);
+      border: 1px solid rgba(79,70,229,0.15);
+    }
+    .shortcut-card h3 {
+      font-size: 0.95rem;
+      color: var(--text-dark);
+      margin-bottom: 6px;
+    }
+    .shortcut-card p {
+      font-size: 0.83rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .shortcuts-note {
+      text-align: center;
+      max-width: 580px;
+      margin: 32px auto 0;
+      font-size: 0.9rem;
+      color: #555;
+      line-height: 1.8;
+      padding: 18px 24px;
+      background: rgba(79,70,229,0.05);
+      border-radius: 12px;
+      border: 1px solid rgba(79,70,229,0.08);
+    }
+    @media (max-width: 900px) {
+      .shortcuts-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .shortcuts-grid { grid-template-columns: 1fr; }
+    }
+
     /* ========== Download ========== */
     .download {
       background: #f8f7ff;
@@ -741,6 +837,60 @@
         </div>
 
       </div>
+    </div>
+  </section>
+
+  <!-- ========== Keyboard Shortcuts ========== -->
+  <section class="section shortcuts" id="shortcuts">
+    <div class="section-inner">
+      <h2 class="section-title">沉浸式快捷键</h2>
+      <p class="section-sub">
+        按下 <kbd>Ctrl</kbd> 配合方向键，一键隐藏所有干扰元素，让写作回归纯粹。
+        在 macOS 上使用 <kbd>⌘</kbd> 键替代 <kbd>Ctrl</kbd>。
+      </p>
+      <div class="shortcuts-grid">
+        <div class="shortcut-card">
+          <div class="shortcut-keys">
+            <span class="key-mod">Ctrl</span>
+            <span class="key-plus">+</span>
+            <span class="key-arrow">↑</span>
+          </div>
+          <h3>隐藏顶部菜单</h3>
+          <p>收起应用顶部的菜单栏，释放更多垂直空间给编辑器。再次按下恢复显示。</p>
+        </div>
+        <div class="shortcut-card">
+          <div class="shortcut-keys">
+            <span class="key-mod">Ctrl</span>
+            <span class="key-plus">+</span>
+            <span class="key-arrow">↓</span>
+          </div>
+          <h3>隐藏底部状态栏</h3>
+          <p>收起编辑器底部的字数统计和状态信息，进一步扩展写作区域。</p>
+        </div>
+        <div class="shortcut-card">
+          <div class="shortcut-keys">
+            <span class="key-mod">Ctrl</span>
+            <span class="key-plus">+</span>
+            <span class="key-arrow">←</span>
+          </div>
+          <h3>关闭左侧面板</h3>
+          <p><strong>四步循环切换：</strong>目录树 + 缩略图同时显示 → 收起缩略图 → 收起目录树 → 仅显示缩略图 → 恢复两者。逐步消除左侧干扰。</p>
+        </div>
+        <div class="shortcut-card">
+          <div class="shortcut-keys">
+            <span class="key-mod">Ctrl</span>
+            <span class="key-plus">+</span>
+            <span class="key-arrow">→</span>
+          </div>
+          <h3>关闭右侧 AI 面板</h3>
+          <p>收起右侧 AI 聊天侧边栏，让编辑区域占据整个窗口宽度，专注写作。</p>
+        </div>
+      </div>
+      <p class="shortcuts-note">
+        💡 同时关闭顶部菜单、左侧面板、右侧 AI 面板和底部状态栏后，你拥有的是一个纯粹的全屏写作环境——
+        <strong>只有你，和你的文字。</strong>
+        这，就是「无我」的沉浸式体验。
+      </p>
     </div>
   </section>
 

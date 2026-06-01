@@ -64,6 +64,7 @@ function register() {
   handle('folder:create', (payload) => folderService.createFolder(payload))
   handle('folder:rename', (folderId, name) => { folderService.renameFolder(folderId, name) })
   handle('folder:remove', (folderId) => { folderService.deleteFolder(folderId) })
+  handle('folder:reorder', (payload) => { folderService.reorderFolders(payload.parentId, payload.items) })
 
   handle('document:listByFolder', (folderId) => documentService.listByFolder(folderId))
   handle('document:listAll', () => documentService.listAll())
@@ -78,6 +79,7 @@ function register() {
   handle('document:restore', (id) => { documentService.restore(id) })
   handle('document:hardDelete', (id) => { documentService.hardDelete(id) })
   handle('document:emptyTrash', () => { documentService.emptyTrash() })
+  handle('document:reorder', (payload) => { documentService.reorderDocuments(payload.folderId, payload.items) })
 
   handle('auth:signUp', authService.signUp)
   handle('auth:signIn', authService.signIn)

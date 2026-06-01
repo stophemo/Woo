@@ -32,3 +32,13 @@ export function rename(folderId: string, name: string): Promise<void> {
 export function remove(folderId: string): Promise<void> {
   return invoke<void>('folder:remove', folderId)
 }
+
+export interface ReorderItem {
+  id: string
+  sortOrder: number
+}
+
+/** 批量更新同级目录排序 */
+export function reorderFolders(parentId: string | null, items: ReorderItem[]): Promise<void> {
+  return invoke<void>('folder:reorder', { parentId, items })
+}

@@ -116,4 +116,21 @@ function deleteFolder(folderId) {
   trx()
 }
 
-module.exports = { getFolderTree, createFolder, renameFolder, deleteFolder }
+/**
+ * 批量更新同级目录的 sort_order。
+ * @param {string|null} parentId - 父目录 id（null 表示根级）
+ * @param {Array<{id: string, sortOrder: number}>} items - 排序后的条目数组
+ */
+function reorderFolders(parentId, items) {
+  const db = getDb()
+  const stmt = db.prepare('UPDATE note_folder SET sort_order = ?, update_time = ? WHERE id = ?')
+  const now = nowStr()
+  const trx = db.transaction(() => {
+    for (const item of items) {
+      stmt.run(item.sortOrder, now, item.id)
+    }
+  })
+  trx()
+}
+
+module.exports = { getFolderTree, createFolder, renameFolder, deleteFolder, reorderFolders }

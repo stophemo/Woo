@@ -73,3 +73,13 @@ export function hardDelete(documentId: string): Promise<void> {
 export function emptyTrash(): Promise<void> {
   return invoke<void>('document:emptyTrash')
 }
+
+export interface ReorderItem {
+  id: string
+  sortOrder: number
+}
+
+/** 批量更新同级文稿排序 */
+export function reorderDocuments(folderId: string, items: ReorderItem[]): Promise<void> {
+  return invoke<void>('document:reorder', { folderId, items })
+}

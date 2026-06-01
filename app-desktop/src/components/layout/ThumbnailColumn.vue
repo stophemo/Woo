@@ -6,15 +6,29 @@
         <p class="empty-hint">当前目录已加锁，无法查看文稿</p>
       </div>
       <template v-else-if="store.currentFolderDocuments.length > 0">
-        <div class="doc-list-wrap">
+        <TransitionGroup name="note-item" tag="div" class="doc-list-wrap">
           <div
             v-for="doc in store.currentFolderDocuments"
             :key="doc.id"
             class="note-item"
-            :class="{ 'active': store.selectedDocumentId === doc.id }"
+            :class="{
+              'active': store.selectedDocumentId === doc.id,
+              'dragging': isDraggingDoc && _dragDocId === doc.id,
+              'drag-over-above': dragOverDocId === doc.id && dragOverPos === 'above',
+              'drag-over-below': dragOverDocId === doc.id && dragOverPos === 'below'
+            }"
+            :draggable="!doc.isLocked"
             @click="handleSelectDocument(doc.id)"
             @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
+            @dragstart="onDocDragStart($event, doc.id)"
+            @dragover="onDocDragOver($event, doc.id)"
+            @dragleave="onDocDragLeave"
+            @drop="onDocDrop($event, doc.id)"
+            @dragend="onDocDragEnd"
           >
+            <span class="grip-area">
+              <IconGrip />
+            </span>
             <h4>
               <template v-if="doc.isLocked">
                 <IconLock class="doc-lock-icon" />
@@ -40,7 +54,7 @@
               <button class="action-btn danger" title="彻底删除文稿" @click.stop="handleHardDeleteDocument(doc.id)">删除</button>
             </div>
           </div>
-        </div>
+        </TransitionGroup>
       </template>
 
       <div v-else-if="store.selectedFolderId" class="empty-state">
@@ -163,6 +177,7 @@ import type { Document } from '../../types/document'
 import IconDetail from '../icons/IconDetail.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconLock from '../icons/IconLock.vue'
+import IconGrip from '../icons/IconGrip.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 import LockPasswordDialog from './LockPasswordDialog.vue'
@@ -231,6 +246,73 @@ const emptyHint = computed(() => {
 
 function isDraftId(id: string): boolean {
   return id.startsWith('draft_')
+}
+
+/* ========== 拖拽排序（文稿略缩图） ========== */
+let _dragDocId: string | null = null
+const dragOverDocId = ref<string | null>(null)
+const dragOverPos = ref<'above' | 'below' | null>(null)
+const isDraggingDoc = ref(false)
+
+function onDocDragStart(event: DragEvent, docId: string) {
+  const doc = store.currentFolderDocuments.find(d => d.id === docId)
+  if (doc?.isLocked) { event.preventDefault(); return }
+  _dragDocId = docId
+  isDraggingDoc.value = true
+  event.dataTransfer!.effectAllowed = 'move'
+  event.dataTransfer!.setData('text/plain', docId)
+}
+
+function onDocDragOver(event: DragEvent, docId: string) {
+  if (!_dragDocId || _dragDocId === docId) return
+  event.preventDefault()
+  const el = event.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  dragOverDocId.value = docId
+  dragOverPos.value = event.clientY < rect.top + rect.height / 2 ? 'above' : 'below'
+}
+
+function onDocDragLeave(event: DragEvent) {
+  const el = event.currentTarget as HTMLElement
+  if (!el.contains(event.relatedTarget as Node)) {
+    dragOverDocId.value = null
+    dragOverPos.value = null
+  }
+}
+
+async function onDocDrop(event: DragEvent, docId: string) {
+  event.preventDefault()
+  dragOverDocId.value = null
+  dragOverPos.value = null
+  if (!_dragDocId || _dragDocId === docId) return
+
+  const siblings = store.folderDocuments
+  const dragIdx = siblings.findIndex(d => d.id === _dragDocId)
+  const dropIdx = siblings.findIndex(d => d.id === docId)
+  if (dragIdx === -1 || dropIdx === -1) return
+
+  const originalSnapshot = siblings.slice()
+  try {
+    const el = event.currentTarget as HTMLElement
+    const rect = el.getBoundingClientRect()
+    const insertAfter = event.clientY >= rect.top + rect.height / 2
+
+    const [moved] = siblings.splice(dragIdx, 1)
+    const newDropIdx = siblings.findIndex(d => d.id === docId)
+    if (newDropIdx === -1) return
+    siblings.splice(insertAfter ? newDropIdx + 1 : newDropIdx, 0, moved)
+
+    await store.reorderDocumentItems(siblings.map(d => d.id))
+  } catch {
+    siblings.splice(0, siblings.length, ...originalSnapshot)
+  }
+}
+
+function onDocDragEnd() {
+  _dragDocId = null
+  dragOverDocId.value = null
+  dragOverPos.value = null
+  isDraggingDoc.value = false
 }
 
 async function loadVersions(docId: string) {
@@ -605,13 +687,18 @@ function changeTypeLabel(t: string): string {
   margin-bottom: 12px;
   background-color: var(--bg-elevated);
   border-radius: 6px;
-  cursor: pointer;
+  cursor: grab;
   border: 2px solid transparent;
   transition:
     transform 0.3s cubic-bezier(0.42, 0, 0.28, 1),
     border-color 0.3s ease,
     box-shadow 0.3s ease,
     background-color 0.25s ease;
+}
+
+.note-item:active {
+  cursor: grabbing;
+  transform: scale(0.985);
 }
 
 .note-item:hover {
@@ -625,8 +712,61 @@ function changeTypeLabel(t: string): string {
   box-shadow: var(--shadow-card-hover);
 }
 
-.note-item:active {
-  transform: scale(0.985);
+.note-item.dragging {
+  opacity: 0.4;
+}
+.note-item.dragging:active {
+  transform: none;
+}
+
+/* 文稿拖拽放置指示线 */
+.note-item.drag-over-above::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+.note-item.drag-over-below::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 拖拽手柄：默认隐藏，hover 时显示 */
+.note-item .grip-area {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+  color: var(--text-muted);
+  z-index: 1;
+}
+.note-item:hover .grip-area {
+  opacity: 0.4;
+}
+.note-item .grip-area:hover {
+  opacity: 0.8;
+  background-color: var(--bg-hover);
 }
 
 .note-item h4 {
@@ -1099,5 +1239,32 @@ function changeTypeLabel(t: string): string {
 
 .doc-list-wrap {
   position: relative;
+}
+
+/* ===== 文稿列表缓入/缓出动画（与 FolderTree TransitionGroup 风格一致） ===== */
+.note-item-enter-active {
+  transition:
+    opacity 0.35s cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.note-item-leave-active {
+  transition:
+    opacity 0.25s cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  pointer-events: none;
+}
+.note-item-move {
+  transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.note-item-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+.note-item-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>
