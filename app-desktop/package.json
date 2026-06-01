@@ -1,7 +1,7 @@
 {
   "name": "woo-desktop",
   "private": true,
-  "version": "0.4.7",
+  "version": "0.4.8",
   "type": "module",
   "description": "鏃犳垜绗旇锛堟湰鍦扮増锛?绾湰鍦?SQLite 瀛樺偍锛屾棤闇€浠讳綍鍚庣鏈嶅姟",
   "author": "stophemo",
@@ -13,7 +13,7 @@
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "electron:build": "vue-tsc && vite build && electron-builder",
     "build:icons": "electron scripts/generate-icons.cjs",
-    "rebuild:sqlite": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:sqlite": "electron-rebuild -f -w better-sqlite3 -w sqlite-vec",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -21,7 +21,8 @@
     "productName": "Woo",
     "artifactName": "woo-desktop-${version}-${os}-${arch}.${ext}",
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/sqlite-vec*/**/*"
     ],
     "files": [
       "dist/**/*",
@@ -106,6 +107,7 @@
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
     "pinia": "^3.0.4",
+    "sqlite-vec": "^0.1.9",
     "turndown": "^7.2.4",
     "vue": "^3.4.21",
     "ws": "^8.21.0"
