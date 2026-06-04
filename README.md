@@ -5,7 +5,7 @@
 <h1 align="center">Woo · 无我笔记</h1>
 
 <p align="center">
-  <strong>专注写作的 Markdown 笔记 — 本地优先，掌控你的文字</strong>
+  <strong> - 沉浸写作，心无旁骛 -</strong>
 </p>
 
 <p align="center">
@@ -22,15 +22,15 @@
 
 <br>
 
-**Woo**（无我笔记）是一款本地优先的 Markdown 笔记桌面应用，基于 Electron + Vue 3 + SQLite 构建。数据默认存储在本地，登录后可选择开启 Supabase 云端同步，实现多设备数据互联。
+**Woo**（无我笔记）是一款 Markdown 笔记桌面应用，基于 Electron + Vue 3 + SQLite 构建。数据默认存储在本地，登录后可选择开启 Supabase 云端同步，实现多设备数据互联。
 
-> 「无我」源自佛教哲学，意为超越自我执念。Woo 以此命名，希望提供一个简约、专注的写作环境，让你放下对排版、格式、平台的焦虑，回归文字本身。
+> 「无我」源自佛教哲学，意为超越自我执念。Woo 以此命名，希望提供一个简洁、干净的写作环境，将写作回归文字本身。
 
 ---
 
 ## ✨ 功能特性
 
-### 📦 本地优先架构
+### 📦 本地架构
 所有数据存储在本地 SQLite 数据库，你拥有笔记的**完全所有权**。无需注册账号、无需启动后端服务、无需联网，下载即可使用。数据文件直接复制即可备份或迁移。
 
 ### ✍️ 所见即所得编辑
@@ -83,106 +83,12 @@
 
 ---
 
-## 🏗️ 技术栈
-
-| 层次 | 技术 |
-|---|---|
-| 桌面壳 | Electron 29（Chromium + Node 20 ABI） |
-| UI 框架 | Vue 3 (Composition API) + TypeScript |
-| 状态管理 | Pinia |
-| 编辑器 | Tiptap v3（ProseMirror） |
-| 构建工具 | Vite 5 + electron-builder |
-| 本地存储 | SQLite（better-sqlite3）|
-| 云端同步 | Supabase（可选） |
-| AI 集成 | Google Gemini / DeepSeek（用户自备密钥）|
-| 密码加密 | bcryptjs |
-
----
-
-## 📁 项目结构
-
-```
-Woo/
-├── app-desktop/                # Electron + Vue 3 桌面应用
-│   ├── electron/               # 主进程（CommonJS）
-│   │   ├── main.cjs            # 入口：窗口、菜单、IPC、数据库
-│   │   ├── preload.cjs         # contextBridge API
-│   │   ├── ipc/                # IPC 处理注册
-│   │   ├── db/                 # SQLite 连接与模式迁移
-│   │   ├── services/           # 业务逻辑层
-│   │   └── config/             # Supabase 配置
-│   ├── src/                    # 渲染进程（Vue 3）
-│   │   ├── stores/             # Pinia 状态管理
-│   │   ├── services/           # IPC 客户端 + AI 客户端
-│   │   ├── components/         # UI 组件
-│   │   ├── config/             # 菜单定义
-│   │   └── types/              # TypeScript 类型
-│   ├── build/                  # 图标资源
-│   └── package.json
-└── app-mobile/                 # 移动端（Flutter，开发中）
-```
-
----
-
-## 🚀 本地开发
-
-```bash
-# 进入桌面端目录
-cd app-desktop
-
-# 安装依赖
-npm install
-
-# 开发模式（两个终端）
-# 终端 1: Vite 热更新
-npm run dev
-
-# 终端 2: Electron（加载 Vite 开发服务器）
-npm run electron:dev
-
-# 构建发布版
-npm run electron:build
-```
-
-### 开发环境要求
-
-| 工具 | 版本 | 用途 |
-|---|---|---|
-| Node.js | ≥ 18.19 | 运行 Vite / Electron |
-| npm | ≥ 10 | 包管理 |
-| Python | 3.10 / 3.11（64-bit）| node-gyp 编译 SQLite 原生模块 |
-
-> 构建产物位于 `app-desktop/release/`。Windows 构建需要 Visual Studio Build Tools（含 C++ 桌面开发工作负载）。
-
-### Electron 版本升级后
-
-```bash
-npm run rebuild:sqlite    # 重新编译 better-sqlite3
-```
-
----
-
-## 📦 发布流程
-
-推送匹配的标签会自动触发 GitHub Actions 构建并发布：
-
-```bash
-git tag v0.4.7
-git push origin v0.4.7
-```
-
-支持三种标签格式：`v*`、`app-desktop-v*`、`Woo-desktop-v*`。CI 会同时在 Windows 和 macOS 上构建，并将产物上传到 GitHub Releases。
-
----
-
 ## 📄 许可证
 
-[MIT](LICENSE) © 2026 Eliza Johnson
+[MIT](LICENSE) © 2026 Stophemo
 
 ---
 
 ## 🌐 相关链接
 
 - [项目主页](https://woo-notes.vercel.app)
-- [GitHub Releases](https://github.com/stophemo/Woo/releases)
-- [邮箱验证页面](https://woo-notes.vercel.app/auth-success)
