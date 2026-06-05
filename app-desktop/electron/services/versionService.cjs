@@ -14,6 +14,7 @@ const MID_DAYS = 7
 const MID_DIFF = 100
 const OLD_DIFF = 1000
 const EDIT_DISTANCE_MAX_LEN = 10000
+const MAX_VERSIONS = 50
 
 function findLatest(documentId) {
   const db = getDb()
@@ -44,6 +45,12 @@ function saveAndCompact(doc, changeType, operatorId) {
   return saved
 }
 
+function markDeleted(id) {
+  const db = getDb()
+  db.prepare('UPDATE note_document_version SET deleted = 2, update_time = ? WHERE id = ?')
+    .run(nowStr(), id)
+}
+
 function compactHistory(documentId) {
   const db = getDb()
   const rows = db.prepare(`SELECT * FROM note_document_version WHERE document_id = ?
@@ -51,20 +58,31 @@ function compactHistory(documentId) {
   if (rows.length < 2) return
   const now = Date.now()
   let prev = null
-  const del = db.prepare('DELETE FROM note_document_version WHERE id = ?')
+  const keep = []
   const trx = db.transaction(() => {
+    // Phase 1: 合并相邻相似版本（仅标记 deleted=2 不清除，让同步引擎推至云端）
     for (const curr of rows) {
       if (!prev) { prev = curr; continue }
       const threshold = thresholdFor(prev.create_time, now)
       if (threshold > 0) {
         const diff = textDiff(prev.content, curr.content)
         if (diff <= threshold) {
-          del.run(prev.id)
+          markDeleted(prev.id)
           prev = curr
           continue
         }
       }
+      keep.push(prev)
       prev = curr
+    }
+    keep.push(prev)
+
+    // Phase 2: 版本数上限裁剪（保留最新 MAX_VERSIONS 条）
+    if (keep.length > MAX_VERSIONS) {
+      const excess = keep.length - MAX_VERSIONS
+      for (let i = 0; i < excess; i++) {
+        markDeleted(keep[i].id)
+      }
     }
   })
   trx()
@@ -82,7 +100,7 @@ function thresholdFor(createTimeStr, nowMs) {
 function listVersions(documentId) {
   documentService.verifyExists(documentId)
   const db = getDb()
-  const rows = db.prepare(`SELECT * FROM note_document_version WHERE document_id = ?
+  const rows = db.prepare(`SELECT * FROM note_document_version WHERE document_id = ? AND deleted = 0
                            ORDER BY version_no DESC`).all(documentId)
   return rows.map(r => ({
     id: r.id,
@@ -99,7 +117,7 @@ function listVersions(documentId) {
 function getVersion(documentId, versionNo) {
   documentService.verifyExists(documentId)
   const db = getDb()
-  const r = db.prepare(`SELECT * FROM note_document_version WHERE document_id = ? AND version_no = ?`)
+  const r = db.prepare(`SELECT * FROM note_document_version WHERE document_id = ? AND version_no = ? AND deleted = 0`)
     .get(documentId, Number(versionNo))
   if (!r) throw new Error('版本不存在')
   return {

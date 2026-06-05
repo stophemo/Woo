@@ -270,8 +270,8 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 
 let isSettingContent = false
 const IDLE_MS = 3000
-const CHAR_DELTA = 100
-const LINE_DELTA = 10
+const CHAR_DELTA = 500
+const LINE_DELTA = 25
 let idleTimer: number | null = null
 let baselineDocId: string | null = null
 let baselineTextLen = 0

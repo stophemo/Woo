@@ -221,6 +221,24 @@ async function cleanupExpiredDeletes(userId) {
     }
   }
 
+  // === 4. 清理过期版本（deleted=2 且超期，版本合并/裁剪后被标记） ===
+  const expiredVersions = db.prepare(
+    'SELECT id FROM note_document_version WHERE deleted = 2 AND update_time < ?'
+  ).all(cutoff)
+
+  for (const ver of expiredVersions) {
+    try {
+      await client.from('note_document_version')
+        .delete()
+        .eq('id', ver.id)
+        .eq('user_id', userId)
+      db.prepare('DELETE FROM note_document_version WHERE id = ?').run(ver.id)
+      cleanupCount++
+    } catch (err) {
+      errors.push(`[cleanup] 版本清理失败(${ver.id}): ${err.message}`)
+    }
+  }
+
   return { cleanupCount, errors }
 }
 
