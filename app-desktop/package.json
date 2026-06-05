@@ -1,7 +1,7 @@
 {
   "name": "woo-desktop",
   "private": true,
-  "version": "0.4.7",
+  "version": "0.4.8",
   "type": "module",
   "description": "鏃犳垜绗旇锛堟湰鍦扮増锛?绾湰鍦?SQLite 瀛樺偍锛屾棤闇€浠讳綍鍚庣鏈嶅姟",
   "author": "stophemo",
