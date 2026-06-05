@@ -56,6 +56,7 @@ app-mobile/export/
 
 # ============ Third-party tooling ============
 .qoder
+.codegraph/
 
 # ============ Common ============
 # Logs
