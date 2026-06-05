@@ -230,15 +230,33 @@ jobs:
             # Custom notes from workflow_dispatch (e.g., written by Claude)
             $notes = "## $tag`n`n$customNotes"
           } else {
-            # Auto-generated brief notes — no commit dump
+            # Auto-generate from conventional commits since previous tag
             $previousTag = git describe --tags --abbrev=0 "$tag^" 2>`$null
             if ($LASTEXITCODE -ne 0) { $previousTag = "" }
 
-            $notes = "## $tag`n`n"
             if ($previousTag) {
-              $notes += "完整变更日志: https://github.com/stophemo/Woo/compare/${previousTag}...${tag}"
+              # Gather commits: feat / fix / chore / docs sections
+              $log = git log "$previousTag..$tag" --no-merges --format="%s"
+              $feats = @(); $fixes = @(); $docs = @(); $chores = @(); $other = @()
+              foreach ($line in $log) {
+                if ($line -match '^feat(\(.*?\))?:\s*(.*)') { $feats += $matches[2]; continue }
+                if ($line -match '^fix(\(.*?\))?:\s*(.*)')  { $fixes += $matches[2]; continue }
+                if ($line -match '^docs?(\(.*?\))?:\s*(.*)') { $docs += $matches[2]; continue }
+                if ($line -match '^chore(\(.*?\))?:\s*(.*)') { $chores += $matches[2]; continue }
+                $other += $line
+              }
+
+              $body = @()
+              if ($feats.Length -gt 0)  { $body += "### ✨ 新功能"; $body += $feats | ForEach-Object { "- $_" } }
+              if ($fixes.Length -gt 0)  { $body += "`n### 🔧 修复与改进"; $body += $fixes | ForEach-Object { "- $_" } }
+              if ($docs.Length -gt 0)   { $body += "`n### 📖 文档"; $body += $docs | ForEach-Object { "- $_" } }
+              if ($chores.Length -gt 0) { $body += "`n### 🏗️ 工程"; $body += $chores | ForEach-Object { "- $_" } }
+              if ($other.Length -gt 0)  { $body += "`n### 🔄 其他"; $body += $other | ForEach-Object { "- $_" } }
+              $body += "`n---`n完整变更: https://github.com/stophemo/Woo/compare/${previousTag}...${tag}"
+
+              $notes = "## $tag`n`n$($body -join "`n")"
             } else {
-              $notes += "首次发布"
+              $notes = "## $tag`n`n首次发布"
             }
           }
 
