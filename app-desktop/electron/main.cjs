@@ -231,6 +231,9 @@ function buildMenu() {
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
+        { role: 'reload', label: '重新加载', accelerator: 'Cmd+R' },
+        { role: 'forceReload', label: '强制重新加载', accelerator: 'Cmd+Shift+R' },
+        { type: 'separator' },
         { role: 'toggleDevTools', label: '开发者工具' }
       ]
     },
@@ -239,6 +242,16 @@ function buildMenu() {
       submenu: [
         { label: 'Open Chat', click: () => sendAction('open-chat') },
         { label: '模型配置', click: () => sendAction('ai-settings') }
+      ]
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'close', label: '关闭窗口', accelerator: 'Cmd+W' },
+        { role: 'minimize', label: '最小化', accelerator: 'Cmd+M' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        { role: 'front', label: '全部置于顶层' }
       ]
     },
     {
@@ -334,6 +347,11 @@ function tryRestoreSession() {
 }
 
 app.whenReady().then(() => {
+  // —— 设置 macOS dock 图标（开发模式下无 .icns 包体，需显式设置）——
+  if (process.platform === 'darwin' && APP_ICON && !app.isPackaged) {
+    app.dock.setIcon(APP_ICON)
+  }
+
   // 构建原生菜单（macOS 系统菜单栏集成，窗口聚焦即生效）
   buildMenu()
 

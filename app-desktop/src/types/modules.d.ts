@@ -36,3 +36,9 @@ declare module 'turndown' {
   const Turndown: TurndownStatic
   export default Turndown
 }
+
+declare module 'turndown-plugin-gfm' {
+  const tables: any
+  const strikethrough: any
+  export { tables, strikethrough }
+}

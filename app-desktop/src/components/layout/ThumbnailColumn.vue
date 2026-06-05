@@ -167,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { useLockStore } from '../../stores/lock'
 import * as versionApi from '../../services/versionApi'
@@ -182,6 +182,7 @@ import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 import LockPasswordDialog from './LockPasswordDialog.vue'
 import TurndownService from 'turndown'
+import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
 
 interface Props {
   isOpen: boolean
@@ -391,6 +392,19 @@ const _turndown = new TurndownService({
   emDelimiter: '*',          // *斜体*
   bulletListMarker: '-',     // - 无序列表
 })
+_turndown.use(gfmTable)
+_turndown.use(gfmStrikethrough)
+// 任务列表（- [x] / - [ ]），与 EditArea 中的规则保持一致
+_turndown.addRule('taskList', {
+  filter: (node: HTMLElement) =>
+    node.nodeName === 'LI' &&
+    (node.getAttribute('data-checked') !== null ||
+     (!!node.parentElement && node.parentElement.getAttribute('data-type') === 'taskList')),
+  replacement: (content: string, node: HTMLElement) => {
+    const checked = node.getAttribute('data-checked') === 'true'
+    return `- [${checked ? 'x' : ' '}] ${content.trim()}\n`
+  },
+})
 
 async function handleExportDoc(docId: string) {
   const doc = store.currentFolderDocuments.find(d => d.id === docId)
@@ -578,6 +592,14 @@ watch(() => store.versionRefreshTick, () => scheduleReload())
 // 翻转打开后若期间有给 tick，也追加一次刷新
 watch(flipped, (v) => {
   if (!v && reloadTimer !== null) {
+    clearTimeout(reloadTimer)
+    reloadTimer = null
+  }
+})
+
+// 组件卸载时清除待执行的 reloadTimer，防止回调操作已卸载的响应式状态
+onBeforeUnmount(() => {
+  if (reloadTimer !== null) {
     clearTimeout(reloadTimer)
     reloadTimer = null
   }
@@ -954,7 +976,13 @@ function changeTypeLabel(t: string): string {
 .panel-collapse-wrap {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 0.5s cubic-bezier(0.42, 0, 0.28, 1);
+  min-height: 0;
+  overflow: hidden;
+  transition: grid-template-rows 0.5s cubic-bezier(0.42, 0, 0.28, 1),
+              opacity 0.25s ease;
+}
+.panel:not(.panel-collapsed) .panel-collapse-wrap {
+  flex: 1;
 }
 
 .panel.panel-collapsed .panel-collapse-wrap {

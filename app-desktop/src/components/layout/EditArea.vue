@@ -91,13 +91,42 @@ import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import BulletList from '@tiptap/extension-bullet-list'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { DOMParser } from '@tiptap/pm/model'
+import { DOMParser, DOMSerializer } from '@tiptap/pm/model'
 import { marked } from 'marked'
+import TurndownService from 'turndown'
+import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { registerScrollHandler, useEditorNavigation } from '../../config/editorNavigation'
 import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
 import MindmapDialog from './MindmapDialog.vue'
+
+/** HTML → Markdown 转换器（复制剪贴板，输出 GFM 风格 Markdown） */
+const turndownService = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+  emDelimiter: '*',
+  strongDelimiter: '**',
+  linkStyle: 'inlined',
+  hr: '---',
+})
+
+// 加载 GFM 插件：表格 pipe-table 语法、~~删除线~~ 标记
+turndownService.use(gfmTable)
+turndownService.use(gfmStrikethrough)
+
+// 任务列表（- [x] / - [ ]）
+turndownService.addRule('taskList', {
+  filter: (node: HTMLElement) =>
+    node.nodeName === 'LI' &&
+    (node.getAttribute('data-checked') !== null ||
+     (!!node.parentElement && node.parentElement.getAttribute('data-type') === 'taskList')),
+  replacement: (content: string, node: HTMLElement) => {
+    const checked = node.getAttribute('data-checked') === 'true'
+    return `- [${checked ? 'x' : ' '}] ${content.trim()}\n`
+  },
+})
 
 const store = useWorkspaceStore()
 const { headings } = useEditorNavigation()
@@ -405,24 +434,31 @@ const MarkdownPaste = Extension.create({
         key: new PluginKey('markdownPaste'),
         props: {
           handlePaste: (view, event) => {
-            // 如果剪贴板有 HTML 内容（从富文本源粘贴），走默认行为保留格式
+            // 标记为 Woo 自己复制的内容 → 走默认 HTML 解析（完美还原）
+            if (event.clipboardData?.types.includes('text/x-woo')) {
+              return false
+            }
+            // 外部应用的富文本粘贴 → 由 ProseMirror 原生处理器保留完整格式
             if (event.clipboardData?.types.includes('text/html')) {
               return false
             }
             const text = event.clipboardData?.getData('text/plain')
-            if (!text || !isMarkdownText(text)) return false
+            // 纯文本像 Markdown → 用 marked 解析后插入
+            if (text && isMarkdownText(text)) {
+              event.preventDefault()
 
-            event.preventDefault()
+              const html = marked.parse(text, { gfm: true, breaks: true }) as string
+              const div = document.createElement('div')
+              div.innerHTML = html
 
-            const html = marked.parse(text, { gfm: true, breaks: true }) as string
-            const div = document.createElement('div')
-            div.innerHTML = html
+              const { schema } = view.state
+              const slice = DOMParser.fromSchema(schema).parseSlice(div, { preserveWhitespace: true })
+              view.dispatch(view.state.tr.replaceSelection(slice))
 
-            const { schema } = view.state
-            const slice = DOMParser.fromSchema(schema).parseSlice(div, { preserveWhitespace: true })
-            view.dispatch(view.state.tr.replaceSelection(slice))
+              return true
+            }
 
-            return true
+            return false
           },
         },
       }),
@@ -444,7 +480,41 @@ const editor = useEditor({
     MindmapBulletList,
     MarkdownPaste,
   ],
-  editorProps: { attributes: { class: 'wysiwyg-editor', spellcheck: 'false' } },
+  editorProps: {
+    attributes: { class: 'wysiwyg-editor', spellcheck: 'false' },
+    // 复制时：标记此内容来自 Woo，粘贴时据此区分是否走 HTML 完美还原
+    handleDOMEvents: {
+      // 复制时标记此内容来自 Woo，粘贴时据此区分是否走 HTML 完美还原
+      copy: (_view, event) => {
+        try { (event as any).clipboardData?.setData('text/x-woo', '1') } catch { /* ignore */ }
+        return false // 让 ProseMirror 继续默认的复制处理
+      },
+    },
+    clipboardTextSerializer: (slice, view) => {
+      try {
+        const serializer = DOMSerializer.fromSchema(view.state.schema)
+        const fragment = serializer.serializeFragment(slice.content)
+        const div = document.createElement('div')
+        div.appendChild(fragment)
+        const html = div.innerHTML
+        let md = turndownService.turndown(html)
+        // 保护代码块 → 折叠多余空行（去掉段落间空白行）→ 恢复代码块
+        const codeBlocks: string[] = []
+        md = md.replace(/(`{3,})[\s\S]*?\1/g, (m) => {
+          codeBlocks.push(m)
+          return `\x00CODE${codeBlocks.length - 1}\x00`
+        })
+        md = md.replace(/\n{2,}/g, '\n')
+        md = md.replace(/\n[ \t]*\n/g, '\n') // 去掉缩进中的空白行（如嵌套列表内的空行）
+        md = md.trim()
+        md = md.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[+i])
+        return md || slice.content.textBetween(0, slice.content.size, '\n')
+      } catch (e) {
+        console.warn('[EditArea] clipboardTextSerializer 失败:', e)
+        return slice.content.textBetween(0, slice.content.size, '\n')
+      }
+    },
+  },
   onUpdate: ({ editor: editorInstance }) => {
     if (isSettingContent || store.isExternalStreaming || !store.selectedDocumentId) return
     if (store.selectedFolderId === TRASH_FOLDER_ID) return
@@ -690,8 +760,8 @@ onBeforeUnmount(() => {
 .sheet-grid td.align-right input, .sheet-grid td.align-right .computed { text-align: right; }
 .sheet-grid td.top-header { background: color-mix(in srgb, var(--bg-toolbar) 65%, transparent); }
 .sheet-grid td.left-header { background: color-mix(in srgb, var(--bg-toolbar) 40%, transparent); }
-.editor-body { flex: 1; overflow-y: auto; }
-.editor-scale-wrap { display: block; }
+.editor-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.editor-scale-wrap { flex: 1; min-height: 0; }
 .editor-content { height: 100%; }
 .empty-editor { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
 

@@ -109,6 +109,7 @@
     "pinia": "^3.0.4",
     "sqlite-vec": "^0.1.9",
     "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
     "vue": "^3.4.21",
     "ws": "^8.21.0"
   },

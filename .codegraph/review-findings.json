@@ -1,0 +1,92 @@
+[
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 479,
+    "summary": "text/x-woo 标记被 ProseMirror 内置 copy 处理器的 clearData() 清除，整个复制标记机制失效",
+    "failure_scenario": "选中文本后 Ctrl+C → handleDOMEvents.copy 设置 text/x-woo 返回 false → ProseMirror 内置 handler 调用 data.clearData() 擦除所有 MIME 类型。粘贴时 text/x-woo 永远不存在，所有内部粘贴都走 marked 带回显而非 HTML 完美还原，嵌套任务列表、自定义属性等结构丢失"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 441,
+    "summary": "marked.parse() 可能返回 Promise 但没有 await，粘贴内容被静默破坏",
+    "failure_scenario": "marked v12+ 默认或配置了 async 扩展时，marked.parse() 返回 Promise<string>。as string 编译期抹除类型但运行时不变。div.innerHTML = [object Promise] 产生垃圾 DOM，handlePaste 返回 true 阻止任何回退，外部粘贴内容完全丢失"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 712,
+    "summary": "registerScrollHandler 在组件卸载后未注销，回调指向已销毁编辑器实例",
+    "failure_scenario": "EditArea.vue 在 onMounted 注册 scrollHandler 但 onBeforeUnmount 未清空。组件卸载后 editor.value 为 null，ThumbnailColumn 调用 scrollToHeading() → scrollHandler?.(pos) → ed.view.coordsAtPos(pos) 在空引用上抛异常或返回脏数据"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 431,
+    "summary": "移除了 text/html 检查，外部富文本粘贴若纯文本像 Markdown 则格式被丢弃",
+    "failure_scenario": "从网页复制一段文字，其 text/plain 包含 `**bold**`、`~strike~` 或单个反引号等 Markdown 特征 → isMarkdownText 匹配 → event.preventDefault() 阻止 ProseMirror 的 HTML 粘贴 → 纯文本被 marked.parse 重新解析，原始 HTML 格式（链接、颜色、嵌套结构）全部丢失。isMarkdownText 约 421 行匹配条件极宽：任一反引号即可触发"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 104,
+    "summary": "TurndownService 未加载 turndown-plugin-gfm，复制时表格和删除线被静默丢弃",
+    "failure_scenario": "从 Woo 复制包含表格或 ~~strikethrough~~ 的文档 → clipboardTextSerializer Turndown 输出不含 |---| 表格语法和 ~~ 删除线标记 → 粘贴到外部 Markdown 编辑器时表格降级为纯文本、删除线样式丢失。marked（粘贴解析）支持 GFM 但 turndown（复制序列化）不支持，形成非对称"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 503,
+    "summary": "clipboardTextSerializer 的 catch 块无任何诊断输出",
+    "failure_scenario": "Turndown 或 DOMSerializer 抛出异常时，catch 块静默返回 textBetween 纯文本。用户复制复杂文档后粘贴得到纯文本，无任何错误提示。没有 console.warn 导致难以调试"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 494,
+    "summary": "代码块保护正则无法正确处理含有三重反引号的代码块内容",
+    "failure_scenario": "Python docstring 中包含 ``` 时，Turndown 将 fence 升级为 ```` 或保持原样。EditArea 正则 /(```[\\s\\S]*?```)/g 只匹配恰好 3 个反引号的 fence，且惰性匹配会提前闭合在内容中的 ``` 上。保护失败后空白行折叠破坏代码格式"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 421,
+    "summary": "isMarkdownText 匹配条件过于宽松，单个反引号即触发 Markdown 重解析",
+    "failure_scenario": "任何从网页复制包含单个反引号（如 `npm install`）的纯文本，或包含 **、__、~~ 的普通文本，都会触发 marked 重解析。即使源内容提供完整 HTML 格式也是如此。在 #4 已移除 text/html 检查的前提下，此阈值放大了格式丢失的范围"
+  },
+  {
+    "file": "app-desktop/src/components/layout/ThumbnailColumn.vue",
+    "line": 564,
+    "summary": "reloadTimer 在组件卸载后未清除，超时回调可操作已卸载组件的响应式状态",
+    "failure_scenario": "ThumbnailColumn 未实现 onBeforeUnmount。若在 flipped=true 时列被收起（组件卸载），300ms 后 timeout 触发，flipped.value、activeDocId.value 仍可用但属已卸载实例的闭包。refreshVersions 可能设置过时数据或导致内存泄漏"
+  },
+  {
+    "file": "app-desktop/src/components/layout/ThumbnailColumn.vue",
+    "line": 388,
+    "summary": "导出用的 TurndownService 缺少 taskList 自定义规则，导出 .md 丢失复选框状态",
+    "failure_scenario": "EditArea 编辑器内的 Tiptap 任务列表导出为 .md 时，_turndown 不含 taskList 规则 → 所有 - [x] / - [ ] 输出为普通 <li> → 导出文件丢失所有复选框信息"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 115,
+    "summary": "Turndown 任务列表规则展开时忘记缩进，嵌套任务列表层级丢失",
+    "failure_scenario": "Tiptap TaskItem 配置 nested=true（467行），但 turndown 规则 replacement 始终输出 `- [x] content\\n` 无缩进。嵌套任务列表复制到外部 Markdown 编辑器时全部展平为顶级列表项"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 494,
+    "summary": "Turndown 输出未闭合的围栏代码块导致静默内容损坏",
+    "failure_scenario": "Turndown 理论上总能产生闭合的代码块，但若边缘情况导致未闭合，保护正则不匹配。未保护代码块中的空白行被 `\\n{2,}` 折叠，代码缩进损坏。用户粘贴时发现代码格式全乱但无错误提示"
+  },
+  {
+    "file": "app-desktop/src/components/layout/ThumbnailColumn.vue",
+    "line": 521,
+    "summary": "handleLockConfirm 接受但忽略密码参数，无防御性验证",
+    "failure_scenario": "LockPasswordDialog 若因 bug/重构在密码错误时仍 emit confirm，handleLockConfirm 直接 proceed。应至少在校验前 assert 密码有效"
+  },
+  {
+    "file": "app-desktop/src/components/layout/EditArea.vue",
+    "line": 508,
+    "summary": "AI 流式输出期间 Cmd+S 提交的版本可能捕获陈旧内容",
+    "failure_scenario": "isExternalStreaming 为 true 时 onUpdate 跳过 store.updateDocumentContent。若用户在流式输出中按 Cmd+S，triggerCommit 调用 commitDocumentVersion 时 store 中的内容是流开始前的陈旧版本，正在生成的新内容跑出版本历史"
+  },
+  {
+    "file": "app-desktop/src/components/layout/ThumbnailColumn.vue",
+    "line": 954,
+    "summary": "面板折叠 CSS 过渡中网格行塌缩和内容淡出时序不匹配产生视觉闪烁",
+    "failure_scenario": ".panel-body 在 0.25s 达到 opacity:0，但 .panel-collapse-wrap 继续塌缩 0.25s。折叠中途出现空的彩色矩形闪烁。这是视觉体验缺陷，不影响功能"
+  }
+]
