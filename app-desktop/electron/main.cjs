@@ -77,8 +77,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 800,
-    minWidth: 1024,
-    minHeight: 768,
+    minWidth: 680,
+    minHeight: 480,
     // Windows: 无边框（frame: false）；
     // macOS:  保留原生框架（frame: true）并隐藏标题栏文字，
     //         保留交通灯按钮（红黄绿灯）。
@@ -116,6 +116,10 @@ function createWindow() {
   mainWindow.webContents.on('preload-error', (_event, preloadPath, err) => {
     console.error('[MAIN] preload 加载失败:', preloadPath, err)
   })
+
+  // 阻止在 Electron 窗口内的链接导航（所有链接由渲染进程 click handler 处理）
+  mainWindow.webContents.on('will-navigate', (event) => { event.preventDefault() })
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   // macOS 全屏时隐藏应用内菜单栏（依赖系统菜单栏）
   if (isMac) {
@@ -376,7 +380,16 @@ app.whenReady().then(() => {
 
   // —— 全局 IPC（只注册一次，不依赖窗口）——
   ipcMain.handle('app:getVersion', () => app.getVersion())
-  ipcMain.on('open-external-link', (_e, url) => shell.openExternal(url))
+  // 打开外部链接，带 500ms 防重复
+  let _lastExternalUrl = ''
+  let _lastExternalTime = 0
+  ipcMain.on('open-external-link', (_e, url) => {
+    const now = Date.now()
+    if (url === _lastExternalUrl && now - _lastExternalTime < 500) return
+    _lastExternalUrl = url
+    _lastExternalTime = now
+    shell.openExternal(url)
+  })
 
   // 注册检查更新 IPC（invoke 模式，渲染进程直接 await 结果）
   ipcMain.handle('update:check', async () => {

@@ -12,13 +12,12 @@ function newId() {
 }
 
 /**
- * 返回当前 UTC 时间字符串
- * 格式：YYYY-MM-DDTHH:MM:SS（与 schema update_time 默认值一致）
+ * 返回当前北京时间字符串 (UTC+8)
+ * 格式：YYYY-MM-DDTHH:MM:SS（北京时间，与 schema update_time 默认值一致）
  */
 function nowStr() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+  // sv-SE locale 输出 "yyyy-MM-dd HH:mm:ss"，替换空格为 T 即为 target 格式
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(' ', 'T')
 }
 
 /**

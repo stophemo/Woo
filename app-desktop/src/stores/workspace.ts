@@ -874,48 +874,39 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         // 用 splice 整体替换，Vue 能识别最小变动
         folderDocuments.value.splice(0, folderDocuments.value.length, ...merged)
 
-        // 3. 冲突检测：当前正在编辑的文稿
+                // 3. 冲突检测：当前正在编辑的文稿
         if (selectedDocumentId.value && !isDraftId(selectedDocumentId.value)) {
           const cloudDoc = newDocs.find(d => d.id === selectedDocumentId.value)
+          const hasUnsaved = saveTimer !== null || pendingSave !== null || savingPromise !== null
           const localDoc = currentDocumentData.value
-          if (cloudDoc && localDoc && cloudDoc.updatedAt !== localDoc.updatedAt) {
-            // 云端有更新 → 检查本地是否有未保存的修改
-            const hasUnsaved = saveTimer !== null || pendingSave !== null || savingPromise !== null
-            if (hasUnsaved) {
-              // 冲突：将本地编辑版另存为同目录下的一份新文稿
-              try {
-                // 先把本地未保存内容写回，确保 conflict 副本内容完整
-                await flushPendingSave()
-                const conflictDTO = await documentApi.create({
-                  title: `${localDoc.title}_conflict`,
-                  folderId: localDoc.folderId || fid
-                })
-                // 用本地编辑的内容覆盖新建文稿的内容
-                await documentApi.updateContent(conflictDTO.id, localDoc.content)
-                const conflictDoc = mapDocument(conflictDTO)
-                conflictDoc.content = localDoc.content
-                // 插入到当前文稿列表
-                folderDocuments.value.unshift(conflictDoc)
-              } catch { /* 冲突备份失败时静默，继续加载云端 */ }
-              // 加载云端数据到编辑器
-              try {
-                const dto = await documentApi.getById(cloudDoc.id)
-                const doc = mapDocument(dto)
-                if (doc.isLocked) doc.content = ''
-                currentDocumentData.value = doc
-              } catch {
-                // 加载失败时保留本地数据不做变更
-              }
-            } else {
-              // 无未保存修改 → 直接加载云端最新内容
-              try {
-                const dto = await documentApi.getById(cloudDoc.id)
-                const doc = mapDocument(dto)
-                if (doc.isLocked) doc.content = ''
-                currentDocumentData.value = doc
-              } catch { /* ignore */ }
+          if (cloudDoc && localDoc && cloudDoc.content !== localDoc.content && !hasUnsaved) {
+            // 云端内容不同，且编辑器没有未保存的修改 → 真正云端冲突（另一设备修改了同一文稿）
+            // 将云端版本载入编辑器，本地版本另存为冲突副本
+            try {
+              const conflictTitle = `${localDoc.title} (冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
+              const conflictId = (await documentApi.create({
+                title: conflictTitle,
+                folderId: localDoc.folderId || fid
+              })).id
+              await documentApi.updateContent(conflictId, localDoc.content)
+              await documentApi.rename(conflictId, conflictTitle)
+              const conflictDoc = mapDocument(await documentApi.getById(conflictId))
+              folderDocuments.value.unshift(conflictDoc)
+            } catch { /* 冲突备份失败，静默加载云端 */ }
+            // 编辑器加载云端最新内容
+            try {
+              const dto = await documentApi.getById(cloudDoc.id)
+              currentDocumentData.value = mapDocument(dto)
+              if (currentDocumentData.value.isLocked) currentDocumentData.value.content = ''
+            } catch { /* 加载失败时保留本地数据 */ }
+          } else if (cloudDoc && localDoc && cloudDoc.content === localDoc.content) {
+            // 内容相同 → 仅同步 updatedAt
+            if (cloudDoc.updatedAt !== localDoc.updatedAt) {
+              currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
             }
           }
+          // 其他情况（内容不同但有未保存修改）→ 编辑器领先于 SQLite，不是云端冲突
+          // debounce 会在 800ms 后将内容写回，无需处理
         }
       }
     } catch (e: any) {

@@ -56,6 +56,20 @@
       <div v-else class="empty-editor">Please select a document</div>
     </div>
 
+    <!-- 滚动定位按钮 — 放在 editor-body 外部，避免随内容滚动 -->
+    <div class="scroll-nav" :class="{ visible: showScrollToTop || showScrollToBottom }">
+      <button v-if="showScrollToTop" class="scroll-nav-btn" title="回到顶部" @click="scrollToTop">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 14V3M8 3L4 7M8 3l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button v-if="showScrollToBottom" class="scroll-nav-btn" title="滚动到底部" @click="scrollToBottom">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2v11M8 13l-4-4M8 13l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
     <div class="editor-statusbar" :class="{ collapsed: !isStatusBarOpen }">
       <div class="statusbar-left">
         <span>Markdown</span>
@@ -90,6 +104,7 @@ import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
 import BulletList from '@tiptap/extension-bullet-list'
+import Link from '@tiptap/extension-link'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { DOMParser, DOMSerializer } from '@tiptap/pm/model'
 import { marked } from 'marked'
@@ -141,6 +156,8 @@ const emit = defineEmits<{
 
 
 const zoomPercent = ref(100)
+const showScrollToTop = ref(false)
+const showScrollToBottom = ref(false)
 const showSheet = ref(false)
 const rows = 20
 const cols = 10
@@ -269,31 +286,74 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 }
 
 let isSettingContent = false
-const IDLE_MS = 3000
-const CHAR_DELTA = 500
-const LINE_DELTA = 25
+
+// --- 版本自动保存：基于编辑会话 ---
+// 触发条件：
+//   1. 手动保存 (Ctrl+S) — 始终立即生效
+//   2. 切换文档 — 离开当前文档前保存
+//   3. 空闲超时 (IDLE_MS) — 停止输入一段时间后保存
+//   4. 最长编辑保护 (MAX_EDIT_MS) — 连续编辑超时后强制保存
+// 保护：
+//   - 最小保存间隔 (COOLDOWN_MS) — 两次 auto 保存之间至少间隔这么久
+//   - committing 标志 — 防止并发
+
+const IDLE_MS = 30_000          // 空闲 30 秒后自动保存
+const COOLDOWN_MS = 30_000      // 两次自动保存最小间隔
+const MAX_EDIT_MS = 600_000     // 最长连续编辑时间（10 分钟后强制保存）
+
 let idleTimer: number | null = null
+let maxEditTimer: number | null = null
 let baselineDocId: string | null = null
-let baselineTextLen = 0
-let baselineLines = 0
 let dirtyAfterBaseline = false
 let committing = false
+let lastCommitTime = 0          // 上次自动保存的时间戳
 
-function clearIdleTimer() { if (idleTimer !== null) { clearTimeout(idleTimer); idleTimer = null } }
-function resetBaselineFromEditor() {
-  if (!editor.value) return
-  baselineDocId = store.selectedDocumentId
-  baselineTextLen = editor.value.getText().length
-  baselineLines = editor.value.getJSON().content?.length || 0
-  dirtyAfterBaseline = false
-  clearIdleTimer()
+function clearTimers() {
+  if (idleTimer !== null) { clearTimeout(idleTimer); idleTimer = null }
+  if (maxEditTimer !== null) { clearTimeout(maxEditTimer); maxEditTimer = null }
 }
-async function triggerCommit(changeType: 'auto' | 'manual' = 'auto') {
+function resetBaseline() {
+  baselineDocId = store.selectedDocumentId
+  dirtyAfterBaseline = false
+  clearTimers()
+}
+
+/** 开始计时：用户开始编辑后，启动空闲计时 & 最长编辑保护计时 */
+function startTimers() {
+  clearTimers()
+  // 空闲计时：30 秒无输入后保存
+  idleTimer = window.setTimeout(() => void autoCommit(), IDLE_MS)
+  // 最长编辑保护：10 分钟无保存则强制保存
+  maxEditTimer = window.setTimeout(() => void autoCommit(), MAX_EDIT_MS)
+}
+
+/** 执行自动保存，带冷却保护 */
+async function autoCommit() {
   const docId = baselineDocId || store.selectedDocumentId
   if (!docId || !dirtyAfterBaseline || committing) return
-  clearIdleTimer(); committing = true
+  const now = Date.now()
+  if (lastCommitTime > 0 && now - lastCommitTime < COOLDOWN_MS) {
+    // 冷却期内，重新启动定时器等待下一次机会
+    startTimers()
+    return
+  }
+  committing = true
+  try {
+    await store.commitDocumentVersion(docId, 'auto')
+    lastCommitTime = Date.now()
+  } finally {
+    committing = false
+  }
+  resetBaseline()
+}
+
+/** 手动保存/文档切换 — 不受冷却限制，始终立即执行 */
+async function forceCommit(changeType: 'auto' | 'manual' = 'auto') {
+  const docId = baselineDocId || store.selectedDocumentId
+  if (!docId || !dirtyAfterBaseline || committing) return
+  clearTimers(); committing = true
   try { await store.commitDocumentVersion(docId, changeType) } finally { committing = false }
-  resetBaselineFromEditor()
+  resetBaseline()
 }
 
 const CustomKeymap = Extension.create({
@@ -314,7 +374,8 @@ const CustomKeymap = Extension.create({
       'Mod-Shift-c': () => this.editor.chain().focus().toggleCodeBlock().run(),
       'Mod-Shift-x': () => this.editor.chain().focus().toggleStrike().run(),
       'Mod-Enter': () => this.editor.chain().focus().setHorizontalRule().run(),
-      'Mod-s': () => { void triggerCommit('manual'); return true }
+      'Mod-k': () => { toggleLink(); return true },
+      'Mod-s': () => { void forceCommit('manual'); return true }
     }
   }
 })
@@ -415,6 +476,10 @@ const MindmapBulletList = BulletList.extend({
 
 // ── Markdown 粘贴插件 ─────────────────────────────
 
+/**
+ * 启发式检测文本是否可能为 Markdown。
+ * 快速路径（无额外开销），不会多次调用 marked.parse。
+ */
 function isMarkdownText(text: string): boolean {
   return /^#{1,6}\s/m.test(text) ||                // 标题
          /^[-*+]\s/m.test(text) ||                  // 无序列表
@@ -423,7 +488,29 @@ function isMarkdownText(text: string): boolean {
          /^>\s/m.test(text) ||                      // 引用
          /^```/m.test(text) ||                      // 代码块
          /^---$|^\*\*\*$|^___$/m.test(text) ||      // 分割线
-         /\*\*|__|~~|`{1,3}/.test(text)             // 行内格式
+         /\*\*|__|~~|`{1,3}/.test(text) ||          // 行内格式
+         /\[.+\]\(.+\)/.test(text)                  // 链接或图片
+}
+
+/**
+ * 通过实际解析验证：用 marked 将文本转为 HTML，
+ * 若结果包含结构性元素（标题、列表、表格、引用、代码块、
+ * 水平线、加粗、斜体、代码），则认为文本是 Markdown。
+ *
+ * 比启发式 isMarkdownText 更准确（捕获所有 GFM 模式），
+ * 作为 isMarkdownText 未命中时的兜底检查。
+ */
+function isMarkdownByParsing(text: string): boolean {
+  try {
+    const html = marked.parse(text, { gfm: true, breaks: true }) as string
+    return /<h[1-6]|<ul|<ol|<table|<blockquote|<pre|<hr|<strong|<em|<code/.test(html)
+  } catch {
+    return false
+  }
+}
+
+function hasMarkdownStructure(text: string): boolean {
+  return isMarkdownText(text) || isMarkdownByParsing(text)
 }
 
 const MarkdownPaste = Extension.create({
@@ -438,28 +525,69 @@ const MarkdownPaste = Extension.create({
             if (event.clipboardData?.types.includes('text/x-woo')) {
               return false
             }
-            // 外部应用的富文本粘贴 → 由 ProseMirror 原生处理器保留完整格式
-            if (event.clipboardData?.types.includes('text/html')) {
-              return false
-            }
+
+            // 无论 clipboard 是否包含 text/html，都优先尝试解析 text/plain 中的 Markdown
             const text = event.clipboardData?.getData('text/plain')
-            // 纯文本像 Markdown → 用 marked 解析后插入
-            if (text && isMarkdownText(text)) {
+            if (text && hasMarkdownStructure(text)) {
               event.preventDefault()
+              try {
+                const html = marked.parse(text, { gfm: true, breaks: true }) as string
+                const div = document.createElement('div')
+                div.innerHTML = html
 
-              const html = marked.parse(text, { gfm: true, breaks: true }) as string
-              const div = document.createElement('div')
-              div.innerHTML = html
-
-              const { schema } = view.state
-              const slice = DOMParser.fromSchema(schema).parseSlice(div, { preserveWhitespace: true })
-              view.dispatch(view.state.tr.replaceSelection(slice))
-
-              return true
+                const { schema } = view.state
+                const slice = DOMParser.fromSchema(schema).parseSlice(div, { preserveWhitespace: true })
+                view.dispatch(view.state.tr.replaceSelection(slice))
+                return true
+              } catch (e) {
+                console.warn('[EditArea] Markdown paste 解析失败:', e)
+                // 解析失败时回退到原生处理
+              }
             }
 
+            // 含 text/html 的富文本粘贴 → 由 ProseMirror 原生处理器保留完整格式
             return false
           },
+        },
+      }),
+    ]
+  },
+})
+
+// Markdown 链接自动转换插件：敲入 [text](url) 后转为可交互链接
+const MarkdownLinkInput = Extension.create({
+  name: 'markdownLinkInput',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('markdownLinkInput'),
+        appendTransaction: (_transactions, _oldState, newState) => {
+          const { selection } = newState
+          const { $from, empty } = selection
+          // 仅在段落末尾处理
+          if (!empty || $from.parent.type.name !== 'paragraph') return null
+
+          const textBefore = $from.parent.textBetween(0, $from.parentOffset)
+          const match = textBefore.match(/\[([^\]]+)\]\(([^)]+)\)$/)
+          if (!match) return null
+
+          const linkText = match[1]
+          const linkUrl = match[2]
+          if (!linkText || !linkUrl) return null
+
+          // # 开头 → 锚点式目录链接；http(s): 或域名 → 外部链接；其余 → 文本匹配目录链接
+          const finalHref = linkUrl.startsWith('#')
+            ? linkUrl
+            : (/^https?:\/\//i.test(linkUrl) || looksLikeUrl(linkUrl)
+              ? (/^https?:\/\//i.test(linkUrl) ? linkUrl : `https://${linkUrl}`)
+              : `#heading:${linkUrl}`)
+          const linkMark = newState.schema.marks.link.create({ href: finalHref })
+          const startPos = $from.pos - match[0].length
+          const endPos = $from.pos
+
+          const tr = newState.tr
+          tr.replaceWith(startPos, endPos, newState.schema.text(linkText, [linkMark]))
+          return tr
         },
       }),
     ]
@@ -475,10 +603,12 @@ const editor = useEditor({
     TaskList,
     TaskItem.configure({ nested: true }),
     Highlight.configure({ multicolor: false }),
+    Link.configure({ openOnClick: false, autolink: false }),
     Typography,
     CustomKeymap,
     MindmapBulletList,
     MarkdownPaste,
+    MarkdownLinkInput,
   ],
   editorProps: {
     attributes: { class: 'wysiwyg-editor', spellcheck: 'false' },
@@ -489,6 +619,8 @@ const editor = useEditor({
         try { (event as any).clipboardData?.setData('text/x-woo', '1') } catch { /* ignore */ }
         return false // 让 ProseMirror 继续默认的复制处理
       },
+
+
     },
     clipboardTextSerializer: (slice, view) => {
       try {
@@ -519,16 +651,12 @@ const editor = useEditor({
     if (isSettingContent || store.isExternalStreaming || !store.selectedDocumentId) return
     if (store.selectedFolderId === TRASH_FOLDER_ID) return
     store.updateDocumentContent(store.selectedDocumentId, editorInstance.getHTML())
-    if (baselineDocId !== store.selectedDocumentId) { resetBaselineFromEditor(); return }
+    if (baselineDocId !== store.selectedDocumentId) { resetBaseline(); return }
     dirtyAfterBaseline = true
-    const charDelta = Math.abs(editorInstance.getText().length - baselineTextLen)
-    const lineDelta = Math.abs((editorInstance.getJSON().content?.length || 0) - baselineLines)
-    if (charDelta >= CHAR_DELTA || lineDelta >= LINE_DELTA) { void triggerCommit('auto'); return }
-    clearIdleTimer(); idleTimer = window.setTimeout(() => void triggerCommit('auto'), IDLE_MS)
+    startTimers()
     updateActiveHeading()
     syncHeadings()
   },
-  onBlur: () => { void triggerCommit('auto') }
 })
 
 const currentBlock = computed(() => {
@@ -559,9 +687,12 @@ const lineCount = computed(() => editor.value?.getJSON().content?.length || 0)
 watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   if (!editor.value) return
   if (oldDoc && oldDoc.id !== newDoc?.id && dirtyAfterBaseline && baselineDocId === oldDoc.id) {
-    const oldId = baselineDocId
-    clearIdleTimer(); dirtyAfterBaseline = false
-    try { await store.commitDocumentVersion(oldId, 'auto') } catch {}
+    await forceCommit('auto')
+  }
+  // 内容相同时跳过 setContent，防止同步刷新导致光标跳转
+  if (newDoc && oldDoc?.id === newDoc.id && editor.value.getHTML() === newDoc.content) {
+    isSettingContent = false
+    return
   }
   isSettingContent = true
   if (newDoc && newDoc.isLocked) {
@@ -580,11 +711,43 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
       }
     })
   }
-  resetBaselineFromEditor()
+  resetBaseline()
   loadSheet()
   // 文档切换后重新绑定 scroll 监听并计算当前高亮
   void nextTick(() => {
+    // 在编辑器 DOM 上注册捕获阶段 mousedown 监听（直接处理链接点击，不依赖 ProseMirror API）
+    const editorEl = editor.value?.view.dom
+    if (editorEl) {
+      // 防重复锁：mousedown + click 事件都可能触发导航，只处理一次
+      let linkClickInProgress = false
+      function handleEditorLink(e: MouseEvent) {
+        if (linkClickInProgress) { e.preventDefault(); return }
+        const el = (e.target as Node).nodeType === 3 ? (e.target as Node).parentElement : e.target as Element
+        const linkEl = el?.closest?.('a')
+        if (!linkEl) return
+        const href = linkEl.getAttribute('href') || ''
+        if (!href) return
+        e.preventDefault()
+        e.stopPropagation()
+        linkClickInProgress = true
+        setTimeout(() => { linkClickInProgress = false }, 200)
+        if (href.startsWith('#heading:')) {
+          scrollToHeadingByText(href.slice('#heading:'.length))
+        } else if (href.startsWith('#') && href !== '#') {
+          scrollToHeadingByAnchor(href.slice(1))
+        } else if (/^https?:\/\//i.test(href) || looksLikeUrl(href)) {
+          const finalUrl = /^https?:\/\//i.test(href) ? href : `https://${href}`
+          window.electronAPI?.openExternalLink?.(finalUrl)
+        } else if (href) {
+          scrollToHeadingByText(href)
+        }
+      }
+      // 捕获阶段同时拦截 mousedown 和 click，确保浏览器不会触发默认导航
+      editorEl.addEventListener('mousedown', handleEditorLink, true)
+      editorEl.addEventListener('click', handleEditorLink, true)
+    }
     setupScrollListener()
+    updateScrollVisibility()
     updateActiveHeading()
     syncHeadings()
   })
@@ -673,7 +836,26 @@ function updateActiveHeading() {
 
 function onEditorScroll() {
   if (scrollRAF !== null) return
-  scrollRAF = requestAnimationFrame(updateActiveHeading)
+  scrollRAF = requestAnimationFrame(() => {
+    updateScrollVisibility()
+    updateActiveHeading()
+  })
+}
+
+function updateScrollVisibility() {
+  if (!scrollElRef) return
+  const { scrollTop, scrollHeight, clientHeight } = scrollElRef
+  const hasOverflow = scrollHeight > clientHeight + 2
+  showScrollToTop.value = hasOverflow && scrollTop > 120
+  showScrollToBottom.value = hasOverflow && scrollHeight - scrollTop - clientHeight > 120
+}
+
+function scrollToTop() {
+  scrollElRef?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+function scrollToBottom() {
+  if (!scrollElRef) return
+  scrollElRef.scrollTo({ top: scrollElRef.scrollHeight, behavior: 'smooth' })
 }
 
 /** 从编辑器中提取标题列表 */
@@ -700,6 +882,30 @@ function getHeadings(): { level: number; text: string; pos: number }[] {
 }
 
 /** 按 ProseMirror doc position 滚动到指定标题（供 editorNavigation 模块调用） */
+/** 根据标题文本滚动编辑器（用于目录链接导航） */
+function scrollToHeadingByText(headingText: string) {
+  const headings = produceHeadings()
+  const t = headingText.trim().toLowerCase()
+  const target = headings.find(h => h.text.trim().toLowerCase() === t)
+  if (target) scrollToPos(target.pos)
+}
+
+/** 通过 slug 锚点名查找并滚动到对应标题 */
+function scrollToHeadingByAnchor(anchor: string) {
+  const headings = produceHeadings()
+  const normalized = anchor.toLowerCase().replace(/-+/g, '-')
+  for (const h of headings) {
+    const slug = h.text.toLowerCase()
+      .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+    if (slug === normalized) {
+      scrollToPos(h.pos)
+      return
+    }
+  }
+}
+
 function scrollToPos(pos: number) {
   const ed = editor.value
   if (!ed) return
@@ -718,20 +924,63 @@ function scrollToPos(pos: number) {
 
 defineExpose({ editor, scrollToHeading, getHeadings })
 
+/** 判断文本是否像 URL（含域名字段 .com/.org 等，或 IP 地址） */
+function looksLikeUrl(text: string): boolean {
+  return /^https?:\/\//i.test(text) ||
+         /^[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z][-a-zA-Z0-9]*)+/.test(text) ||
+         /^www\.[a-zA-Z0-9]/.test(text) ||
+         /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(text)
+}
+
+/** 编辑器链接点击处理（通过 handleDOMEvents，在 ProseMirror 处理前拦截） */
 onMounted(() => {
+  window.addEventListener('woo-editor-command', menuActionHandler)
   registerScrollHandler(scrollToPos)
   window.addEventListener('keydown', handleGlobalKeydown)
   loadSheet()
   void nextTick(() => {
+    // 在编辑器 DOM 上注册捕获阶段 mousedown 监听（直接处理链接点击，不依赖 ProseMirror API）
+    const editorEl = editor.value?.view.dom
+    if (editorEl) {
+      // 防重复锁：mousedown + click 事件都可能触发导航，只处理一次
+      let linkClickInProgress = false
+      function handleEditorLink(e: MouseEvent) {
+        if (linkClickInProgress) { e.preventDefault(); return }
+        const el = (e.target as Node).nodeType === 3 ? (e.target as Node).parentElement : e.target as Element
+        const linkEl = el?.closest?.('a')
+        if (!linkEl) return
+        const href = linkEl.getAttribute('href') || ''
+        if (!href) return
+        e.preventDefault()
+        e.stopPropagation()
+        linkClickInProgress = true
+        setTimeout(() => { linkClickInProgress = false }, 200)
+        if (href.startsWith('#heading:')) {
+          scrollToHeadingByText(href.slice('#heading:'.length))
+        } else if (href.startsWith('#') && href !== '#') {
+          scrollToHeadingByAnchor(href.slice(1))
+        } else if (/^https?:\/\//i.test(href) || looksLikeUrl(href)) {
+          const finalUrl = /^https?:\/\//i.test(href) ? href : `https://${href}`
+          window.electronAPI?.openExternalLink?.(finalUrl)
+        } else if (href) {
+          scrollToHeadingByText(href)
+        }
+      }
+      // 捕获阶段同时拦截 mousedown 和 click，确保浏览器不会触发默认导航
+      editorEl.addEventListener('mousedown', handleEditorLink, true)
+      editorEl.addEventListener('click', handleEditorLink, true)
+    }
     setupScrollListener()
+    updateScrollVisibility()
     updateActiveHeading()
     syncHeadings()
   })
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('woo-editor-command', menuActionHandler)
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
-  clearIdleTimer()
+  clearTimers()
   window.removeEventListener('keydown', handleGlobalKeydown)
   if (scrollRAF !== null) cancelAnimationFrame(scrollRAF)
   if (scrollElRef) {
@@ -740,6 +989,44 @@ onBeforeUnmount(() => {
   }
   editor.value?.destroy()
 })
+
+/** 切换/设置链接：选中文本时弹窗输入 URL */
+function toggleLink() {
+  const ed = editor.value
+  if (!ed) return
+  const { empty } = ed.state.selection
+  // 已有链接则取消
+  if (ed.isActive('link')) {
+    ed.chain().focus().extendMarkRange('link').unsetLink().run()
+    return
+  }
+  const url = prompt('输入链接：\n• http(s):// 开头或域名(google.com) = 外部链接（浏览器打开）\n• 其他文字 = 目录链接（滚动到对应标题）')
+  if (!url) return
+  // 外部链接直接使用 URL；域名自动补 https://；其余作为目录链接
+  let href: string
+  if (url.startsWith('#')) {
+    // #xxx 格式 → 锚点式目录链接，原样存储
+    href = url
+  } else if (/^https?:\/\//i.test(url)) {
+    href = url
+  } else if (looksLikeUrl(url)) {
+    href = `https://${url}`
+  } else {
+    href = `#heading:${url}`
+  }
+  if (empty) {
+    ed.chain().focus().setLink({ href }).insertContent('链接').run()
+  } else {
+    ed.chain().focus().extendMarkRange('link').setLink({ href }).run()
+  }
+}
+
+/** 监听来自 TopMenu 的编辑器命令（如 'link' 动作） */
+const menuActionHandler = (e: Event) => {
+  const detail = (e as CustomEvent).detail
+  if (detail?.command === 'link') toggleLink()
+}
+
 </script>
 
 <style scoped>
@@ -760,7 +1047,13 @@ onBeforeUnmount(() => {
 .sheet-grid td.align-right input, .sheet-grid td.align-right .computed { text-align: right; }
 .sheet-grid td.top-header { background: color-mix(in srgb, var(--bg-toolbar) 65%, transparent); }
 .sheet-grid td.left-header { background: color-mix(in srgb, var(--bg-toolbar) 40%, transparent); }
-.editor-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.editor-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
+/* 滚动定位按钮组 */
+.scroll-nav { position: absolute; right: 8px; bottom: 36px; display: flex; flex-direction: column; gap: 4px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10; }
+.scroll-nav.visible { opacity: 1; pointer-events: auto; }
+.scroll-nav-btn { width: 28px; height: 28px; border-radius: 6px; border: none; background: color-mix(in srgb, var(--bg-toolbar, #2a2a2a) 92%, transparent); color: var(--text-secondary, #999); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s ease, color 0.15s ease; }
+.scroll-nav-btn:hover { background: color-mix(in srgb, var(--accent, #409eff) 20%, var(--bg-toolbar, #2a2a2a)); color: var(--accent, #409eff); }
+.scroll-nav-btn:active { transform: scale(0.95); }
 .editor-scale-wrap { flex: 1; min-height: 0; }
 .editor-content { height: 100%; }
 .empty-editor { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
@@ -826,7 +1119,8 @@ onBeforeUnmount(() => {
 .wysiwyg-editor s { color: var(--text-muted); }
 .wysiwyg-editor u { text-decoration-color: var(--text-muted); }
 .wysiwyg-editor mark { background-color: var(--editor-highlight-bg); color: var(--editor-highlight-text); padding: 1px 4px; border-radius: 2px; }
-.wysiwyg-editor a { color: var(--editor-link); text-decoration: none; }
+.wysiwyg-editor a { color: var(--editor-link); text-decoration: none; cursor: pointer; }
+.wysiwyg-editor a[href^="#heading:"] { border-bottom: 1px dashed var(--accent); padding-bottom: 1px; }
 .wysiwyg-editor a:hover { text-decoration: underline; }
 .wysiwyg-editor ::selection { background-color: var(--editor-selection); }
 

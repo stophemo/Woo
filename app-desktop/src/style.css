@@ -73,76 +73,75 @@
   --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
-/* 夜间主题 - 温暖柔和的深色调 */
+/* 夜间主题 - 冷灰基调，清晰层次 */
 :root[data-theme="dark"] {
   /* 背景色 */
-  --bg-primary: #1e1d1b;
-  --bg-secondary: #262522;
-  --bg-tertiary: #222120;
-  --bg-surface: #2a2926;
-  --bg-elevated: #312f2c;
-  --bg-hover: #363430;
-  --bg-active: #403e3a;
+  --bg-primary: #1b1c1e;
+  --bg-secondary: #202224;
+  --bg-tertiary: #242628;
+  --bg-surface: #282a2d;
+  --bg-elevated: #2e3033;
+  --bg-hover: #333538;
+  --bg-active: #393b3e;
   --bg-selected: #2a3a4a;
   --bg-selected-hover: #344555;
-  --bg-toolbar: #262522;
+  --bg-toolbar: #202224;
 
   /* 边框色 */
-  --border-primary: #3d3a36;
-  --border-secondary: #33312e;
+  --border-primary: #3b3d40;
+  --border-secondary: #313336;
 
   /* 文字色 */
-  --text-primary: #d5d0c8;
-  --text-secondary: #9a9590;
-  --text-muted: #6a6560;
-  --text-disabled: #4a4845;
-  --text-on-selected: #7ab0e0;
+  --text-primary: #e2dfd9;
+  --text-secondary: #a5a19b;
+  --text-muted: #726e68;
+  --text-disabled: #4d4a46;
+  --text-on-selected: #89c2f0;
 
   /* 强调色 */
   --accent: #7ab0e0;
   --accent-rgb: 122, 176, 224;
   --accent-hover: #8fc0ee;
-  --accent-light: rgba(122, 176, 224, 0.15);
+  --accent-light: rgba(122, 176, 224, 0.12);
 
   /* 编辑器 */
-  --editor-bg: #2a2926;
-  --editor-text: #d5d0c8;
-  --editor-text-secondary: #b8b3ab;
-  --editor-text-heading: #e8e4dc;
-  --editor-text-heading2: #ddd8d0;
-  --editor-border: #3d3a36;
-  --editor-code-bg: #33312e;
+  --editor-bg: #282a2d;
+  --editor-text: #e2dfd9;
+  --editor-text-secondary: #b8b4ae;
+  --editor-text-heading: #efeae4;
+  --editor-text-heading2: #e6e2db;
+  --editor-border: #3b3d40;
+  --editor-code-bg: #2d2f32;
   --editor-code-text: #e0908e;
-  --editor-pre-bg: #2e2c29;
-  --editor-pre-border: #3d3a36;
-  --editor-blockquote-border: #4a4745;
-  --editor-blockquote-text: #9a9590;
+  --editor-pre-bg: #232527;
+  --editor-pre-border: #3b3d40;
+  --editor-blockquote-border: #46484b;
+  --editor-blockquote-text: #a5a19b;
   --editor-highlight-bg: #4a4230;
   --editor-highlight-text: #e0c870;
   --editor-link: #7ab0e0;
   --editor-selection: #2a4060;
-  --editor-placeholder: #5a5550;
-  --editor-mark-bg: #3a3835;
-  --editor-caret: #d5d0c8;
+  --editor-placeholder: #5d5a55;
+  --editor-mark-bg: #383a3d;
+  --editor-caret: #e2dfd9;
 
   /* 关闭按钮悬停 */
   --close-hover-bg: #c42b1c;
   --close-hover-color: #ffffff;
 
   /* 滚动条 */
-  --scrollbar-track: #1e1d1b;
-  --scrollbar-thumb: #3d3a36;
-  --scrollbar-thumb-hover: #4a4745;
+  --scrollbar-track: #1b1c1e;
+  --scrollbar-thumb: #3b3d40;
+  --scrollbar-thumb-hover: #47494c;
 
   /* 阴影 */
-  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.35);
-  --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-card-hover: 0 2px 8px rgba(122, 176, 224, 0.2);
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-card-hover: 0 2px 8px rgba(122, 176, 224, 0.18);
 
   /* 过渡 */
   --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
-
 /* ============================
    全局样式重置
    ============================ */

@@ -1,5 +1,5 @@
 <template>
-  <header class="top-menu" :class="{ collapsed: !isOpen }" :style="macMenuStyle">
+  <header ref="menuBarEl" class="top-menu" :class="{ collapsed: !isOpen }" :style="macMenuStyle">
     <div class="menu-left">
       <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
         <template #trigger>
@@ -8,7 +8,7 @@
         <DropdownMenu :items="menu.items" @action="handleMenuAction" />
       </Dropdown>
     </div>
-    <div class="menu-right">
+    <div v-show="!compact" class="menu-right">
       <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
         <IconThemeToggle :mode="themeStore.theme" />
       </button>
@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, type ComponentPublicInstance, computed, onMounted } from 'vue'
+import { ref, type ComponentPublicInstance, computed, onMounted, onBeforeUnmount } from 'vue'
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
 import IconRightSidebar from '../../components/icons/IconRightSidebar.vue'
@@ -208,8 +208,26 @@ async function handleSync() {
   }
 }
 
+const menuBarEl = ref<HTMLElement | null>(null)
+const compact = ref(false)
+let resizeObserver: ResizeObserver | null = null
+
+// 右侧按钮区域总宽度 ≈ 8 个按钮 × 34px + 间隔 + macOS左边距
+const COMPACT_THRESHOLD = 900
+
 onMounted(() => {
   syncStore.listen()
+
+  if (menuBarEl.value) {
+    resizeObserver = new ResizeObserver(([entry]) => {
+      compact.value = entry.contentRect.width < COMPACT_THRESHOLD
+    })
+    resizeObserver.observe(menuBarEl.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
 })
 
 // 窗口控制
@@ -256,6 +274,11 @@ const handleMenuAction = (action: string) => {
   }
   if (action === 'open-chat') {
     emit('toggle-right-sidebar')
+    return
+  }
+  // 编辑器命令（如 'link'）通过自定义事件传递给 EditArea
+  if (['link', 'image', 'table', 'hr'].includes(action)) {
+    window.dispatchEvent(new CustomEvent('woo-editor-command', { detail: { command: action } }))
     return
   }
 }

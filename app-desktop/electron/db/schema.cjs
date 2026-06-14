@@ -11,8 +11,8 @@ const SCHEMA_SQLS = [
     parent_id TEXT,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
     deleted INTEGER NOT NULL DEFAULT 0,
     is_locked INTEGER NOT NULL DEFAULT 0
   )`,
@@ -26,8 +26,8 @@ const SCHEMA_SQLS = [
     content TEXT,
     branch_name TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
     deleted INTEGER NOT NULL DEFAULT 0,
     is_locked INTEGER NOT NULL DEFAULT 0
   )`,
@@ -43,8 +43,8 @@ const SCHEMA_SQLS = [
     content_hash TEXT,
     change_type TEXT NOT NULL DEFAULT 'auto',
     operator_id TEXT,
-    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    update_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
     deleted INTEGER NOT NULL DEFAULT 0,
     UNIQUE(document_id, version_no)
   )`,
@@ -64,7 +64,7 @@ const SCHEMA_SQLS = [
     document_title TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
-    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    create_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id)`,
 
