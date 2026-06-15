@@ -170,58 +170,126 @@ onMounted(() => {
   if (hasData.value) void render()
   // 渲染完成后强制应用主题色
   setTimeout(applyThemeToSvg, 50)
+  // ESC 关闭弹窗
+  document.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
   mm?.destroy()
   mm = null
 })
 
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && !closing.value) {
+    startClose()
+  }
+}
+
 async function exportImage() {
   if (!svgRef.value || !mm) return
+  try {
+    // ── 第一步：触发 autoFit，让 markmap 重新计算完整布局 ──
+    mm.fit()
 
-  const svgData = new XMLSerializer().serializeToString(svgRef.value)
-  const wooInvoke = (window as any).woo.invoke as (ch: string, ...a: any[]) => Promise<any>
+    // ── 第二步：序列化 SVG（此时 viewBox 和 matrix 都是 autoFit 后的正确值）──
+    let svgData = new XMLSerializer().serializeToString(svgRef.value)
+    // 补充明确的命名空间声明，保证脱机可用
+    if (!svgData.includes('xmlns="http://www.w3.org/2000/svg"')) {
+      svgData = svgData.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
+    }
+    // 替换 foreignObject 为 text
+    svgData = svgData.replace(
+      /<foreignObject([^>]*)>[\s\S]*?<div[^>]*>(.*?)<\/div>[\s\S]*?<\/foreignObject>/gi,
+      (_m: string, attrs: string, text: string) => {
+        const xMatch = attrs.match(/x="([^"]*)"/)
+        const yMatch = attrs.match(/y="([^"]*)"/)
+        const x = xMatch ? xMatch[1] : '0'
+        const y = yMatch ? String(Number(yMatch[1]) + 14) : '14'
+        const content = text.replace(/<[^>]*>/g, '').trim() || '(空)'
+        return `<text x="${x}" y="${y}" fill="#37342f" font-family="-apple-system, sans-serif" font-size="14px" dominant-baseline="middle">${content}</text>`
+      }
+    )
+    // 移除 markmap 注入的背景色，让导出为透明背景
+    svgData = svgData.replace(/background:\s*[^;!]+[;!]\s*important/g, 'background: transparent !important')
 
-  const result = await wooInvoke('dialog:save-image', { defaultName: 'mindmap.png' })
-  if (result.cancelled) return
+    // ── 第三步：从 autoFit viewBox 提取内容尺寸 ──
+    const vbMatch = svgData.match(/viewBox="([^"]*)"/)
+    let contentW = 1200, contentH = 800
+    if (vbMatch) {
+      const parts = vbMatch[1].split(/\s+/).map(Number)
+      if (parts.length >= 4) {
+        // viewBox = "x y w h"，使用宽高作为内容尺寸
+        contentW = Math.ceil(parts[2])
+        contentH = Math.ceil(parts[3])
+      }
+    }
+    console.log('[Mindmap] autoFit viewBox 尺寸:', contentW, 'x', contentH)
 
-  const { filePath, format } = result
+    const wooInvoke = (window as any).woo.invoke as (ch: string, ...a: any[]) => Promise<any>
 
-  if (format === 'svg') {
-    await wooInvoke('file:write', { filePath, data: svgData, isBase64: false })
-    return
-  }
+    const result = await wooInvoke('dialog:save-image', { defaultName: 'mindmap.png' })
+    if (result.cancelled) return
 
-  // 栅格格式：png / jpg / webp — 通过 canvas 渲染导出
-  const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
-  const mimeType = mimeMap[format] || 'image/png'
-  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-  const url = URL.createObjectURL(svgBlob)
-  const img = new Image()
-  img.onload = async () => {
-    const rect = svgRef.value!.getBoundingClientRect()
-    const scale = 2
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(rect.width * scale, 1200)
-    canvas.height = Math.max(rect.height * scale, 800)
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(scale, scale)
-    // JPG 不支持透明，用白色背景；其余格式沿用主题背景色
-    ctx.fillStyle = format === 'jpg' ? '#ffffff' : isDarkMode() ? '#2a2926' : '#f0ede9'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0)
-    const quality = format === 'jpg' ? 0.92 : format === 'webp' ? 0.9 : undefined
-    canvas.toBlob(async (blob) => {
-      if (!blob) return
-      const buf = await blob.arrayBuffer()
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
-      await wooInvoke('file:write', { filePath, data: base64, isBase64: true })
+    const { filePath, format } = result
+    console.log('[Mindmap] 导出路径:', filePath, '格式:', format)
+
+    if (format === 'svg') {
+      const writeResult = await wooInvoke('file:write', { filePath, data: svgData, isBase64: false })
+      console.log('[Mindmap] SVG 写入结果:', writeResult)
+      return
+    }
+
+    // 栅格格式：png / jpg / webp — 通过 canvas 渲染导出
+    const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
+    const mimeType = mimeMap[format] || 'image/png'
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(svgBlob)
+    const img = new Image()
+
+    img.onload = async () => {
+      console.log('[Mindmap] SVG 图片加载成功, natural:', img.naturalWidth, 'x', img.naturalHeight)
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = contentW * scale
+      canvas.height = contentH * scale
+      const ctx = canvas.getContext('2d')!
+      // JPG 不支持透明，用白色背景；PNG/WebP 保持透明
+      if (format === 'jpg') {
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const quality = format === 'jpg' ? 0.92 : format === 'webp' ? 0.9 : undefined
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          console.error('[Mindmap] canvas.toBlob 返回 null')
+          URL.revokeObjectURL(url)
+          return
+        }
+        console.log('[Mindmap] Blob 生成成功, size:', blob.size)
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const base64 = (reader.result as string).split(',')[1]
+          const writeResult = await wooInvoke('file:write', { filePath, data: base64, isBase64: true })
+          console.log('[Mindmap] 图片写入结果:', writeResult)
+          URL.revokeObjectURL(url)
+        }
+        reader.onerror = () => {
+          console.error('[Mindmap] FileReader 读取失败:', reader.error)
+          URL.revokeObjectURL(url)
+        }
+        reader.readAsDataURL(blob)
+      }, mimeType, quality)
+    }
+    img.onerror = (e) => {
+      console.error('[Mindmap] SVG 图片加载失败:', e instanceof Error ? e.message : String(e))
       URL.revokeObjectURL(url)
-    }, mimeType, quality)
+    }
+    img.src = url
+  } catch (e) {
+    console.error('[Mindmap] exportImage 异常:', e instanceof Error ? e.message : String(e))
   }
-  img.onerror = () => { URL.revokeObjectURL(url) }
-  img.src = url
 }
 </script>
 
