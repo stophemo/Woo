@@ -843,8 +843,9 @@ function onEditorScroll() {
 }
 
 function updateScrollVisibility() {
-  if (!scrollElRef) return
-  const { scrollTop, scrollHeight, clientHeight } = scrollElRef
+  const container = scrollElRef || (editor.value?.view.dom?.closest('.editor-body') as HTMLElement | null)
+  if (!container) return
+  const { scrollTop, scrollHeight, clientHeight } = container
   const hasOverflow = scrollHeight > clientHeight + 2
   showScrollToTop.value = hasOverflow && scrollTop > 120
   showScrollToBottom.value = hasOverflow && scrollHeight - scrollTop - clientHeight > 120
