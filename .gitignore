@@ -59,6 +59,7 @@ app-mobile/export/
 .codegraph/
 .deepseek/
 .opencode/
+.claude/
 
 # ============ Common ============
 # Logs
