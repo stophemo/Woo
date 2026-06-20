@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/stophemo/Woo/releases/latest">
-    <img src="https://img.shields.io/badge/版本-0.4.9-4f46e5?style=flat" alt="最新版本">
+    <img src="https://img.shields.io/badge/版本-0.5.0-4f46e5?style=flat" alt="最新版本">
   </a>
   <a href="https://github.com/stophemo/Woo/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="MIT 许可证">
@@ -24,7 +24,7 @@
 
 Woo 是一个本地优先的 Markdown 笔记应用，基于 Electron、Vue 3 和 SQLite 构建。数据默认存储在你的电脑上，无需注册即可使用全部核心功能。登录后可选择开启 Supabase 云端同步，实现多设备间的数据互通。
 
-Woo 目前处于早期开发阶段（v0.4.9），核心功能已可用，部分特性仍在完善中。
+Woo 目前处于早期开发阶段（v0.5.0），核心功能已可用，部分特性仍在完善中。
 
 > 「无我」出自佛教哲学，意为超越自我执念。以此命名，是希望提供一个简洁、干净的写作环境，让写作回归文字本身。
 
