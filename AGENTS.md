@@ -4,83 +4,96 @@
 
 ```
 Woo/
-├── app-desktop/        # Electron + Vue 3 + TypeScript desktop app
-│   ├── electron/       # Main process (CJS): IPC handlers, services, DB
-│   │   ├── ipc/        # IPC handler registration
-│   │   ├── services/   # Business logic (auth, sync, documents, versions)
-│   │   └── db/         # SQLite connection & schema migration
-│   ├── src/            # Renderer process (ESM, Vue 3)
-│   │   ├── stores/     # Pinia stores
-│   │   ├── services/   # IPC client wrappers & AI API clients
-│   │   ├── components/ # Layout, UI, and icon components
-│   │   ├── config/     # Menu definitions, shortcut utils
-│   │   └── types/      # TypeScript interfaces
-│   └── scripts/        # Build helper scripts
-├── app-mobile/         # Flutter mobile app (placeholder)
-└── docs/               # Architecture docs & release guides
+├── app-desktop/            # Electron + Vue 3 + TypeScript (active development)
+│   ├── electron/           # Main process (CJS): IPC handlers, services, DB
+│   │   ├── ipc/register.cjs      # All IPC handlers registered with wrap()
+│   │   ├── db/index.cjs          # SQLite connection (per-user db switching)
+│   │   ├── db/schema.cjs         # Schema + ALTER TABLE migrations
+│   │   ├── services/             # folderService, documentService, versionService,
+│   │   │                         # authService, syncEngine, lockService, kbService,
+│   │   │                         # embeddingService, utils
+│   │   └── config/supabase.cjs   # Supabase client singleton
+│   ├── src/                     # Renderer (ESM, Vue 3, Composition API)
+│   │   ├── stores/              # Pinia stores (workspace, auth, sync, aiChat, theme)
+│   │   ├── services/api.ts      # IPC client: unwrap() on window.woo.invoke()
+│   │   ├── services/gemini.ts, deepseek.ts  # AI API clients
+│   │   └── components/layout/   # EditArea, FolderTree, LeftSidebar, RightSidebar, ...
+│   └── scripts/                # Build helper scripts
+├── app-mobile/              # Flutter mobile app (placeholder, sqflite + Riverpod)
+└── docs/                    # Release guides, auth success page
 ```
 
-- `app-desktop/` is the primary codebase — all active development happens here.
-- Source code lives under `electron/` (main process) and `src/` (renderer). Tests, if added, go in `__tests__/` alongside the module under test.
+- `app-desktop/` is the primary codebase. All commands run from `app-desktop/`.
+- Source code: `electron/` (main process, CJS `.cjs`), `src/` (renderer, ESM `.ts`/`.vue`).
 
-## Build, Test, and Development Commands
-
-All commands run from `app-desktop/`:
+## Development Commands
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Start Vite dev server (renderer hot-reload at `localhost:5173`) |
-| `npm run electron:dev` | Launch Electron in dev mode (requires `npm run dev` running) |
-| `npm run build` | Type-check + build renderer only |
-| `npm run electron:build` | Full release build (type-check + renderer + electron-builder) |
-| `npm run rebuild:sqlite` | Rebuild native modules after Electron version upgrade |
-| `npm run build:icons` | Generate app icons from source |
+| `npm run dev` | Start Vite dev server (hot-reload at `localhost:5173`) |
+| `npm run electron:dev` | Launch Electron in dev mode (needs `npm run dev` running) |
+| `npm run build` | `vue-tsc` + `vite build` (renderer only) |
+| `npm run electron:build` | `vue-tsc` + `vite build` + `electron-builder` (full release) |
+| `npm run rebuild:sqlite` | `electron-rebuild` for `better-sqlite3` + `sqlite-vec` |
+| `npm run preview` | Preview built renderer |
+| `npm run build:icons` | Generate app icons |
 
-**Dev workflow**: Run two terminals — `npm run dev` + `npm run electron:dev`.
+**Dev workflow**: two terminals — `npm run dev` + `npm run electron:dev`.
 
-## Coding Style & Naming Conventions
+**Postinstall** runs `electron-builder install-app-deps` (rebuilds native modules).
 
-- **Language**: TypeScript with strict mode enabled (`strict: true`, `noUnusedLocals`, `noUnusedParameters`).
-- **Modules**: Main process uses CJS (`.cjs`); renderer uses ESM (`.ts`, `.vue`).
-- **Naming**: Files use camelCase (`folderService.cjs`), Vue components use PascalCase (`EditArea.vue`). Pinia stores use camelCase (`useWorkspaceStore`).
-- **Formatting**: No ESLint or Prettier — rely on TypeScript compiler checks. EditorConfig sets `charset = utf-8` only.
-- **Mobile**: Flutter with `flutter_lints`; uses Riverpod for state management.
+**Important env vars** (loaded from root `.env` via Vite `envDir: '..'`):
+- `ELECTRON_DEVTOOLS=1` — enable DevTools in dev mode
+- `LOG_LEVEL=verbose` — verbose IPC handler logging
+- `SYNC_CLEANUP_SECONDS` — sync cleanup interval (default: `60*60*24*7` = 7 days)
 
-## Testing Guidelines
-
-- The project currently has **no test framework or test runner** configured.
-- When adding tests, place them in `__tests__/` directories co-located with the module under test.
-- Flutter tests go in `app-mobile/test/` using the `flutter_test` package.
-
-## Commit & Pull Request Guidelines
-
-**Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org/) with Chinese descriptions:
+## Architecture
 
 ```
-<type>(<scope>): <Chinese description>
-
-feat(ci): release notes 支持自定义 + 简化自动生成
-fix(app-desktop): 修复复制粘贴格式化丢失 & 代码块保护 & 组件卸载泄漏
-chore: 将 .codegraph/ 加入 gitignore
-docs: 重写 README 功能特性描述
-refactor: remove dev auto-login, add 7-day session persistence
-release: v0.4.8
+Renderer (Vue) → window.woo.invoke(channel, args) → ipcMain.handle → wrap() → Service → SQLite/Supabase
+                 │                                     │
+                 │ Returns { ok, data }                 │ wrap() catches errors →
+                 │ or { ok: false, message }            │ { ok: false, message }
+                 ▼                                     ▼
+          api.ts unwrap()                         register.cjs wrap()
+          throws on !ok
 ```
 
-Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `perf`, `release`, `style`. Scope is optional (e.g. `app-desktop`, `ci`).
+- Two separate `contextBridge` slots: `window.woo.invoke()` (business IPC) and `window.electronAPI` (native ops: window controls, menu actions, update check).
+- Preload loaded directly from `electron/preload.cjs` source (not compiled output) to avoid CJS/ESM issues.
+- `better-sqlite3` + `sqlite-vec` need `asarUnpack` in electron-builder config and `electron-rebuild` after Electron version change.
+- DB: per-user databases (`woo.db` offline, `woo-{username}.db` after login). Session persisted via `supabase-auth.json`. Portable mode stores data in exe-relative `userData/`.
+- Content stored as HTML (Tiptap/ProseMirror). Title auto-extracted from first line.
+- Drafts: documents without a folder stored in localStorage (`draft_` prefix).
+- Sync engine runs every 60s in main process, uses last-write-wins + tombstone delete propagation.
 
-**Pull requests** should include:
-- A clear description of the change and motivation.
-- Reference to any related issue.
-- Screenshots or screen recordings for UI changes.
-- Release notes entry for user-facing changes.
+## Coding Style
 
-## Architecture Overview
+- TypeScript strict mode: `strict: true`, `noUnusedLocals`, `noUnusedParameters`.
+- Files: camelCase (`folderService.cjs`). Vue components: PascalCase (`EditArea.vue`). Stores: camelCase (`useWorkspaceStore`).
+- No ESLint or Prettier — rely on TypeScript compiler checks only.
+- Vue 3 `<script setup lang="ts">` everywhere. Pinia stores use Composition API style.
+- All IPC services return raw data (errors thrown). `wrap()` converts to `{ ok, data/message }`.
 
-Woo is a **local-first** note-taking app: SQLite (via `better-sqlite3`) is the primary data store; Supabase cloud sync is optional. IPC follows a request–response pattern:
+## Tests
 
-```
-Renderer (Vue) -> window.woo.invoke(channel, args) -> ipcMain.handle -> Service -> SQLite/Supabase
-```
+No test framework or runner configured. If adding tests, place in `__tests__/` alongside the module.
 
-All IPC handlers are wrapped with `wrap()` (catches errors -> `{ ok: false, message }`), and the renderer side uses `unwrap()` to re-throw on failure. See `CLAUDE.md` for detailed architecture documentation.
+## IPC Channels (electron/ipc/register.cjs)
+
+- **folder:** `tree`, `create`, `rename`, `remove`, `reorder`
+- **document:** `listByFolder`, `listAll`, `listTrash`, `listOrphans`, `search`, `get`, `create`, `rename`, `updateContent`, `remove`, `restore`, `hardDelete`, `emptyTrash`, `reorder`
+- **version:** `list`, `get`, `saveManual`, `commit`, `restore`
+- **auth:** `signUp`, `signIn`, `signOut`, `getUser`, `getSession`
+- **lock:** `status`, `setPassword`, `verifyPassword`, `lockFolder`, `unlockFolder`, `isFolderLocked`, `isFolderEffectivelyLocked`, `lockDocument`, `unlockDocument`, `isDocumentLocked`, `cloudPushSettings`, `cloudPullSettings`
+- **system:** `setLogLevel`, `getLogLevel`
+- **kb:** `rebuild`, `search`, `status`
+- **sync:** `status`, `trigger`
+
+## Commit & Release
+
+- [Conventional Commits](https://www.conventionalcommits.org/) with Chinese descriptions: `feat(scope): 中文描述`
+- Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `perf`, `release`, `style`. Scope optional (`app-desktop`, `ci`).
+- Tags matching `v*`, `Woo-desktop-v*`, `app-desktop-v*` trigger GitHub Actions (`release-app-desktop.yml`).
+- macOS builds have no code signing (`CSC_IDENTITY_AUTO_DISCOVERY: "false"`).
+- Prefer pushing a new tag over force-pushing an existing one.
