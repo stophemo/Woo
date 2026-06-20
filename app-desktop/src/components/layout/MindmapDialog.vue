@@ -211,13 +211,43 @@ async function exportImage() {
     // ── 4. 移除背景色 ──
     svgData = svgData.replace(/background:\s*[^;!]+[;!]\s*important/g, 'background: transparent !important')
 
-    // ── 5. 读取 autoFit 计算出的 viewBox ──
-    const vbMatch = svgData.match(/viewBox="([^"]*)"/)
-    const [vbX, vbY, vbW, vbH] = vbMatch ? vbMatch[1].split(/\s+/).map(Number) : [0, 0, 1200, 800]
-    const cw = Math.ceil(vbW)
-    const ch = Math.ceil(vbH)
+    // ── 5. 计算内容的实际边界框（替代 viewport 尺寸，裁剪四周留白）──
+    const svgEl = svgRef.value
+    const zoomGroup = svgEl.querySelector('g')
+    let cw = 1200, ch = 800, vbX = '0', vbY = '0', vbW = '1200', vbH = '800'
 
-    // ── 6. 保留 matrix，只清理旧 viewBox/width/height，设新尺寸 ──
+    if (zoomGroup) {
+      try {
+        const bbox = zoomGroup.getBBox()
+        const ctm = zoomGroup.getCTM()
+        if (bbox.width > 0 && bbox.height > 0 && ctm) {
+          const p1 = svgEl.createSVGPoint()
+          p1.x = bbox.x
+          p1.y = bbox.y
+          const p2 = svgEl.createSVGPoint()
+          p2.x = bbox.x + bbox.width
+          p2.y = bbox.y + bbox.height
+          const tp1 = p1.matrixTransform(ctm)
+          const tp2 = p2.matrixTransform(ctm)
+          const padding = 20
+          const minX = Math.min(tp1.x, tp2.x)
+          const minY = Math.min(tp1.y, tp2.y)
+          const maxX = Math.max(tp1.x, tp2.x)
+          const maxY = Math.max(tp1.y, tp2.y)
+          const w = Math.ceil(maxX - minX + padding * 2)
+          const h = Math.ceil(maxY - minY + padding * 2)
+          cw = w; ch = h
+          vbX = String(Math.floor(minX - padding))
+          vbY = String(Math.floor(minY - padding))
+          vbW = String(w)
+          vbH = String(h)
+        }
+      } catch (e) {
+        console.warn('[Mindmap] 计算内容边界失败:', e)
+      }
+    }
+
+    // ── 6. 清理旧 viewBox/width/height，设新尺寸 ──
     const closeIdx = svgData.indexOf('>')
     if (closeIdx > 0) {
       const tagStr = svgData.substring(0, closeIdx)
