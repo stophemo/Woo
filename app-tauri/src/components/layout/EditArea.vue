@@ -1129,9 +1129,20 @@ const menuActionHandler = (e: Event) => {
 .wysiwyg-editor a:hover { text-decoration: underline; }
 .wysiwyg-editor ::selection { background-color: var(--editor-selection); }
 
-/* ═══════════════════════════════════════════════
+@media (max-width: 640px) {
+  .wysiwyg-editor {
+    padding: 20px 16px;
+    max-width: 100%;
+    font-size: 16px;
+  }
+  .wysiwyg-editor h1 { font-size: 24px; }
+  .wysiwyg-editor h2 { font-size: 21px; }
+  .wysiwyg-editor h3 { font-size: 18px; }
+}
+
+/* ════════════════════════════════════════════════
    BulletList NodeView — 思维导图按钮
-   ═══════════════════════════════════════════════ */
+   ════════════════════════════════════════════════ */
 .bulletlist-wrapper {
   display: flex;
   align-items: flex-start;

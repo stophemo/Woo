@@ -13,6 +13,10 @@
             @contextmenu.stop="handleContextMenu"
             @click="handleClick"
             @dblclick="handleDoubleClick"
+            @touchstart.passive="handleTouchStart"
+            @touchend.passive="handleTouchEnd"
+            @touchmove.passive="handleTouchMove"
+            @touchcancel.passive="handleTouchEnd"
             @dragstart="onDragStart"
             @dragover="onDragOver"
             @dragleave="onDragLeave"
@@ -86,6 +90,45 @@ const workspaceStore = useWorkspaceStore()
 const isEditing = ref(false)
 const editName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+
+// 移动端长按触发右键菜单
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let touchStartX = 0
+let touchStartY = 0
+const LONG_PRESS_MS = 600
+const LONG_PRESS_MOVE_THRESHOLD = 10
+
+const handleTouchStart = (event: TouchEvent) => {
+    const touch = event.touches[0]
+    touchStartX = touch.clientX
+    touchStartY = touch.clientY
+    if (longPressTimer) clearTimeout(longPressTimer)
+    longPressTimer = setTimeout(() => {
+        longPressTimer = null
+        emit('context-menu', {
+            folder: props.folder,
+            position: { x: touchStartX, y: touchStartY }
+        })
+    }, LONG_PRESS_MS)
+}
+
+const handleTouchMove = (event: TouchEvent) => {
+    if (!longPressTimer) return
+    const touch = event.touches[0]
+    const dx = Math.abs(touch.clientX - touchStartX)
+    const dy = Math.abs(touch.clientY - touchStartY)
+    if (dx > LONG_PRESS_MOVE_THRESHOLD || dy > LONG_PRESS_MOVE_THRESHOLD) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+    }
+}
+
+const handleTouchEnd = () => {
+    if (longPressTimer) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+    }
+}
 
 const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault()

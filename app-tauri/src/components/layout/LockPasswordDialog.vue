@@ -234,6 +234,20 @@ onMounted(() => {
   max-width: 90vw;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
+
+@media (max-width: 480px) {
+  .lock-dialog-overlay {
+    align-items: flex-end;
+    padding: 0 0 env(safe-area-inset-bottom) 0;
+  }
+  .lock-dialog {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    border: 1px solid var(--border-primary);
+    border-bottom: none;
+  }
+}
 .lock-dialog-title {
   font-size: 16px;
   font-weight: 600;

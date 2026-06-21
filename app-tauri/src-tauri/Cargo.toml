@@ -1,6 +1,6 @@
 [package]
 name = "woo-tauri"
-version = "0.5.0"
+version = "0.5.1"
 description = "Woo Notes - Tauri v2"
 authors = ["stophemo"]
 edition = "2021"
@@ -23,7 +23,7 @@ uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 bcrypt = "0.16"
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 rand = "0.8"
 regex = "1"

@@ -1,6 +1,7 @@
 <template>
-  <aside class="right-sidebar" :class="[{ collapsed: !isOpen }, { resizing: isResizing }]" :style="{ width: isOpen ? sidebarWidth + 'px' : '0px' }">
-    <div class="resize-handle" @mousedown.prevent="startResize"></div>
+  <div class="right-sidebar-wrapper" :class="{ 'is-mobile': isMobile }">
+    <aside class="right-sidebar" :class="[{ collapsed: !isOpen }, { resizing: isResizing }]" :style="sidebarStyle">
+      <div class="resize-handle" @mousedown.prevent="startResize"></div>
     <div class="chat-header">
       <select class="model-select" v-model="aiStore.selectedModelId" @change="aiStore.setModel(($event.target as HTMLSelectElement).value)">
         <option v-for="model in aiStore.availableModels" :key="model.id" :value="model.id">
@@ -88,7 +89,15 @@
       </button>
     </div>
 
-  </aside>
+    </aside>
+
+    <!-- 移动端遮罩层 -->
+    <div
+      v-if="isMobile && isOpen"
+      class="right-sidebar-overlay"
+      @click="$emit('close')"
+    ></div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -101,10 +110,14 @@ import { pendingConfirmation, resolveConfirmation } from '../../services/agent/c
 
 interface Props {
   isOpen: boolean
+  isMobile?: boolean
 }
 
 const props = defineProps<Props>()
-defineEmits<{ 'open-settings': [mode: 'file' | 'ai'] }>()
+defineEmits<{
+  'open-settings': [mode: 'file' | 'ai']
+  close: []
+}>()
 
 const aiStore = useAiChatStore()
 const workspaceStore = useWorkspaceStore()
@@ -120,6 +133,11 @@ const MAX_WIDTH = window.innerWidth * 0.5
 
 const sidebarWidth = ref(loadWidth())
 const isResizing = ref(false)
+
+const sidebarStyle = computed(() => {
+  if (props.isMobile) return {}
+  return { width: props.isOpen ? sidebarWidth.value + 'px' : '0px' }
+})
 
 function loadWidth(): number {
   try {
@@ -246,19 +264,65 @@ watch(
 </script>
 
 <style scoped>
+.right-sidebar-wrapper {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.right-sidebar-wrapper.is-mobile {
+  position: fixed;
+  top: var(--top-menu-height);
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.right-sidebar-wrapper.is-mobile .right-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(85vw, 360px);
+  transform: translateX(0);
+  pointer-events: auto;
+  box-shadow: var(--shadow-dropdown);
+}
+
+.right-sidebar-wrapper.is-mobile .right-sidebar.collapsed {
+  transform: translateX(100%);
+  width: min(85vw, 360px);
+  opacity: 1;
+}
+
+.right-sidebar-wrapper.is-mobile .resize-handle {
+  display: none;
+}
+
+.right-sidebar-overlay {
+  position: fixed;
+  top: var(--top-menu-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.35);
+  z-index: -1;
+  pointer-events: auto;
+}
+
 .right-sidebar {
   background-color: var(--bg-tertiary);
   border-left: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
-  transition: opacity 0.3s, var(--theme-transition);
+  transition: opacity 0.3s, transform 0.3s ease, var(--theme-transition);
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
 }
 
 .right-sidebar:not(.resizing) {
-  transition: width 0.25s ease, opacity 0.25s ease, var(--theme-transition);
+  transition: width 0.25s ease, opacity 0.25s ease, transform 0.25s ease, var(--theme-transition);
 }
 
 .right-sidebar.collapsed {

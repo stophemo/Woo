@@ -532,4 +532,17 @@ function handleLogout() {
   margin-top: 2px;
   line-height: 1.3;
 }
+
+@media (max-width: 480px) {
+  .login-overlay {
+    padding: 16px;
+    align-items: center;
+  }
+  .login-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
 </style>

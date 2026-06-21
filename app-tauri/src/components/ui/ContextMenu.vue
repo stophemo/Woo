@@ -92,15 +92,31 @@ onBeforeUnmount(() => {
 }
 
 .context-menu-item {
-    padding: 8px 16px;
+    padding: 10px 16px;
     cursor: pointer;
     font-size: 13px;
     color: var(--text-primary);
     transition: background-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .context-menu-item:hover:not(.disabled) {
     background-color: var(--bg-hover);
+}
+
+.context-menu-item:active:not(.disabled) {
+    background-color: var(--bg-active);
+}
+
+@media (max-width: 640px) {
+    .context-menu {
+        min-width: 180px;
+        border-radius: 8px;
+    }
+    .context-menu-item {
+        padding: 14px 18px;
+        font-size: 14px;
+    }
 }
 
 .context-menu-item.disabled {

@@ -20,6 +20,10 @@
             :draggable="!doc.isLocked"
             @click="handleSelectDocument(doc.id)"
             @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
+            @touchstart.passive="handleDocTouchStart($event, doc.id)"
+            @touchend.passive="handleDocTouchEnd"
+            @touchmove.passive="handleDocTouchMove"
+            @touchcancel.passive="handleDocTouchEnd"
             @dragstart="onDocDragStart($event, doc.id)"
             @dragover="onDocDragOver($event, doc.id)"
             @dragleave="onDocDragLeave"
@@ -221,6 +225,42 @@ const activeHeadingIndex = ref<number | null>(null)
 const showLockDialog = ref(false)
 const lockDialogMode = ref<'set' | 'verify'>('verify')
 const pendingDocAction = ref<{ type: 'select' | 'toggleLock'; docId: string; doc?: Document } | null>(null)
+
+// 移动端长按触发文稿右键菜单
+let docLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let docTouchStartX = 0
+let docTouchStartY = 0
+const DOC_LONG_PRESS_MS = 600
+const DOC_LONG_PRESS_MOVE_THRESHOLD = 10
+
+const handleDocTouchStart = (event: TouchEvent, docId: string) => {
+    const touch = event.touches[0]
+    docTouchStartX = touch.clientX
+    docTouchStartY = touch.clientY
+    if (docLongPressTimer) clearTimeout(docLongPressTimer)
+    docLongPressTimer = setTimeout(() => {
+        docLongPressTimer = null
+        handleDocContextMenu({ clientX: docTouchStartX, clientY: docTouchStartY } as MouseEvent, docId)
+    }, DOC_LONG_PRESS_MS)
+}
+
+const handleDocTouchMove = (event: TouchEvent) => {
+    if (!docLongPressTimer) return
+    const touch = event.touches[0]
+    const dx = Math.abs(touch.clientX - docTouchStartX)
+    const dy = Math.abs(touch.clientY - docTouchStartY)
+    if (dx > DOC_LONG_PRESS_MOVE_THRESHOLD || dy > DOC_LONG_PRESS_MOVE_THRESHOLD) {
+        clearTimeout(docLongPressTimer)
+        docLongPressTimer = null
+    }
+}
+
+const handleDocTouchEnd = () => {
+    if (docLongPressTimer) {
+        clearTimeout(docLongPressTimer)
+        docLongPressTimer = null
+    }
+}
 
 function handleOutlineClick(headingIndex: number) {
   navScrollToHeading(headingIndex)

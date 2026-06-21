@@ -5,8 +5,10 @@
       :is-open="topMenuOpen"
       :is-fullscreen="isFullscreen"
       :is-logged-in="authStore.isLoggedIn"
+      :is-mobile="isMobile"
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
+      @toggle-document-drawer="mobileDocDrawerOpen = !mobileDocDrawerOpen"
       @toggle-right-sidebar="toggleRightSidebar"
       @open-settings="openSettings"
       @toggle-top-menu="toggleTopMenu"
@@ -17,17 +19,20 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <!-- 左侧菜单列 -->
-      <LeftSidebar :is-open="leftSidebarOpen" />
+      <LeftSidebar :is-open="leftSidebarOpen" :is-mobile="isMobile" @close="leftSidebarOpen = false" @open-settings="openSettings('file')" />
       
       <!-- 中间缩略图列 -->
-      <ThumbnailColumn :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" />
+      <ThumbnailColumn v-if="!isMobile" :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" />
       
       <!-- 中央编辑区域 -->
       <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" @active-heading-change="handleActiveHeadingChange" />
       
       <!-- 右侧AI对话区域 -->
-      <RightSidebar :is-open="rightSidebarOpen" @open-settings="openSettings" />
+      <RightSidebar :is-open="rightSidebarOpen" :is-mobile="isMobile" @close="rightSidebarOpen = false" @open-settings="openSettings" />
     </div>
+
+    <!-- 移动端文稿列表抽屉 -->
+    <MobileDocumentDrawer v-if="isMobile" v-model:open="mobileDocDrawerOpen" />
 
     <!-- 设置弹窗 -->
     <SettingsDialog :visible="showSettings" :mode="settingsMode" @close="showSettings = false" />
@@ -63,6 +68,7 @@ import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
 import LoginDialog from './components/layout/LoginDialog.vue'
 import UpdateNotification from './components/ui/UpdateNotification.vue'
+import MobileDocumentDrawer from './components/layout/MobileDocumentDrawer.vue'
 import { useThemeStore } from './stores/theme'
 import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
@@ -144,10 +150,18 @@ function handleMenuAction(action: string) {
   }
 }
 
-// 侧边栏状态
-const leftSidebarOpen = ref(true)
-const thumbnailSidebarOpen = ref(true)
-const rightSidebarOpen = ref(true)
+// 移动端检测
+const MOBILE_BREAKPOINT = 768
+const isMobile = ref(false)
+function updateIsMobile() {
+  isMobile.value = window.innerWidth <= MOBILE_BREAKPOINT
+}
+
+// 侧边栏状态（桌面端默认展开，移动端默认收起）
+const leftSidebarOpen = ref(false)
+const thumbnailSidebarOpen = ref(false)
+const rightSidebarOpen = ref(false)
+const mobileDocDrawerOpen = ref(false)
 const showSettings = ref(false)
 const showLoginDialog = ref(false)
 const settingsMode = ref<'file' | 'ai'>('file')
@@ -237,21 +251,6 @@ const toggleTopMenu = () => {
   topMenuOpen.value = !topMenuOpen.value
 }
 
-// 切换左侧侧边栏
-const toggleLeftSidebar = () => {
-  leftSidebarOpen.value = !leftSidebarOpen.value
-}
-
-// 切换缩略图栏
-const toggleThumbnailSidebar = () => {
-  thumbnailSidebarOpen.value = !thumbnailSidebarOpen.value
-}
-
-// 切换右侧侧边栏
-const toggleRightSidebar = () => {
-  rightSidebarOpen.value = !rightSidebarOpen.value
-}
-
 // 切换底部状态栏
 const toggleStatusBar = () => {
   statusBarOpen.value = !statusBarOpen.value
@@ -330,8 +329,41 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
+// 切换函数内部处理移动端行为
+const toggleLeftSidebar = () => {
+  leftSidebarOpen.value = !leftSidebarOpen.value
+}
+
+const toggleThumbnailSidebar = () => {
+  thumbnailSidebarOpen.value = !thumbnailSidebarOpen.value
+}
+
+const toggleRightSidebar = () => {
+  rightSidebarOpen.value = !rightSidebarOpen.value
+}
+
+// 根据移动端状态同步侧边栏默认状态
+watch(isMobile, (mobile) => {
+  if (mobile) {
+    leftSidebarOpen.value = false
+    thumbnailSidebarOpen.value = false
+    rightSidebarOpen.value = false
+  } else {
+    leftSidebarOpen.value = true
+    thumbnailSidebarOpen.value = true
+    rightSidebarOpen.value = true
+  }
+})
+
 // 组件挂载时添加键盘事件监听
 onMounted(() => {
+  updateIsMobile()
+  // 根据初始屏幕尺寸设置侧边栏默认状态
+  leftSidebarOpen.value = !isMobile.value
+  thumbnailSidebarOpen.value = !isMobile.value
+  rightSidebarOpen.value = !isMobile.value
+
+  window.addEventListener('resize', updateIsMobile)
   window.addEventListener('keydown', handleKeyDown);
   // 注册 macOS 原生菜单动作监听
   if (window.electronAPI && window.electronAPI.onMenuAction) {
@@ -342,6 +374,7 @@ onMounted(() => {
 
 // 组件卸载前移除键盘事件监听和菜单监听，防止内存泄漏
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateIsMobile)
   window.removeEventListener('keydown', handleKeyDown);
   if (window.electronAPI && window.electronAPI.removeMenuActionListener) {
     window.electronAPI.removeMenuActionListener()

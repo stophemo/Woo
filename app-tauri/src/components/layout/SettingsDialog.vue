@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <Teleport to="body">
     <div v-if="visible" class="settings-overlay" @click.self="$emit('close')" @keydown.esc="$emit('close')">
       <div class="settings-dialog">
@@ -329,4 +329,20 @@ function openApiKeyLink() {
 .settings-help { font-size: 12px; color: var(--text-muted); margin: 0; }
 .settings-help a { color: var(--accent); text-decoration: none; }
 .settings-help a:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .settings-overlay {
+    align-items: flex-end;
+    padding: 0 0 env(safe-area-inset-bottom) 0;
+  }
+  .settings-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: 12px 12px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
+}
 </style>

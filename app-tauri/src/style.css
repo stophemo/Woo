@@ -3,6 +3,14 @@
    ============================ */
 
 /* 日间主题（默认） - 温暖柔和的自然色调 */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --top-menu-height: calc(40px + var(--safe-area-top));
+}
+
 :root,
 :root[data-theme="light"] {
   /* 背景色 */

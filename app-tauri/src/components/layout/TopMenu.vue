@@ -1,14 +1,22 @@
 <template>
-  <header ref="menuBarEl" class="top-menu" :class="{ collapsed: !isOpen }" :style="macMenuStyle" data-tauri-drag-region>
+  <header ref="menuBarEl" class="top-menu" :class="{ collapsed: !isOpen, 'is-mobile': isMobile }" :style="macMenuStyle" data-tauri-drag-region>
     <div class="menu-left">
-      <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
-        <template #trigger>
-          <div class="menu-item">{{ menu.label }}</div>
-        </template>
-        <DropdownMenu :items="menu.items" @action="handleMenuAction" />
-      </Dropdown>
+      <!-- 移动端汉堡菜单按钮 -->
+      <button v-if="isMobile" class="window-control-btn hamburger-btn" @click="$emit('toggle-left-sidebar')" title="打开目录">
+        <IconHamburger :size="20" />
+      </button>
+      <!-- 桌面端下拉菜单 -->
+      <template v-else>
+        <Dropdown v-for="(menu, index) in menus" :key="menu.label" :ref="el => setDropdownRef(el, index)" @open-change="handleOpenChange(index, $event)">
+          <template #trigger>
+            <div class="menu-item">{{ menu.label }}</div>
+          </template>
+          <DropdownMenu :items="menu.items" @action="handleMenuAction" />
+        </Dropdown>
+      </template>
     </div>
-    <div v-show="!compact" class="menu-right">
+    <!-- 桌面端完整按钮组 -->
+    <div v-show="!compact && !isMobile" class="menu-right">
       <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
         <IconThemeToggle :mode="themeStore.theme" />
       </button>
@@ -56,6 +64,34 @@
         <IconClose />
       </button>
     </div>
+    <!-- 移动端精简按钮组 -->
+    <div v-if="isMobile" class="menu-right mobile-menu-right">
+      <button class="window-control-btn" @click="$emit('toggle-document-drawer')" title="文稿列表">
+        <IconThumbnailSidebar />
+      </button>
+      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
+        <IconThemeToggle :mode="themeStore.theme" />
+      </button>
+      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" title="AI 聊天">
+        <IconRightSidebar />
+      </button>
+      <button class="window-control-btn" @click="$emit('open-settings', 'file')" title="设置">
+        <IconSettings />
+      </button>
+      <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" :class="{ 'spin': syncing }">
+          <path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/>
+          <path d="M13.5 1.5V4.5H10.5"/>
+          <path d="M2.5 14.5V11.5H5.5"/>
+        </svg>
+      </button>
+      <button class="window-control-btn" :title="isLoggedIn ? '账户信息' : '登录账户'" @click="$emit('open-login')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="5" r="2.5"/>
+          <path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/>
+        </svg>
+      </button>
+    </div>
   </header>
 </template>
 
@@ -64,6 +100,7 @@ import { ref, type ComponentPublicInstance, computed, onMounted, onBeforeUnmount
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
 import IconRightSidebar from '../../components/icons/IconRightSidebar.vue'
+import IconSettings from '../../components/icons/IconSettings.vue'
 import IconMinimize from '../../components/icons/IconMinimize.vue'
 import IconMaximize from '../../components/icons/IconMaximize.vue'
 import IconClose from '../../components/icons/IconClose.vue'
@@ -71,6 +108,7 @@ import IconThemeToggle from '../../components/icons/IconThemeToggle.vue'
 import IconTopMenu from '../../components/icons/IconTopMenu.vue'
 import { log } from '../../services/logger'
 import IconStatusBar from '../../components/icons/IconStatusBar.vue'
+import IconHamburger from '../../components/icons/IconHamburger.vue'
 import Dropdown from '../ui/Dropdown.vue'
 import DropdownMenu from '../ui/DropdownMenu.vue'
 import { useThemeStore } from '../../stores/theme'
@@ -90,9 +128,9 @@ const syncStore = useSyncStore()
 import { isMac, shortcutDisplay } from '../../config/shortcutUtils'
 
 // macOS：窗口模式留 80px 给交通灯按钮（垂直居中由 titleBarOverlay 保证）
-// 全屏时交通灯隐藏，菜单项左对齐
+// 全屏时交通灯隐藏，菜单项左对齐；移动端也不需要左侧内边距
 const macMenuStyle = computed(() => {
-  if (!isMac || props.isFullscreen) return {}
+  if (!isMac || props.isFullscreen || props.isMobile) return {}
   return { paddingLeft: '80px' }
 })
 
@@ -139,11 +177,13 @@ interface Props {
   isOpen?: boolean
   isFullscreen?: boolean
   isLoggedIn?: boolean
+  isMobile?: boolean
 }
 const props = withDefaults(defineProps<Props>(), {
   isOpen: true,
   isFullscreen: false,
-  isLoggedIn: false
+  isLoggedIn: false,
+  isMobile: false
 })
 
 // 设置 Dropdown 组件引用
@@ -175,6 +215,7 @@ const handleOpenChange = (index: number, isOpen: boolean) => {
 const emit = defineEmits<{
   'toggle-left-sidebar': []
   'toggle-thumbnail-sidebar': []
+  'toggle-document-drawer': []
   'toggle-right-sidebar': []
   'open-settings': [mode: 'file' | 'ai']
   'toggle-top-menu': []
@@ -291,7 +332,8 @@ const handleMenuAction = (action: string) => {
   justify-content: space-between;
   align-items: center;
   padding: 0 16px;
-  height: 40px;
+  padding-top: var(--safe-area-top);
+  height: var(--top-menu-height);
   background-color: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-primary);
   transition: var(--theme-transition), height 0.25s ease, transform 0.25s ease, padding 0.25s ease, border-bottom-color 0.25s ease, opacity 0.2s ease;
@@ -329,6 +371,32 @@ const handleMenuAction = (action: string) => {
 .menu-right {
   display: flex;
   gap: 4px;
+}
+
+.mobile-menu-right {
+  gap: 2px;
+}
+
+.top-menu.is-mobile {
+  padding: var(--safe-area-top) 8px 0 8px;
+}
+
+.top-menu.is-mobile .menu-left {
+  align-items: center;
+}
+
+.top-menu.is-mobile .window-control-btn {
+  padding: 6px;
+}
+
+.top-menu.is-mobile .window-control-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.hamburger-btn {
+  padding: 6px;
+  margin-left: -4px;
 }
 
 .window-control-btn {

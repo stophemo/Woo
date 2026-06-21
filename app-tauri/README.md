@@ -148,8 +148,11 @@ Tauri v2 没有内建 channel / wrap 机制，所以 `app-tauri` 在前端用一
 | `npm run dev` | 启动 Vite dev server（`localhost:5173`） |
 | `npm run tauri:dev` | 启动 Tauri 开发模式（自动调用 `npm run dev`） |
 | `npm run build` | `vue-tsc --noEmit && vite build`（仅前端） |
-| `npm run tauri:build` | 完整打包（含 Rust release 编译） |
+| `npm run tauri:build` | 完整打包桌面端（含 Rust release 编译） |
 | `npm run tauri:icon` | 重新生成应用图标 |
+| `npm run tauri:android:dev` | Android 开发模式（自动 `--host`） |
+| `npm run tauri:android:build` | 构建 Android APK / AAB |
+| `npm run tauri:android:init` | 重新生成 Android 项目骨架 |
 
 > **Tip**: `tauri:dev` 首次运行需要编译大量 Rust crate，请耐心等待；后续增量编译很快。
 
@@ -163,6 +166,45 @@ Tauri v2 没有内建 channel / wrap 机制，所以 `app-tauri` 在前端用一
 | --- | --- |
 | `WOO_LOG` | Rust 端日志级别（`info` / `debug` / `trace`），默认 `info` |
 | `ELECTRON_DEVTOOLS` | **当前版本不生效**（保留自旧 Electron 版本） |
+
+---
+
+## Android 支持
+
+本项目已启用 Tauri v2 的 Mobile 能力，可在 Android 设备/模拟器上运行。
+
+### 环境要求
+
+- JDK 17+
+- Android SDK（含 platform-tools、platforms、build-tools、NDK）
+- 设置环境变量：
+  ```bash
+  export JAVA_HOME=/path/to/jdk-17
+  export ANDROID_HOME=/path/to/android-sdk
+  export NDK_HOME=$ANDROID_HOME/ndk/<版本>
+  ```
+
+### 常用命令
+
+```bash
+# 开发调试（需要连接设备或启动模拟器）
+npm run tauri:android:dev
+
+# 构建 Debug APK
+npx tauri android build --apk --debug
+
+# 构建 Release AAB
+npx tauri android build --aab
+```
+
+### 为 Android 做的关键调整
+
+1. `Cargo.toml` 中 `reqwest` 改用 `rustls-tls`，避免交叉编译时依赖系统 OpenSSL。
+2. `vite.config.ts` 开启 `host: true`，让移动设备可以访问开发服务器。
+3. `capabilities/default.json` 的 `windows` 改为 `["*"]`，覆盖桌面与移动端窗口。
+4. `src-tauri/gen/android/` 为 Tauri 自动生成的 Android Studio / Gradle 项目。
+
+> ✅ 移动端已做响应式适配：小屏下左侧目录、右侧 AI 聊天变为抽屉滑入，顶部菜单切换为汉堡按钮 + 精简工具栏，文稿列表使用底部抽屉，设置/登录弹窗底部弹出并适配安全区。
 
 ---
 
@@ -197,7 +239,7 @@ Tauri v2 没有内建 channel / wrap 机制，所以 `app-tauri` 在前端用一
 ### 启动后白屏
 
 确认 `src-tauri/tauri.conf.json` 的 `app.windows` 至少含一个名为 `main` 的窗口，
-且 `capabilities/default.json` 的 `windows: ["main"]` 与之匹配。
+且 `capabilities/default.json` 的 `windows` 包含该窗口标签（桌面端可写 `["main"]`，跨平台建议写 `["*"]`）。
 Tauri 不会为未在配置或代码中创建的窗口渲染任何内容。
 
 ### 找不到 channel
@@ -232,7 +274,7 @@ Tauri 不会为未在配置或代码中创建的窗口渲染任何内容。
 - [ ] 完成知识库 / 嵌入检索（`embedding_service` + `kb_service`）
 - [ ] macOS 原生菜单 + 完整快捷键
 - [ ] Windows / Linux 平台打包与签名
-- [ ] 移动端（参照 `app-mobile`）
+- [x] Android 平台编译与运行（UI 响应式适配持续优化中）
 
 ---
 

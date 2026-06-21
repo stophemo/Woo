@@ -217,6 +217,12 @@ onUnmounted(() => { if (renderTimer) clearTimeout(renderTimer) })
   opacity: 1;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .msg-actions {
+    opacity: 1;
+  }
+}
+
 .action-btn {
   display: flex;
   align-items: center;

@@ -1,4 +1,5 @@
 <template>
+  <div class="left-sidebar-wrapper" :class="{ 'is-mobile': isMobile }">
     <aside class="left-sidebar" :class="{ 'collapsed': !isOpen }" @contextmenu="handleContextMenu">
         <div class="sidebar-section" @contextmenu.stop.prevent>
             <div class="sidebar-item" @click="handleNewDocument">
@@ -36,7 +37,7 @@
             </div>
         </div>
         <div class="divider"></div>
-        <div class="sidebar-section">
+        <div class="sidebar-section folder-tree-section">
             <FolderTree 
                 :folders="store.folders" 
                 :selected-folder-id="store.selectedFolderId"
@@ -44,6 +45,14 @@
                 @folder-select="handleFolderSelect"
                 @rename="handleRename"
             />
+        </div>
+
+        <div class="sidebar-bottom">
+            <div class="divider"></div>
+            <div class="sidebar-item" @click="handleOpenSettings">
+                <IconSettings />
+                <span>设置</span>
+            </div>
         </div>
         
         <!-- 右键菜单 -->
@@ -62,9 +71,15 @@
             @confirm="handleLockConfirm"
             @cancel="handleLockCancel"
         />
-
-
     </aside>
+
+    <!-- 移动端遮罩层 -->
+    <div
+      v-if="isMobile && isOpen"
+      class="left-sidebar-overlay"
+      @click="$emit('close')"
+    ></div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -76,6 +91,7 @@ import IconSearch from '../icons/IconSearch.vue'
 import IconFile from '../icons/IconFile.vue'
 import IconDraft from '../icons/IconDraft.vue'
 import IconTrash from '../icons/IconTrash.vue'
+import IconSettings from '../icons/IconSettings.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { log } from '../../services/logger'
 import { useLockStore } from '../../stores/lock'
@@ -84,9 +100,15 @@ import type { FolderNode, ContextMenuPosition, ContextMenuItem } from '../../typ
 
 interface Props {
     isOpen: boolean
+    isMobile?: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  close: []
+  'open-settings': []
+}>()
 
 const store = useWorkspaceStore()
 const lockStore = useLockStore()
@@ -185,6 +207,9 @@ const contextMenuTarget = ref<'folder' | 'empty'>('empty')
 const handleFolderSelect = (folder: FolderNode) => {
     store.selectFolder(folder.id)
     store.toggleFolder(folder)
+    if (props.isMobile) {
+        emit('close')
+    }
 }
 
 // 处理空白区域右键点击
@@ -313,24 +338,85 @@ const handleRename = (data: { folder: FolderNode, newName: string }) => {
 // 新建文档：有选中真实目录则在该目录下创建，否则归入草稿箱
 const handleNewDocument = () => {
     store.createNewDocument()
+    if (props.isMobile) {
+        emit('close')
+    }
 }
 
 // 打开全部文稿视图
 const handleOpenAll = () => {
     void store.openAllDocuments()
+    if (props.isMobile) {
+        emit('close')
+    }
 }
 
 // 打开草稿箱视图
 const handleOpenDraftBox = () => {
     store.openDraftBox()
+    if (props.isMobile) {
+        emit('close')
+    }
 }
 
 const handleOpenTrashBox = () => {
     void store.openTrashBox()
+    if (props.isMobile) {
+        emit('close')
+    }
+}
+
+const handleOpenSettings = () => {
+    emit('open-settings')
+    if (props.isMobile) {
+        emit('close')
+    }
 }
 </script>
 
 <style scoped>
+.left-sidebar-wrapper {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.left-sidebar-wrapper.is-mobile {
+  position: fixed;
+  top: var(--top-menu-height);
+  left: 0;
+  bottom: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.left-sidebar-wrapper.is-mobile .left-sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  transform: translateX(0);
+  pointer-events: auto;
+  box-shadow: var(--shadow-dropdown);
+}
+
+.left-sidebar-wrapper.is-mobile .left-sidebar.collapsed {
+  transform: translateX(-100%);
+  width: 280px;
+  opacity: 1;
+}
+
+.left-sidebar-overlay {
+  position: fixed;
+  top: var(--top-menu-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.35);
+  z-index: -1;
+  pointer-events: auto;
+}
+
 .left-sidebar {
     width: 220px;
     background-color: var(--bg-secondary);
@@ -338,7 +424,7 @@ const handleOpenTrashBox = () => {
     padding: 12px 8px;
     overflow-y: auto;
     overflow-x: hidden;
-    transition: width 0.3s, padding 0.3s, opacity 0.3s, var(--theme-transition);
+    transition: width 0.3s, padding 0.3s, opacity 0.3s, transform 0.3s ease, var(--theme-transition);
     display: flex;
     flex-direction: column;
     user-select: none;
@@ -354,6 +440,17 @@ const handleOpenTrashBox = () => {
 .sidebar-section {
     margin-top: 4px;
     margin-bottom: 4px;
+}
+
+.folder-tree-section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.sidebar-bottom {
+    flex-shrink: 0;
+    margin-top: auto;
 }
 
 .sidebar-item {

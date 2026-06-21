@@ -447,6 +447,22 @@ async function exportImage() {
   opacity: 0;
   transform: scale(0.97);
 }
+
+@media (max-width: 640px) {
+  .mm-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .mm-card {
+    max-width: 100%;
+    height: 92vh;
+    max-height: none;
+    border-radius: 12px 12px 0 0;
+  }
+  .mm-card-header {
+    padding: 12px 16px;
+  }
+}
 </style>
 
 <!-- 非 scoped 样式，用于 markmap SVG 内部元素 -->
