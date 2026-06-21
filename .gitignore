@@ -1,6 +1,11 @@
 # ============ Root ============
 node_modules
 
+# ============ App-Tauri ============
+app-tauri/node_modules
+app-tauri/dist
+app-tauri/src-tauri/target
+
 # ============ App-Desktop ============
 # Dependencies
 app-desktop/node_modules
