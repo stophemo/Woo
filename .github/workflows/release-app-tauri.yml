@@ -366,7 +366,7 @@ jobs:
           TAG: ${{ steps.meta.outputs.tag }}
           NOTES_PATH: ${{ steps.release_notes.outputs.path }}
         run: |
-          shopt -s nullglob
+          shopt -s globstar nullglob
           files=(
             release/macos/**/*.app.zip
             release/windows/**/*.exe
@@ -377,7 +377,13 @@ jobs:
             echo "No release assets found"
             exit 1
           fi
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file "$NOTES_PATH" \
-            "${files[@]}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, uploading assets and updating notes"
+            gh release upload "$TAG" "${files[@]}" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES_PATH"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$NOTES_PATH" \
+              "${files[@]}"
+          fi
