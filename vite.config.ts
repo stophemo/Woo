@@ -17,6 +17,6 @@ export default defineConfig({
     cssCodeSplit: false,
     crossorigin: false,
   },
-  envDir: '..',
+  envDir: '.',
   clearScreen: false,
 })

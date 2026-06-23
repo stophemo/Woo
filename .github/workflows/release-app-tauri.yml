@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (default: app-tauri-v<app-tauri/package.json version>)"
+        description: "Release tag (default: app-tauri-v<package.json version>)"
         required: false
         type: string
       draft:
@@ -52,7 +52,7 @@ jobs:
         id: meta
         shell: pwsh
         run: |
-          $pkg = Get-Content app-tauri/package.json -Raw | ConvertFrom-Json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
           $pkgVersion = "$($pkg.version)"
 
           if ("${{ github.event_name }}" -eq "push") {
@@ -76,20 +76,20 @@ jobs:
         run: |
           $version = "${{ steps.meta.outputs.version }}"
           # package.json
-          $pkgPath = "app-tauri/package.json"
+          $pkgPath = "package.json"
           $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
           $pkg.version = $version
           $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding utf8
           # Cargo.toml
-          $cargo = Get-Content app-tauri/src-tauri/Cargo.toml -Raw
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
           $cargo = $cargo -replace '^(version\s*=\s*)"[^"]+"', "`$1`"$version`""
-          Set-Content app-tauri/src-tauri/Cargo.toml $cargo -Encoding utf8
+          Set-Content src-tauri/Cargo.toml $cargo -Encoding utf8
           # tauri.conf.json
-          $conf = Get-Content app-tauri/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           $conf.version = $version
-          $conf | ConvertTo-Json -Depth 10 | Set-Content app-tauri/src-tauri/tauri.conf.json -Encoding utf8
+          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
           # Android tauri.properties
-          $propPath = "app-tauri/src-tauri/gen/android/app/tauri.properties"
+          $propPath = "src-tauri/gen/android/app/tauri.properties"
           $prop = "tauri.android.versionCode=$($version -replace '\.', '')`ntauri.android.versionName=$version`n"
           Set-Content $propPath $prop -Encoding utf8
           Write-Host "patched version -> $version"
@@ -99,13 +99,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: app-tauri/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        working-directory: app-tauri
         run: npm ci
 
       - name: Install Linux dependencies
@@ -115,7 +114,6 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build desktop package
-        working-directory: app-tauri
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -123,14 +121,14 @@ jobs:
 
       - name: Zip macOS .app bundle
         if: matrix.os == 'macos-latest'
-        working-directory: app-tauri/src-tauri/target/release/bundle/macos
+        working-directory: src-tauri/target/release/bundle/macos
         run: zip -r "Woo_${{ steps.meta.outputs.version }}_aarch64.app.zip" "Woo.app"
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tauri-desktop-${{ matrix.os }}
-          path: app-tauri/src-tauri/target/release/bundle
+          path: src-tauri/target/release/bundle
           if-no-files-found: error
 
   # =============== Android 构建 ===============
@@ -150,7 +148,7 @@ jobs:
         id: meta
         shell: pwsh
         run: |
-          $pkg = Get-Content app-tauri/package.json -Raw | ConvertFrom-Json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
           $pkgVersion = "$($pkg.version)"
 
           if ("${{ github.event_name }}" -eq "push") {
@@ -173,17 +171,17 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.meta.outputs.version }}"
-          $pkgPath = "app-tauri/package.json"
+          $pkgPath = "package.json"
           $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
           $pkg.version = $version
           $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding utf8
-          $cargo = Get-Content app-tauri/src-tauri/Cargo.toml -Raw
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
           $cargo = $cargo -replace '^(version\s*=\s*)"[^"]+"', "`$1`"$version`""
-          Set-Content app-tauri/src-tauri/Cargo.toml $cargo -Encoding utf8
-          $conf = Get-Content app-tauri/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          Set-Content src-tauri/Cargo.toml $cargo -Encoding utf8
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           $conf.version = $version
-          $conf | ConvertTo-Json -Depth 10 | Set-Content app-tauri/src-tauri/tauri.conf.json -Encoding utf8
-          $propPath = "app-tauri/src-tauri/gen/android/app/tauri.properties"
+          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
+          $propPath = "src-tauri/gen/android/app/tauri.properties"
           $prop = "tauri.android.versionCode=$($version -replace '\.', '')`ntauri.android.versionName=$version`n"
           Set-Content $propPath $prop -Encoding utf8
           Write-Host "patched version -> $version"
@@ -193,7 +191,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: app-tauri/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust (with Android targets)
         uses: dtolnay/rust-toolchain@stable
@@ -215,11 +213,9 @@ jobs:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Install dependencies
-        working-directory: app-tauri
         run: npm ci
 
       - name: Build Android APK
-        working-directory: app-tauri
         env:
           CI: true
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
@@ -230,7 +226,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tauri-android
-          path: app-tauri/src-tauri/gen/android/app/build/outputs/apk
+          path: src-tauri/gen/android/app/build/outputs/apk
           if-no-files-found: error
 
   # =============== 发布阶段 ===============
@@ -250,7 +246,7 @@ jobs:
         id: meta
         shell: pwsh
         run: |
-          $pkg = Get-Content app-tauri/package.json -Raw | ConvertFrom-Json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
           $pkgVersion = "$($pkg.version)"
 
           if ("${{ github.event_name }}" -eq "push") {

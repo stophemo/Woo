@@ -6,7 +6,6 @@
 ## 构建与开发命令
 
 ```bash
-cd app-tauri
 npm install              # 安装前端依赖
 npm run dev              # 启动 Vite 开发服务器（http://localhost:5173）
 npm run build            # vue-tsc + vite build（仅前端）
@@ -37,22 +36,23 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite (
 
 ```
 Woo/
-├── app-tauri/                  # Tauri v2 主项目
-│   ├── src/                    # 前端 (Vue 3, ESM)
-│   │   ├── stores/             # Pinia 状态管理 (workspace, auth, sync, aiChat, lock, theme)
-│   │   ├── services/           # IPC 客户端 + AI 服务 (gemini.ts, deepseek.ts, agent/)
-│   │   ├── components/         # Vue 组件 (layout/, ui/, icons/)
-│   │   ├── config/             # 菜单、快捷键配置
-│   │   └── types/              # TypeScript 类型
-│   └── src-tauri/              # Rust 后端 (Tauri v2)
-│       ├── src/
-│       │   ├── commands/       # 34 条 Tauri 命令 (IPC 入口)
-│       │   ├── services/       # 业务逻辑层
-│       │   ├── db/             # SQLite 连接管理 (每用户分库)
-│       │   ├── supabase/       # Supabase REST API 客户端
-│       │   └── models/         # 数据模型
-│       └── gen/android/        # Android 项目 (生成)
-└── docs/                       # 认证回调页、发布指南
+├── src/                        # 前端 (Vue 3, ESM)
+│   ├── stores/                 # Pinia 状态管理 (workspace, auth, sync, aiChat, lock, theme)
+│   ├── services/               # IPC 客户端 + AI 服务 (gemini.ts, deepseek.ts, agent/)
+│   ├── components/             # Vue 组件 (layout/, ui/, icons/)
+│   ├── config/                 # 菜单、快捷键配置
+│   └── types/                  # TypeScript 类型
+├── src-tauri/                  # Rust 后端 (Tauri v2)
+│   ├── src/
+│   │   ├── commands/           # 34 条 Tauri 命令 (IPC 入口)
+│   │   ├── services/           # 业务逻辑层
+│   │   ├── db/                 # SQLite 连接管理 (每用户分库)
+│   │   ├── supabase/           # Supabase REST API 客户端
+│   │   └── models/             # 数据模型
+│   └── gen/android/            # Android 项目 (生成)
+├── package.json
+├── vite.config.ts
+└── index.html
 ```
 
 ### 关键架构决策
@@ -132,9 +132,7 @@ Woo/
 
 ## 注意事项
 
-- **废弃目录**：`app-desktop/` 和 `app-mobile/` 已迁移至 `electron` 分支。请勿在主分支上修改。
 - **`.env`** 中 `SYNC_CLEANUP_SECONDS=60*60*24*7` — 7 天清理周期
-- 根目录 `vercel.json` 用于认证成功页面的部署，与应用本身无关
 
 ## Git 与发布
 
