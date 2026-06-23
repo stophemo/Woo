@@ -1,7 +1,7 @@
 # ============ App-Tauri ============
-node_modules
-dist
-src-tauri/target
+app-tauri/node_modules
+app-tauri/dist
+app-tauri/src-tauri/target
 
 # Logs
 *.log
