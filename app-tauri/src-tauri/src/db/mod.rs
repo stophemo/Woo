@@ -26,7 +26,6 @@ pub fn set_data_dir(path: PathBuf) {
     }
 }
 
-#[allow(dead_code)]
 /// Switch to a specific user's database.
 /// `None` = local mode (woo.db).
 pub fn set_current_user(username: Option<&str>) {
@@ -41,6 +40,36 @@ pub fn set_current_user(username: Option<&str>) {
     }
     *user = new_val;
     log::info!("[DB] Switched to user database: {:?}", username);
+}
+
+/// On first login, copy woo.db → woo-{username}.db (matches syncEngine.cjs first-login logic)
+pub fn copy_local_to_user_db_on_first_login(username: &str) -> Result<(), String> {
+    let dir = DATA_DIR.lock().unwrap().clone().unwrap_or_else(|| PathBuf::from("."));
+    let local_db = dir.join("woo.db");
+    let safe = username.to_lowercase().replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
+    let user_db = dir.join(format!("woo-{}.db", safe));
+
+    if local_db.exists() && !user_db.exists() {
+        log::info!("[DB] First login — copying woo.db to woo-{}.db", safe);
+        std::fs::copy(&local_db, &user_db).map_err(|e| format!("复制数据库失败: {}", e))?;
+        // Also copy WAL/SHM files if they exist
+        for ext in &["-wal", "-shm"] {
+            let src = dir.join(format!("woo.db{}", ext));
+            let dst = dir.join(format!("woo-{}.db{}", safe, ext));
+            if src.exists() {
+                std::fs::copy(&src, &dst).ok();
+            }
+        }
+        // Reset last_sync_time so full sync is triggered
+        if let Ok(conn) = rusqlite::Connection::open(&user_db) {
+            conn.execute(
+                "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('last_sync_time', '')",
+                [],
+            )
+            .ok();
+        }
+    }
+    Ok(())
 }
 
 /// Get the database filename for the current user

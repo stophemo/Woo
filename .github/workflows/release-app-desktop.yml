@@ -1,9 +1,10 @@
-name: Release App Desktop
+name: Release App Desktop (Deprecated)
 
 on:
   push:
+    branches:
+      - "electron"
     tags:
-      - "v*"
       - "app-desktop-v*"
       - "Woo-desktop-v*"
   workflow_dispatch:

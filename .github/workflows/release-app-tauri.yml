@@ -3,6 +3,7 @@ name: Release App Tauri
 on:
   push:
     tags:
+      - "v*"
       - "app-tauri-v*"
       - "Woo-tauri-v*"
   workflow_dispatch:

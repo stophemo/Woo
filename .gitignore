@@ -1,72 +1,8 @@
-# ============ Root ============
-node_modules
-
 # ============ App-Tauri ============
-app-tauri/node_modules
-app-tauri/dist
-app-tauri/src-tauri/target
+node_modules
+dist
+src-tauri/target
 
-# ============ App-Desktop ============
-# Dependencies
-app-desktop/node_modules
-
-# Build output
-app-desktop/dist
-app-desktop/dist-electron
-app-desktop/dist-ssr
-app-desktop/release
-
-# Electron userData (cache, local storage, etc.)
-app-desktop/userData
-
-# 图标生成的中间产物
-app-desktop/build/icon-*.png
-
-# Install logs
-app-desktop/install.log
-
-# ============ App-Mobile (Flutter) ============
-# Dart/Flutter 工具缓存
-app-mobile/.dart_tool/
-app-mobile/.packages
-app-mobile/.pub/
-
-# Flutter 构建产物
-app-mobile/build/
-
-# IDE
-app-mobile/.idea/
-app-mobile/.vscode/
-
-# iOS 构建产物（Xcode）
-app-mobile/ios/Pods/
-app-mobile/ios/.symlinks/
-app-mobile/ios/Flutter/Flutter.framework
-app-mobile/ios/Flutter/Flutter.podspec
-
-# Android 构建产物（Gradle）
-app-mobile/android/.gradle/
-app-mobile/android/local.properties
-app-mobile/android/key.properties
-
-# macOS 构建产物
-app-mobile/macos/Pods/
-app-mobile/macos/.symlinks/
-
-# Dart 分析缓存
-app-mobile/.dart_tool/package_config.json
-
-# Flutter 导出/发布产物
-app-mobile/export/
-
-# ============ Third-party tooling ============
-.qoder
-.codegraph/
-.deepseek/
-.opencode/
-.claude/
-
-# ============ Common ============
 # Logs
 *.log
 npm-debug.log*
@@ -85,12 +21,11 @@ pnpm-debug.log*
 *.sln
 *.sw?
 
-# Environment variables
+# Environment files
 .env.local
 .env.*.local
 
 # OS files
-.DS_Store
 Thumbs.db
 
 # Temporary files
@@ -101,3 +36,10 @@ Thumbs.db
 # IDE
 .trae
 .vercel
+
+# Third-party tooling
+.qoder
+.codegraph/
+.deepseek/
+.opencode/
+.claude/

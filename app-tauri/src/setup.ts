@@ -6,6 +6,7 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-shell'
+import { listen } from '@tauri-apps/api/event'
 import { invoke } from './services/api'
 
 let menuActionHandler: ((event: Event) => void) | null = null
@@ -43,4 +44,17 @@ export function setupTauriBridge() {
     // Update check
     checkForUpdates: () => invoke<{ hasUpdate: boolean; version?: string; downloadUrl?: string; error?: string }>('update:check'),
   }
+
+  // Bridge Tauri backend events to DOM CustomEvents for existing store listeners.
+  // This allows the sync store, workspace store, and App.vue to receive sync updates
+  // without modification (they listen for 'sync-status', 'sync-data-changed', etc.).
+  listen<unknown>('sync-status', (event) => {
+    window.dispatchEvent(new CustomEvent('sync-status', { detail: event.payload }))
+  })
+  listen<unknown>('sync-data-changed', (event) => {
+    window.dispatchEvent(new CustomEvent('sync-data-changed', { detail: event.payload }))
+  })
+  listen<unknown>('sync:toast', (event) => {
+    window.dispatchEvent(new CustomEvent('sync:toast', { detail: event.payload }))
+  })
 }

@@ -1,7 +1,6 @@
 use crate::db;
-use crate::services::utils::{new_id, now_str};
-use rand::Rng;
-use rusqlite::params;
+use crate::supabase;
+use chrono::Utc;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -19,113 +18,27 @@ pub struct AuthSession {
     pub access_token: Option<String>,
 }
 
-fn ensure_tables() {
-    db::with_db(|conn| {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS sessions (
-                token TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id),
-                created_at TEXT NOT NULL
-            );",
-        )
-        .ok();
-    });
+fn map_user(sb_user: &supabase::SupabaseUser) -> AuthUser {
+    AuthUser {
+        id: sb_user.id.clone(),
+        email: sb_user.email.clone(),
+        username: sb_user
+            .user_metadata
+            .username
+            .as_deref()
+            .or_else(|| sb_user.user_metadata.display_name.as_deref())
+            .map(|s| s.to_string()),
+    }
 }
 
-fn generate_token() -> String {
-    let token: String = rand::thread_rng()
-        .sample_iter(&rand::distributions::Alphanumeric)
-        .take(64)
-        .map(char::from)
-        .collect();
-    token
+fn map_session(sb_session: &supabase::SupabaseSession) -> AuthSession {
+    AuthSession {
+        user: Some(map_user(&sb_session.user)),
+        access_token: Some(sb_session.access_token.clone()),
+    }
 }
 
-fn get_user_by_email(email: &str) -> Result<AuthUser, String> {
-    db::with_db(|conn| {
-        conn.query_row(
-            "SELECT id, email, username FROM users WHERE email = ?",
-            params![email],
-            |row| {
-                Ok(AuthUser {
-                    id: row.get(0)?,
-                    email: row.get(1)?,
-                    username: row.get(2)?,
-                })
-            },
-        )
-        .map_err(|_| "用户不存在".to_string())
-    })
-}
-
-fn get_user_by_username(username: &str) -> Result<AuthUser, String> {
-    db::with_db(|conn| {
-        conn.query_row(
-            "SELECT id, email, username FROM users WHERE username = ?",
-            params![username],
-            |row| {
-                Ok(AuthUser {
-                    id: row.get(0)?,
-                    email: row.get(1)?,
-                    username: row.get(2)?,
-                })
-            },
-        )
-        .map_err(|_| "用户不存在".to_string())
-    })
-}
-
-fn create_session(user_id: &str) -> Result<String, String> {
-    let token = generate_token();
-    let now = now_str();
-    db::with_db(|conn| {
-        conn.execute(
-            "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
-            params![token, user_id, now],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(token)
-    })
-}
-
-#[allow(dead_code)]
-fn get_user_by_session(token: &str) -> Result<AuthUser, String> {
-    db::with_db(|conn| {
-        let user_id: String = conn
-            .query_row(
-                "SELECT user_id FROM sessions WHERE token = ?",
-                params![token],
-                |row| row.get(0),
-            )
-            .map_err(|_| "会话无效".to_string())?;
-        get_user_by_email_internal(conn, &user_id)
-    })
-}
-
-#[allow(dead_code)]
-fn get_user_by_email_internal(conn: &rusqlite::Connection, user_id: &str) -> Result<AuthUser, String> {
-    conn.query_row(
-        "SELECT id, email, username FROM users WHERE id = ?",
-        params![user_id],
-        |row| {
-            Ok(AuthUser {
-                id: row.get(0)?,
-                email: row.get(1)?,
-                username: row.get(2)?,
-            })
-        },
-    )
-    .map_err(|_| "用户不存在".to_string())
-}
-
-pub fn sign_up(email: &str, password: &str, username: &str) -> Result<AuthSession, String> {
+pub async fn sign_up(email: &str, password: &str, username: &str) -> Result<AuthSession, String> {
     if email.is_empty() || password.is_empty() || username.is_empty() {
         return Err("邮箱、密码和用户名不能为空".to_string());
     }
@@ -133,86 +46,130 @@ pub fn sign_up(email: &str, password: &str, username: &str) -> Result<AuthSessio
         return Err("密码长度不能少于 6 位".to_string());
     }
 
-    ensure_tables();
+    let sb_session = supabase::sign_up(email, password, username).await?;
 
-    let password_hash =
-        bcrypt::hash(password, 10).map_err(|e| format!("加密失败: {}", e))?;
-    let user_id = new_id();
-    let now = now_str();
+    // Persist session to supabase-auth.json
+    supabase::persist_session(&sb_session);
+    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
+        *s = Some(sb_session.clone());
+    }
 
-    db::with_db(|conn| {
-        conn.execute(
-            "INSERT INTO users (id, email, username, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-            params![user_id, email, username, password_hash, now],
-        )
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("UNIQUE") {
-                "邮箱或用户名已存在".to_string()
-            } else {
-                format!("注册失败: {}", msg)
-            }
-        })?;
-        Ok::<(), String>(())
-    })?;
+    // Switch to user-specific database (matches sign_in behavior)
+    let username = supabase::get_username_from_session(&sb_session)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if !username.is_empty() {
+        db::copy_local_to_user_db_on_first_login(&username).ok();
+        db::set_current_user(Some(&username));
+    }
 
-    let token = create_session(&user_id)?;
-
-    Ok(AuthSession {
-        user: Some(AuthUser {
-            id: user_id,
-            email: Some(email.to_string()),
-            username: Some(username.to_string()),
-        }),
-        access_token: Some(token),
-    })
+    Ok(map_session(&sb_session))
 }
 
-pub fn sign_in(identifier: &str, password: &str) -> Result<AuthSession, String> {
+pub async fn sign_in(identifier: &str, password: &str) -> Result<AuthSession, String> {
     if identifier.is_empty() {
         return Err("请输入邮箱或用户名".to_string());
     }
 
-    ensure_tables();
+    // If identifier is not an email, resolve username → email via RPC
+    let email = if identifier.contains('@') {
+        identifier.to_string()
+    } else {
+        supabase::resolve_email_by_username(identifier).await?
+    };
 
-    // Try email first, then username
-    let user = get_user_by_email(identifier).or_else(|_| get_user_by_username(identifier))?;
+    let sb_session = supabase::sign_in(&email, password).await?;
 
-    let stored_hash: String = db::with_db(|conn| {
-        conn.query_row(
-            "SELECT password_hash FROM users WHERE id = ?",
-            params![user.id],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())
-    })?;
+    // After login, check if user DB should be created
+    let username = supabase::get_username_from_session(&sb_session)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
 
-    let valid = bcrypt::verify(password, &stored_hash).map_err(|e| e.to_string())?;
-    if !valid {
-        return Err("密码错误".to_string());
+    if !username.is_empty() {
+        db::copy_local_to_user_db_on_first_login(&username).ok();
+        db::set_current_user(Some(&username));
     }
 
-    let token = create_session(&user.id)?;
+    // Persist session
+    supabase::persist_session(&sb_session);
+    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
+        *s = Some(sb_session.clone());
+    }
 
-    Ok(AuthSession {
-        user: Some(AuthUser {
-            id: user.id.clone(),
-            email: user.email.clone(),
-            username: user.username.clone(),
-        }),
-        access_token: Some(token),
-    })
+    Ok(map_session(&sb_session))
 }
 
-pub fn sign_out() -> Result<(), String> {
-    // Session cleanup handled by frontend clearing localStorage
+pub async fn sign_out() -> Result<(), String> {
+    let token = supabase::CURRENT_SESSION
+        .lock()
+        .ok()
+        .and_then(|s| s.clone())
+        .map(|s| s.access_token);
+
+    if let Some(token) = token {
+        supabase::sign_out(&token).await.ok();
+    }
+
+    supabase::clear_persisted_session();
+    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
+        *s = None;
+    }
+
+    db::set_current_user(None);
+
     Ok(())
 }
 
 pub fn get_current_user() -> Result<Option<AuthUser>, String> {
-    Ok(None)
+    let session = supabase::CURRENT_SESSION
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+
+    match session {
+        Some(s) => Ok(Some(map_user(&s.user))),
+        None => Ok(None),
+    }
 }
 
-pub fn get_session() -> Result<Option<AuthSession>, String> {
-    Ok(None)
+pub async fn get_session() -> Result<Option<AuthSession>, String> {
+    let session = supabase::CURRENT_SESSION
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+
+    match session {
+        Some(s) => {
+            // Check if token is expired
+            let now = Utc::now().timestamp();
+            if now >= s.expires_at {
+                // Try refresh
+                let new_session = supabase::refresh_session(&s.refresh_token).await.map_err(|e| {
+                    log::warn!("[Auth] Token refresh failed: {}", e);
+                    e
+                })?;
+                supabase::persist_session(&new_session);
+                if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                    *current = Some(new_session.clone());
+                }
+                return Ok(Some(map_session(&new_session)));
+            }
+
+            Ok(Some(map_session(&s)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Called at startup to restore session from supabase-auth.json
+pub fn try_restore_session() -> Option<String> {
+    let session = supabase::read_persisted_session()?;
+    let username = supabase::get_username_from_session(&session)?.to_string();
+
+    // Store in global
+    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
+        *s = Some(session);
+    }
+
+    Some(username)
 }

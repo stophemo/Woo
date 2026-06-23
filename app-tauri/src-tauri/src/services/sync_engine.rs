@@ -1,5 +1,6 @@
 use crate::db;
 use crate::services::utils::now_str;
+use crate::supabase;
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -37,20 +38,25 @@ pub struct SyncResult {
     pub sync_time: String,
 }
 
-// ===================== Sync Meta Helpers =====================
+// ===================== Session Helpers =====================
 
-#[allow(dead_code)]
-fn ensure_sync_meta_table() {
-    db::with_db(|conn| {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS sync_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )",
-        )
-        .ok();
-    });
+fn get_current_user_id() -> Option<String> {
+    supabase::CURRENT_SESSION
+        .lock()
+        .ok()
+        .and_then(|s| s.clone())
+        .map(|s| s.user.id)
 }
+
+fn get_current_access_token() -> Option<String> {
+    supabase::CURRENT_SESSION
+        .lock()
+        .ok()
+        .and_then(|s| s.clone())
+        .map(|s| s.access_token)
+}
+
+// ===================== Sync Meta Helpers =====================
 
 pub fn get_sync_meta(key: &str) -> Option<String> {
     db::with_db(|conn| {
@@ -77,70 +83,6 @@ pub fn get_last_sync_time() -> Option<String> {
 
 pub fn set_last_sync_time(time: &str) {
     set_sync_meta("last_sync_time", time);
-}
-
-// ===================== Supabase Stubs =====================
-
-/// Stub: upsert rows to a Supabase table via REST API.
-async fn supabase_upsert(table: &str, rows: &[serde_json::Value], _user_id: &str) -> Result<(), String> {
-    log::debug!(
-        "[Sync] Would upsert {} rows to {} (first id: {})",
-        rows.len(),
-        table,
-        rows.first()
-            .and_then(|r| r.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("?"),
-    );
-    Ok(())
-}
-
-/// Stub: select rows from a Supabase table, filtering by user_id and update_time > last_sync.
-async fn supabase_select(
-    table: &str,
-    _user_id: &str,
-    last_sync: Option<&str>,
-) -> Result<Vec<serde_json::Value>, String> {
-    log::debug!(
-        "[Sync] Would select from {} where update_time > {:?}",
-        table, last_sync
-    );
-    Ok(Vec::new())
-}
-
-/// Stub: delete rows from a Supabase table.
-async fn supabase_delete(table: &str, _id_field: &str, ids: &[&str], _user_id: &str) -> Result<(), String> {
-    log::debug!(
-        "[Sync] Would delete {} rows from {} (ids: {:?})",
-        ids.len(),
-        table,
-        ids
-    );
-    Ok(())
-}
-
-/// Stub: insert a tombstone record.
-async fn supabase_insert_tombstone(table_name: &str, record_id: &str, _user_id: &str) -> Result<(), String> {
-    log::debug!(
-        "[Sync] Would insert tombstone for {}/{}",
-        table_name, record_id
-    );
-    Ok(())
-}
-
-/// Stub: query tombstones from Supabase.
-async fn supabase_select_tombstones(
-    _user_id: &str,
-    _last_pull: &str,
-) -> Result<Vec<serde_json::Value>, String> {
-    log::debug!("[Sync] Would pull tombstones since {}", _last_pull);
-    Ok(Vec::new())
-}
-
-/// Stub: delete old tombstones from Supabase.
-async fn supabase_cleanup_tombstones(_user_id: &str, _cutoff: &str) -> Result<(), String> {
-    log::debug!("[Sync] Would cleanup tombstones before {}", _cutoff);
-    Ok(())
 }
 
 // ===================== Push Logic =====================
@@ -181,6 +123,7 @@ fn query_local_changes(table: &str, _id_field: &str, last_sync: Option<&str>) ->
 /// Push local changes to Supabase.
 async fn push_changes(
     user_id: &str,
+    access_token: &str,
     last_sync: Option<&str>,
     skip_ids: Option<&HashMap<String, HashSet<String>>>,
 ) -> (i32, Vec<String>) {
@@ -221,7 +164,7 @@ async fn push_changes(
             })
             .collect();
 
-        match supabase_upsert(table, &rows_with_user, user_id).await {
+        match supabase::upsert(table, &rows_with_user, access_token).await {
             Ok(_) => pushed_count += rows_with_user.len() as i32,
             Err(e) => errors.push(format!("[{}] upsert failed: {}", table, e)),
         }
@@ -361,6 +304,7 @@ fn merge_into_local(
 /// Pull remote changes from Supabase and merge into local.
 async fn pull_changes(
     user_id: &str,
+    access_token: &str,
     last_sync: Option<&str>,
 ) -> (i32, i32, Vec<String>, HashMap<String, HashSet<String>>) {
     let mut pulled_count = 0i32;
@@ -369,7 +313,7 @@ async fn pull_changes(
     let mut pulled_ids_map: HashMap<String, HashSet<String>> = HashMap::new();
 
     for &(table, id_field) in ENTITIES {
-        let remote_rows = match supabase_select(table, user_id, last_sync).await {
+        let remote_rows = match supabase::select(table, user_id, last_sync, access_token).await {
             Ok(rows) => rows,
             Err(e) => {
                 errors.push(format!("[{}] pull failed: {}", table, e));
@@ -396,10 +340,10 @@ async fn pull_changes(
 
 // ===================== Tombstone Logic =====================
 
-async fn pull_tombstones(user_id: &str) -> (i32, Vec<String>) {
+async fn pull_tombstones(user_id: &str, access_token: &str) -> (i32, Vec<String>) {
     let last_pull = get_sync_meta("last_tombstone_pull").unwrap_or_else(|| "1970-01-01T00:00:00".to_string());
 
-    let tombstones = match supabase_select_tombstones(user_id, &last_pull).await {
+    let tombstones = match supabase::select_tombstones(user_id, &last_pull, access_token).await {
         Ok(t) => t,
         Err(e) => return (0, vec![e]),
     };
@@ -448,7 +392,7 @@ async fn pull_tombstones(user_id: &str) -> (i32, Vec<String>) {
         .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
 
-    supabase_cleanup_tombstones(user_id, &cutoff).await.ok();
+    supabase::cleanup_tombstones(user_id, &cutoff, access_token).await.ok();
 
     (count, Vec::new())
 }
@@ -475,7 +419,7 @@ fn parse_cleanup_seconds() -> i64 {
 }
 
 /// Cleanup expired deleted=2 records.
-async fn cleanup_expired_deletes(user_id: &str) -> (i32, Vec<String>) {
+async fn cleanup_expired_deletes(user_id: &str, access_token: &str) -> (i32, Vec<String>) {
     let cleanup_seconds = parse_cleanup_seconds();
     let cutoff = (Utc::now() - Duration::seconds(cleanup_seconds))
         .format("%Y-%m-%dT%H:%M:%S")
@@ -496,20 +440,16 @@ async fn cleanup_expired_deletes(user_id: &str) -> (i32, Vec<String>) {
     });
 
     for doc_id in &expired_docs {
-        // Delete versions from Supabase
-        supabase_delete("note_document_version", "document_id", &[doc_id], user_id)
+        supabase::delete("note_document_version", "document_id", &[doc_id], access_token)
             .await
             .ok();
-        // Delete document from Supabase
-        supabase_delete("note_document", "id", &[doc_id], user_id)
+        supabase::delete("note_document", "id", &[doc_id], access_token)
             .await
             .ok();
-        // Insert tombstone
-        supabase_insert_tombstone("note_document", doc_id, user_id)
+        supabase::insert_tombstone("note_document", doc_id, user_id, access_token)
             .await
             .ok();
 
-        // Delete locally
         db::with_db(|conn| {
             conn.execute("DELETE FROM note_document_version WHERE document_id = ?", [doc_id])
                 .ok();
@@ -536,10 +476,10 @@ async fn cleanup_expired_deletes(user_id: &str) -> (i32, Vec<String>) {
     });
 
     for folder_id in &expired_folders {
-        supabase_delete("note_folder", "id", &[folder_id], user_id)
+        supabase::delete("note_folder", "id", &[folder_id], access_token)
             .await
             .ok();
-        supabase_insert_tombstone("note_folder", folder_id, user_id)
+        supabase::insert_tombstone("note_folder", folder_id, user_id, access_token)
             .await
             .ok();
         db::with_db(|conn| {
@@ -561,7 +501,7 @@ async fn cleanup_expired_deletes(user_id: &str) -> (i32, Vec<String>) {
     });
 
     for ver_id in &expired_versions {
-        supabase_delete("note_document_version", "id", &[ver_id], user_id)
+        supabase::delete("note_document_version", "id", &[ver_id], access_token)
             .await
             .ok();
         db::with_db(|conn| {
@@ -576,7 +516,6 @@ async fn cleanup_expired_deletes(user_id: &str) -> (i32, Vec<String>) {
 
 /// Placeholder: promote empty folder chains to deleted=2.
 fn promote_empty_folders_to_deleted2() {
-    // TODO: implement when document_service is ported
     log::debug!("[Sync] Would promote empty folders to deleted=2");
 }
 
@@ -584,23 +523,36 @@ fn promote_empty_folders_to_deleted2() {
 
 /// Execute a full sync cycle: tombstone pull → remote pull → local push → cleanup.
 async fn do_sync() -> Result<SyncResult, String> {
-    let user_id = "stub-user-id"; // TODO: wire up actual auth session
+    let user_id = get_current_user_id().ok_or("未登录，无法同步".to_string())?;
+    let access_token = get_current_access_token().ok_or("未登录，无法同步".to_string())?;
 
     let last_sync = get_last_sync_time();
 
     // 1. Pull tombstones
-    let (tombstone_count, _tombstone_errors) = pull_tombstones(user_id).await;
+    let (tombstone_count, tombstone_errors) = pull_tombstones(&user_id, &access_token).await;
+    for e in &tombstone_errors {
+        log::warn!("[Sync] tombstone error: {}", e);
+    }
 
     // 2. Pull remote changes
-    let (pulled_count, conflict_count, _pull_errors, pulled_ids) =
-        pull_changes(user_id, last_sync.as_deref()).await;
+    let (pulled_count, conflict_count, pull_errors, pulled_ids) =
+        pull_changes(&user_id, &access_token, last_sync.as_deref()).await;
+    for e in &pull_errors {
+        log::warn!("[Sync] pull error: {}", e);
+    }
 
     // 3. Push local changes
-    let (pushed_count, _push_errors) =
-        push_changes(user_id, last_sync.as_deref(), Some(&pulled_ids)).await;
+    let (pushed_count, push_errors) =
+        push_changes(&user_id, &access_token, last_sync.as_deref(), Some(&pulled_ids)).await;
+    for e in &push_errors {
+        log::warn!("[Sync] push error: {}", e);
+    }
 
     // 4. Cleanup expired deletes
-    let (cleanup_count, _cleanup_errors) = cleanup_expired_deletes(user_id).await;
+    let (cleanup_count, cleanup_errors) = cleanup_expired_deletes(&user_id, &access_token).await;
+    for e in &cleanup_errors {
+        log::warn!("[Sync] cleanup error: {}", e);
+    }
 
     // 5. Update sync time
     let sync_time = now_str();

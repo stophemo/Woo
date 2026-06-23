@@ -4,7 +4,16 @@ mod models;
 mod services;
 mod supabase;
 
-use tauri::Manager;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
+
+// Global AppHandle for emitting events to the frontend from background tasks.
+static APP_HANDLE: Lazy<Mutex<Option<tauri::AppHandle>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn get_app_handle() -> Option<tauri::AppHandle> {
+    APP_HANDLE.lock().ok().and_then(|h| h.clone())
+}
 
 fn init_logger() {
     env_logger::Builder::from_env(
@@ -12,6 +21,84 @@ fn init_logger() {
     )
     .format_timestamp_secs()
     .init();
+}
+
+/// Determine data directory matching app-desktop:
+/// - dev  (debug):  ~/Library/Application Support/woo-dev/
+/// - prod (release): ~/Library/Application Support/Woo/
+fn resolve_data_dir(app: &tauri::App) -> PathBuf {
+    let mut base = app.path().app_data_dir().expect("failed to get app data dir");
+    // Go up one level to remove bundle identifier, use our own dir name
+    base.pop();
+    let dir_name = if cfg!(debug_assertions) { "woo-dev" } else { "Woo" };
+    base.push(dir_name);
+    base
+}
+
+use std::path::PathBuf;
+
+#[cfg(target_os = "macos")]
+fn set_macos_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSString;
+
+    let Some(icon_path) = resolve_macos_icon_path() else {
+        log::warn!("[DockIcon] icon.png not found for dock icon");
+        return;
+    };
+
+    let Some(path_str) = icon_path.to_str() else {
+        log::warn!("[DockIcon] icon path is not valid UTF-8");
+        return;
+    };
+
+    log::info!("[DockIcon] Setting dock icon from {:?}", icon_path);
+
+    unsafe {
+        let ns_path = NSString::from_str(path_str);
+        let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &ns_path);
+        let Some(image) = image else {
+            log::warn!("[DockIcon] failed to load NSImage from {:?}", icon_path);
+            return;
+        };
+
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            log::warn!("[DockIcon] not running on main thread");
+            return;
+        };
+
+        let app = NSApplication::sharedApplication(mtm);
+        app.setApplicationIconImage(Some(&image));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_macos_icon_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+
+    // Dev layout: src-tauri/target/debug/woo-tauri -> src-tauri/icons/icon.png
+    let dev_path = exe_dir
+        .parent()?
+        .parent()?
+        .join("icons")
+        .join("icon.png");
+    if dev_path.exists() {
+        return Some(dev_path);
+    }
+
+    // Bundled layout: Woo.app/Contents/MacOS/woo-tauri -> Woo.app/Contents/Resources/icons/icon.png
+    let bundled_path = exe_dir
+        .parent()?
+        .join("Resources")
+        .join("icons")
+        .join("icon.png");
+    if bundled_path.exists() {
+        return Some(bundled_path);
+    }
+
+    None
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,21 +109,93 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // Initialize database directory
-            let db_path = app
-                .path()
-                .app_data_dir()
-                .expect("failed to get app data dir");
-            std::fs::create_dir_all(&db_path).ok();
-            db::set_data_dir(db_path);
+            #[cfg(target_os = "macos")]
+            set_macos_dock_icon();
 
-            // Main window is created automatically from tauri.conf.json
-            // (dev → devUrl, prod → frontendDist). macOS-specific traffic
-            // light position is also configured in tauri.conf.json.
+            // Store AppHandle for event emission
+            *APP_HANDLE.lock().unwrap() = Some(app.handle().clone());
+
+            // Initialize database directory (shared with app-desktop)
+            let db_path = resolve_data_dir(app);
+            std::fs::create_dir_all(&db_path).ok();
+            db::set_data_dir(db_path.clone());
+            supabase::set_data_dir(db_path.clone());
+            log::info!("[App] Data directory: {:?}", db_path);
+
+            // Restore session from supabase-auth.json
+            if let Some(username) = services::auth_service::try_restore_session() {
+                log::info!("[App] Restored session for user: {}", username);
+                db::set_current_user(Some(&username));
+            }
 
             // Lazy-init database
             db::with_db(|_conn| {
                 log::info!("[DB] Database ready");
+            });
+
+            // Compact version history on startup (keep latest 50 per document)
+            match services::version_service::compact_all_documents(50) {
+                Ok(n) => {
+                    if n > 0 {
+                        log::info!("[App] Compacted {} old versions on startup", n);
+                    }
+                }
+                Err(e) => log::warn!("[App] Version compaction on startup failed: {}", e),
+            }
+
+            // Start periodic sync timer with event emission
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    // Only sync if logged in
+                    let has_session = supabase::CURRENT_SESSION
+                        .lock()
+                        .ok()
+                        .and_then(|s| s.is_some().then_some(()));
+                    if has_session.is_some() {
+                        log::debug!("[Sync] Periodic sync tick");
+                        let result = services::sync_engine::sync_now_async().await;
+
+                        // Emit sync status event to frontend
+                        let status = services::sync_engine::get_status();
+                        app_handle.emit("sync-status", &status).ok();
+
+                        // Emit toast for sync feedback
+                        let (toast_message, toast_type): (String, &str) = match &result {
+                            Ok(sr) => {
+                                log::info!(
+                                    "[Sync] ⇄ push={} pull={} conflict={} cleanup={} tombstone={}",
+                                    sr.pushed_count,
+                                    sr.pulled_count,
+                                    sr.conflict_count,
+                                    sr.cleanup_count,
+                                    sr.tombstone_count,
+                                );
+                                // Emit data-changed event → triggers workspaceStore.syncRefresh()
+                                app_handle.emit("sync-data-changed", &sr).ok();
+                                (
+                                    format!("同步完成 ↑{} ↓{}", sr.pushed_count, sr.pulled_count),
+                                    "success",
+                                )
+                            }
+                            Err(e) => {
+                                log::warn!("[Sync] Periodic sync failed: {}", e);
+                                (format!("同步失败: {}", e), "error")
+                            }
+                        };
+                        app_handle
+                            .emit(
+                                "sync:toast",
+                                serde_json::json!({
+                                    "message": toast_message,
+                                    "type": toast_type,
+                                }),
+                            )
+                            .ok();
+                    }
+                }
             });
 
             Ok(())

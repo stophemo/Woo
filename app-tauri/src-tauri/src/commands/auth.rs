@@ -2,25 +2,27 @@ use crate::commands::CommandResult;
 use crate::services::auth_service;
 
 #[tauri::command(rename_all = "camelCase", rename = "authSignUp")]
-pub fn auth_sign_up(email: String, password: String, username: String) -> CommandResult<auth_service::AuthSession> {
-    match auth_service::sign_up(&email, &password, &username) {
+pub async fn auth_sign_up(email: String, password: String, username: String) -> CommandResult<auth_service::AuthSession> {
+    match auth_service::sign_up(&email, &password, &username).await {
         Ok(data) => CommandResult::success(data),
         Err(msg) => CommandResult::error(&msg),
     }
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authSignIn")]
-pub fn auth_sign_in(email: String, password: String) -> CommandResult<auth_service::AuthSession> {
-    match auth_service::sign_in(&email, &password) {
+pub async fn auth_sign_in(email: String, password: String) -> CommandResult<auth_service::AuthSession> {
+    match auth_service::sign_in(&email, &password).await {
         Ok(data) => CommandResult::success(data),
         Err(msg) => CommandResult::error(&msg),
     }
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authSignOut")]
-pub fn auth_sign_out() -> CommandResult<()> {
-    let _ = auth_service::sign_out();
-    CommandResult::success(())
+pub async fn auth_sign_out() -> CommandResult<()> {
+    match auth_service::sign_out().await {
+        Ok(_) => CommandResult::success(()),
+        Err(msg) => CommandResult::error(&msg),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authGetUser")]
@@ -32,8 +34,8 @@ pub fn auth_get_user() -> CommandResult<Option<auth_service::AuthUser>> {
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authGetSession")]
-pub fn auth_get_session() -> CommandResult<Option<auth_service::AuthSession>> {
-    match auth_service::get_session() {
+pub async fn auth_get_session() -> CommandResult<Option<auth_service::AuthSession>> {
+    match auth_service::get_session().await {
         Ok(data) => CommandResult::success(data),
         Err(msg) => CommandResult::error(&msg),
     }
