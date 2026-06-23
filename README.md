@@ -2,9 +2,8 @@
 
 > 无我笔记 — `app-desktop` 的 Tauri v2 重构版本
 
-`app-tauri` 是 `app-desktop`（Electron + better-sqlite3 + Supabase）的官方重构目标。
-本项目使用 Tauri v2 重写主进程，业务 IPC 一一映射，UI 层沿用 Vue 3 + Pinia + Tiptap，
-数据格式与 `app-desktop` 完全兼容，可平滑过渡。
+Tauri v2 重构版本，使用 Rust 重写主进程，业务 IPC 一一映射，UI 层沿用 Vue 3 + Pinia + Tiptap，
+数据格式与 `app-desktop`（Electron 版）完全兼容，可平滑过渡。
 
 ---
 
@@ -24,8 +23,7 @@
 ## 目录结构
 
 ```
-app-tauri/
-├── src/                        # 渲染进程（ESM，Vue 3）
+src/                        # 渲染进程（ESM，Vue 3）
 │   ├── App.vue                 # 根组件：组合三大侧栏 + 编辑区
 │   ├── main.ts                 # 入口：setupTauriBridge + Pinia + mount
 │   ├── setup.ts                # Tauri → window.electronAPI 桥接层
@@ -92,7 +90,7 @@ app-tauri/
 - 通道名是 `domain:action` 形式
 - 主进程 `wrap()` 把所有响应包成 `{ ok, data, message }`
 
-Tauri v2 没有内建 channel / wrap 机制，所以 `app-tauri` 在前端用一层薄适配模拟同样的接口：
+Tauri v2 没有内建 channel / wrap 机制，所以本项目在前端用一层薄适配模拟同样的接口：
 
 ```
 调用 invoke('document:listByFolder', { folderId })

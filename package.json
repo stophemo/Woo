@@ -13,9 +13,11 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:icon": "tauri icon",
-    "tauri:android:dev": "tauri android dev --host",
-    "tauri:android:build": "tauri android build",
-    "tauri:android:init": "tauri android init"
+    "tauri:android:dev": "tauri android dev --host --config src-tauri/tauri.android.conf.json",
+    "tauri:android:build": "tauri android build --config src-tauri/tauri.android.conf.json",
+    "tauri:android:init": "tauri android init",
+    "dev:mobile": "vite --config vite.mobile.config.ts",
+    "build:mobile": "vite build --config vite.mobile.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -30,6 +32,7 @@
     "@tiptap/pm": "^3.22.4",
     "@tiptap/starter-kit": "^3.22.4",
     "@tiptap/vue-3": "^3.22.4",
+    "@vant/use": "^1.6.0",
     "d3": "^7.9.0",
     "marked": "^15.0.12",
     "markmap-lib": "^0.18.12",
@@ -37,7 +40,9 @@
     "pinia": "^3.0.4",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
-    "vue": "^3.4.21"
+    "vant": "^4.9.24",
+    "vue": "^3.4.21",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

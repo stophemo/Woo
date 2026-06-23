@@ -6,12 +6,17 @@
 ## 构建与开发命令
 
 ```bash
+# 桌面端
 npm install              # 安装前端依赖
 npm run dev              # 启动 Vite 开发服务器（http://localhost:5173）
 npm run build            # vue-tsc + vite build（仅前端）
 npm run tauri:dev        # Tauri 开发模式（桌面端）
 npm run tauri:build      # Tauri 生产构建（桌面端）
-npm run tauri:android:dev    # Android 开发模式
+
+# 移动端
+npm run dev:mobile       # 启动移动端 Vite 服务器（http://localhost:5174）
+npm run build:mobile     # 构建移动端前端
+npm run tauri:android:dev    # Android 开发模式（连接真机）
 npm run tauri:android:build  # Android 生产构建
 ```
 
@@ -36,23 +41,31 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite (
 
 ```
 Woo/
-├── src/                        # 前端 (Vue 3, ESM)
-│   ├── stores/                 # Pinia 状态管理 (workspace, auth, sync, aiChat, lock, theme)
-│   ├── services/               # IPC 客户端 + AI 服务 (gemini.ts, deepseek.ts, agent/)
-│   ├── components/             # Vue 组件 (layout/, ui/, icons/)
+├── src/                        # 桌面端前端 (Vue 3, ESM)
+│   ├── stores/                 # Pinia 状态管理
+│   ├── services/               # IPC 客户端 + AI 服务（移动端也共用）
+│   ├── components/             # 桌面端 UI 组件
 │   ├── config/                 # 菜单、快捷键配置
-│   └── types/                  # TypeScript 类型
-├── src-tauri/                  # Rust 后端 (Tauri v2)
+│   └── types/                  # TypeScript 类型定义（移动端也共用）
+├── src-mobile/                 # 移动端前端 (Vue 3 + Vant)
+│   ├── views/                  # 移动端页面
+│   ├── router/                 # 移动端路由
+│   └── components/             # 移动端专属组件
+├── src-tauri/                  # Rust 后端（桌面端 + 移动端共用）
 │   ├── src/
-│   │   ├── commands/           # 34 条 Tauri 命令 (IPC 入口)
+│   │   ├── commands/           # Tauri 命令 (IPC 入口)
 │   │   ├── services/           # 业务逻辑层
-│   │   ├── db/                 # SQLite 连接管理 (每用户分库)
-│   │   ├── supabase/           # Supabase REST API 客户端
+│   │   ├── db/                 # SQLite 连接管理
+│   │   ├── supabase/           # Supabase REST API
 │   │   └── models/             # 数据模型
-│   └── gen/android/            # Android 项目 (生成)
+│   ├── gen/android/            # Android 项目
+│   └── tauri.android.conf.json # Android 构建配置覆盖
+├── index.html                  # 桌面端入口
+├── index-mobile.html           # 移动端入口
 ├── package.json
-├── vite.config.ts
-└── index.html
+├── vite.config.ts              # 桌面端 Vite 配置
+├── vite.mobile.config.ts       # 移动端 Vite 配置
+└── README.md
 ```
 
 ### 关键架构决策

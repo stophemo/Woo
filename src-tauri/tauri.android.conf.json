@@ -1,0 +1,8 @@
+{
+  "build": {
+    "devUrl": "http://localhost:5174",
+    "frontendDist": "../dist-mobile",
+    "beforeDevCommand": "npm run dev:mobile",
+    "beforeBuildCommand": "npm run build:mobile"
+  }
+}
