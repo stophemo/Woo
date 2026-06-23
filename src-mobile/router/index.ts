@@ -10,9 +10,13 @@ const router = createRouter({
       component: Home,
     },
     {
+      path: '/drafts',
+      name: 'drafts',
+      component: () => import('../views/Drafts.vue'),
+    },
+    {
       path: '/note/:id',
       name: 'note-editor',
-      // 懒加载编辑器页
       component: () => import('../views/Editor.vue'),
     },
     {

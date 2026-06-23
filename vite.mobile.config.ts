@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolve } from 'path'
+import { readFileSync } from 'fs'
+
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 // Vue 3 + TypeScript - 移动端 (Vant UI)
 export default defineConfig({
@@ -15,10 +17,8 @@ export default defineConfig({
     cssCodeSplit: false,
     crossorigin: false,
   },
-  resolve: {
-    alias: {
-      '@shared': resolve(__dirname, 'src'),
-    },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   envDir: '.',
   clearScreen: false,

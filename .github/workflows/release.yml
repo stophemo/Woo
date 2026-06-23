@@ -1,0 +1,292 @@
+name: 🚀 Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "版本标签（如 v0.5.2）"
+        required: true
+        type: string
+      draft:
+        description: "创建为草稿"
+        required: false
+        default: true
+        type: boolean
+      prerelease:
+        description: "标记为预发布"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+  NODE_VERSION: "20"
+  RUST_VERSION: "stable"
+
+jobs:
+  # ─── 版本解析 ─────────────────────────────────────
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      is_manual: ${{ steps.resolve.outputs.is_manual }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${{ github.ref_name }}"
+            IS_MANUAL="false"
+          else
+            TAG="${{ inputs.tag }}"
+            IS_MANUAL="true"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "is_manual=${IS_MANUAL}" >> "$GITHUB_OUTPUT"
+          echo "✓ 版本: ${VERSION}  标签: ${TAG}"
+
+  # ─── 桌面端构建 ───────────────────────────────────
+  desktop:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: macos
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: windows
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ needs.meta.outputs.version }}
+      tag: ${{ needs.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 缓存 Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装 Linux 系统依赖
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libappindicator3-dev librsvg2-dev patchelf
+
+      - name: 构建桌面应用
+        env:
+          CI: true
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run tauri:build
+
+      - name: 压缩 macOS 应用包
+        if: matrix.os == 'macos-latest'
+        working-directory: src-tauri/target/release/bundle/macos
+        run: |
+          if [ -d "Woo.app" ]; then
+            zip -r "Woo_${{ needs.meta.outputs.version }}_macos_aarch64.zip" "Woo.app"
+          fi
+
+      - name: 上传桌面端构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: woo-desktop-${{ matrix.artifact }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+          if-no-files-found: warn
+
+  # ─── Android 构建 ───────────────────────────────────
+  android:
+    needs: meta
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ needs.meta.outputs.version }}
+      tag: ${{ needs.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 安装 Rust（含 Android 目标）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+            x86_64-linux-android
+
+      - name: 缓存 Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: 设置 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 NDK
+        run: |
+          sdkmanager "ndk;26.3.11579264" \
+                     "build-tools;35.0.0" \
+                     "platforms;android-35"
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建 Android APK
+        env:
+          CI: true
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+        run: npm run tauri:android:build
+
+      - name: 上传 Android 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: woo-android
+          path: src-tauri/gen/android/app/build/outputs/apk
+          if-no-files-found: warn
+
+  # ─── 发布 ──────────────────────────────────────────
+  release:
+    needs: [meta, desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 生成发布说明
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ needs.meta.outputs.tag }}"
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+
+          if [ -n "$PREV" ]; then
+            NOTES=$(git log "$PREV..$TAG" --no-merges --format="- %s" \
+              | sed 's/^feat(\(.*\)):/* **✨ \1:** /' \
+              | sed 's/^feat:/* **✨ 新功能:** /' \
+              | sed 's/^fix(\(.*\)):/* **🔧 \1:** /' \
+              | sed 's/^fix:/* **🔧 修复:** /' \
+              | sed 's/^chore(\(.*\)):/* **🏗️ \1:** /' \
+              | sed 's/^chore:/* **🏗️ 工程:** /' \
+              | sed 's/^docs(\(.*\)):/* **📖 \1:** /' \
+              | sed 's/^docs:/* **📖 文档:** /' \
+              | sed 's/^refactor(\(.*\)):/* **♻️ \1:** /' \
+              | sed 's/^refactor:/* **♻️ 重构:** /' )
+            echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+            echo "## 无我笔记 v${{ needs.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+            echo "$NOTES" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+            echo "---" >> "$GITHUB_OUTPUT"
+            echo "📦 [完整变更](${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG})" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+            echo "## 无我笔记 v${{ needs.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+            echo "🎉 首次发布" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+          echo "✓ 发布说明生成完成"
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: woo-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: 整理发布文件
+        shell: bash
+        run: |
+          mkdir -p release
+          # 重命名文件为统一格式
+          find release-assets -type f \( -name "*.app.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" \) -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: 创建 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          IS_MANUAL: ${{ needs.meta.outputs.is_manual }}
+        run: |
+          FILES=(release/*)
+          if [ ${#FILES[@]} -eq 0 ] || [ ! -e "${FILES[0]}" ]; then
+            echo "⚠️ 没有找到发布文件"
+            exit 1
+          fi
+
+          DRAFT="${{ inputs.draft }}"
+          PRERELEASE="${{ inputs.prerelease }}"
+
+          if [ "$IS_MANUAL" == "true" ]; then
+            DRAFT_FLAG="${DRAFT:-true}"
+            PRERELEASE_FLAG="${PRERELEASE:-false}"
+          else
+            DRAFT_FLAG="false"
+            PRERELEASE_FLAG="false"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，更新中..."
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            echo "创建 Release $TAG..."
+            gh release create "$TAG" \
+              --title "无我笔记 v${{ needs.meta.outputs.version }}" \
+              --notes "$NOTES" \
+              --draft="$DRAFT_FLAG" \
+              --prerelease="$PRERELEASE_FLAG" \
+              "${FILES[@]}"
+          fi
+          echo "✓ Release 发布完成: $TAG"
