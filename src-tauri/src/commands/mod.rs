@@ -1,7 +1,6 @@
 pub mod auth;
 pub mod document;
 pub mod folder;
-pub mod kb;
 pub mod lock;
 pub mod sync;
 pub mod system;

@@ -397,7 +397,7 @@ pub async fn insert_tombstone(
     access_token: &str,
 ) -> Result<(), String> {
     let url = format!("{}/rest/v1/sync_tombstone", supabase_url());
-    let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = Utc::now().format("%Y-%m-%dT%H:%M:%S%.f+00:00").to_string();
     let body = serde_json::json!([{
         "table_name": table_name,
         "record_id": record_id,
@@ -428,18 +428,20 @@ pub async fn select_tombstones(
     last_pull: &str,
     access_token: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let url = format!(
-        "{}/rest/v1/sync_tombstone?user_id=eq.{}&deleted_at=gt.{}&order=deleted_at.asc",
-        supabase_url(),
-        user_id,
-        last_pull,
-    );
+    let url = format!("{}/rest/v1/sync_tombstone", supabase_url());
+
+    let params = vec![
+        ("user_id", format!("eq.{}", user_id)),
+        ("deleted_at", format!("gt.{}", last_pull)),
+        ("order", "deleted_at.asc".to_string()),
+    ];
 
     let resp = HTTP
         .get(&url)
         .header("apikey", supabase_anon_key())
         .header("Authorization", format!("Bearer {}", access_token))
         .header("Accept", "application/json")
+        .query(&params)
         .send()
         .await
         .map_err(|e| format!("网络错误: {}", e))?;
@@ -458,17 +460,18 @@ pub async fn select_tombstones(
 }
 
 pub async fn cleanup_tombstones(user_id: &str, cutoff: &str, access_token: &str) -> Result<(), String> {
-    let url = format!(
-        "{}/rest/v1/sync_tombstone?user_id=eq.{}&deleted_at=lt.{}",
-        supabase_url(),
-        user_id,
-        cutoff,
-    );
+    let url = format!("{}/rest/v1/sync_tombstone", supabase_url());
+
+    let params = vec![
+        ("user_id", format!("eq.{}", user_id)),
+        ("deleted_at", format!("lt.{}", cutoff)),
+    ];
 
     let resp = HTTP
         .delete(&url)
         .header("apikey", supabase_anon_key())
         .header("Authorization", format!("Bearer {}", access_token))
+        .query(&params)
         .send()
         .await
         .map_err(|e| format!("网络错误: {}", e))?;

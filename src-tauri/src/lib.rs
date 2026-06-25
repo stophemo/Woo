@@ -200,9 +200,18 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                db::close_db();
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(target_os = "macos")]
+                {
+                    // macOS: Cmd+W 隐藏窗口到后台，而非退出应用
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    db::close_db();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -257,10 +266,6 @@ pub fn run() {
             commands::lock::lock_is_document_locked,
             commands::lock::lock_cloud_push_settings,
             commands::lock::lock_cloud_pull_settings,
-            // Knowledge Base
-            commands::kb::kb_rebuild,
-            commands::kb::kb_search,
-            commands::kb::kb_status,
             // Sync
             commands::sync::sync_status,
             commands::sync::sync_trigger,
@@ -271,6 +276,15 @@ pub fn run() {
             commands::system::document_export_pdf,
             commands::system::log_write,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                // macOS: 点击 Dock 图标时重新显示窗口
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

@@ -47,14 +47,6 @@
             />
         </div>
 
-        <div class="sidebar-bottom">
-            <div class="divider"></div>
-            <div class="sidebar-item" @click="handleOpenSettings">
-                <IconSettings />
-                <span>设置</span>
-            </div>
-        </div>
-        
         <!-- 右键菜单 -->
         <ContextMenu
             v-if="showContextMenu"
@@ -91,7 +83,6 @@ import IconSearch from '../icons/IconSearch.vue'
 import IconFile from '../icons/IconFile.vue'
 import IconDraft from '../icons/IconDraft.vue'
 import IconTrash from '../icons/IconTrash.vue'
-import IconSettings from '../icons/IconSettings.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
 import { log } from '../../services/logger'
 import { useLockStore } from '../../stores/lock'
@@ -107,7 +98,6 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   close: []
-  'open-settings': []
 }>()
 
 const store = useWorkspaceStore()
@@ -361,13 +351,6 @@ const handleOpenDraftBox = () => {
 
 const handleOpenTrashBox = () => {
     void store.openTrashBox()
-    if (props.isMobile) {
-        emit('close')
-    }
-}
-
-const handleOpenSettings = () => {
-    emit('open-settings')
     if (props.isMobile) {
         emit('close')
     }

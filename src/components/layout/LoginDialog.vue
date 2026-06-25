@@ -259,10 +259,10 @@ async function handleSubmit() {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   submitting.value = true
   try {
-    authStore.logout()
+    await authStore.logout()
     emit('logout')
     emit('close')
   } finally {

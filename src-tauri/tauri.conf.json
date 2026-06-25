@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "lsof -i :5173 > /dev/null 2>&1 || npm run dev",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "nsis", "deb"],
+    "targets": ["dmg", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

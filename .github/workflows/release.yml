@@ -69,9 +69,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: windows
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            artifact: linux
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ needs.meta.outputs.version }}
@@ -98,27 +95,11 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
-      - name: 安装 Linux 系统依赖
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libappindicator3-dev librsvg2-dev patchelf
-
       - name: 构建桌面应用
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run tauri:build
-
-      - name: 压缩 macOS 应用包
-        if: matrix.os == 'macos-latest'
-        working-directory: src-tauri/target/release/bundle/macos
-        run: |
-          if [ -d "Woo.app" ]; then
-            zip -r "Woo_${{ needs.meta.outputs.version }}_macos_aarch64.zip" "Woo.app"
-          fi
 
       - name: 上传桌面端构建产物
         uses: actions/upload-artifact@v4
@@ -248,7 +229,7 @@ jobs:
         run: |
           mkdir -p release
           # 重命名文件为统一格式
-          find release-assets -type f \( -name "*.app.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" \) -exec cp {} release/ \;
+          find release-assets -type f \( -name "*.dmg" -o -name "*.apk" -o -name "*.exe" \) -exec cp {} release/ \;
           ls -lh release/
 
       - name: 创建 GitHub Release

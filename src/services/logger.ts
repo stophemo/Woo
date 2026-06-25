@@ -50,7 +50,6 @@ export class Logger {
 export const log = {
   db:     new Logger('DB'),
   sync:   new Logger('Sync'),
-  agent:  new Logger('Agent'),
   ipc:    new Logger('IPC'),
   app:    new Logger('App'),
   editor: new Logger('Editor'),

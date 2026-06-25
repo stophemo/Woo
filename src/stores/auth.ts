@@ -153,14 +153,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     loading.value = true
+    // 先清除本地缓存，防止进程在异步操作中被终止时 session 残留
+    user.value = null
+    clearSession()
     try {
       const { useSyncStore } = await import('./sync')
       const syncStore = useSyncStore()
       await syncStore.triggerSync()
       await invoke('auth:signOut')
     } catch { /* ignore */ }
-    user.value = null
-    clearSession()
     loading.value = false
   }
 

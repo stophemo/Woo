@@ -138,26 +138,57 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
         .map_err(|e| e.to_string())?
         .clone();
 
-    match session {
-        Some(s) => {
-            // Check if token is expired
-            let now = Utc::now().timestamp();
-            if now >= s.expires_at {
-                // Try refresh
-                let new_session = supabase::refresh_session(&s.refresh_token).await.map_err(|e| {
-                    log::warn!("[Auth] Token refresh failed: {}", e);
-                    e
-                })?;
-                supabase::persist_session(&new_session);
-                if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                    *current = Some(new_session.clone());
-                }
-                return Ok(Some(map_session(&new_session)));
-            }
+    let Some(s) = session else {
+        return Ok(None);
+    };
 
-            Ok(Some(map_session(&s)))
+    // Step 1: refresh if expired
+    let session = {
+        let now = Utc::now().timestamp();
+        if now >= s.expires_at {
+            match supabase::refresh_session(&s.refresh_token).await {
+                Ok(new_session) => {
+                    supabase::persist_session(&new_session);
+                    if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                        *current = Some(new_session.clone());
+                    }
+                    new_session
+                }
+                Err(e) => {
+                    log::warn!("[Auth] Token refresh failed: {}", e);
+                    // 刷新失败 → session 已失效（可能被服务端吊销）
+                    supabase::clear_persisted_session();
+                    if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                        *current = None;
+                    }
+                    return Ok(None);
+                }
+            }
+        } else {
+            s
         }
-        None => Ok(None),
+    };
+
+    // Step 2: 向 Supabase 验证 token 是否仍有效
+    match supabase::get_user(&session.access_token).await {
+        Ok(Some(_)) => {
+            // Token 有效
+            Ok(Some(map_session(&session)))
+        }
+        Ok(None) => {
+            // 服务端返回 401 → token 已被吊销
+            log::info!("[Auth] Session revoked on server, clearing");
+            supabase::clear_persisted_session();
+            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                *current = None;
+            }
+            Ok(None)
+        }
+        Err(_) => {
+            // 网络错误（离线等）→ 容忍，使用本地缓存的 session
+            log::warn!("[Auth] Server validation failed (offline?), using cached session");
+            Ok(Some(map_session(&session)))
+        }
     }
 }
 

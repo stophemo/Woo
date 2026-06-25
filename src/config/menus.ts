@@ -51,13 +51,6 @@ export const editMenuItems: MenuItem[] = [
   { type: 'item', label: '查找并替换', action: 'find-replace', shortcut: 'Mod+H' }
 ]
 
-// AI 菜单
-export const aiMenuItems: MenuItem[] = [
-  { type: 'item', label: 'Open Chat', action: 'open-chat' },
-  { type: 'divider' },
-  { type: 'item', label: '模型配置', action: 'ai-settings' }
-]
-
 // 标记菜单（Markdown 语法）
 export const markMenuItems: MenuItem[] = [
   { type: 'item', label: '# 一级标题', action: 'h1', shortcut: 'Shift+Alt+1' },
@@ -90,7 +83,6 @@ export const markMenuItems: MenuItem[] = [
 export const viewMenuItems: MenuItem[] = [
   { type: 'item', label: '隐藏左侧菜单栏', action: 'toggle-left' },
   { type: 'item', label: '隐藏文稿缩略图栏', action: 'toggle-thumbnail' },
-  { type: 'item', label: '隐藏右侧AI栏', action: 'toggle-right' },
   { type: 'divider' },
   { type: 'item', label: '外观', action: 'appearance' },
   { type: 'item', label: '主题', action: 'theme' },

@@ -389,7 +389,7 @@ async fn pull_tombstones(user_id: &str, access_token: &str) -> (i32, Vec<String>
 
     // Cleanup old tombstones (30 day cutoff)
     let cutoff = (Utc::now() - Duration::days(30))
-        .format("%Y-%m-%dT%H:%M:%S")
+        .format("%Y-%m-%dT%H:%M:%S%.f+00:00")
         .to_string();
 
     supabase::cleanup_tombstones(user_id, &cutoff, access_token).await.ok();

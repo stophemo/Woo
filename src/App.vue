@@ -9,7 +9,6 @@
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
       @toggle-document-drawer="mobileDocDrawerOpen = !mobileDocDrawerOpen"
-      @toggle-right-sidebar="toggleRightSidebar"
       @open-settings="openSettings"
       @toggle-top-menu="toggleTopMenu"
       @toggle-status-bar="toggleStatusBar"
@@ -19,7 +18,7 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <!-- 左侧菜单列 -->
-      <LeftSidebar :is-open="leftSidebarOpen" :is-mobile="isMobile" @close="leftSidebarOpen = false" @open-settings="openSettings('file')" />
+      <LeftSidebar :is-open="leftSidebarOpen" :is-mobile="isMobile" @close="leftSidebarOpen = false" />
       
       <!-- 中间缩略图列 -->
       <ThumbnailColumn v-if="!isMobile" :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" />
@@ -27,15 +26,13 @@
       <!-- 中央编辑区域 -->
       <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" @active-heading-change="handleActiveHeadingChange" />
       
-      <!-- 右侧AI对话区域 -->
-      <RightSidebar :is-open="rightSidebarOpen" :is-mobile="isMobile" @close="rightSidebarOpen = false" @open-settings="openSettings" />
     </div>
 
     <!-- 移动端文稿列表抽屉 -->
     <MobileDocumentDrawer v-if="isMobile" v-model:open="mobileDocDrawerOpen" />
 
     <!-- 设置弹窗 -->
-    <SettingsDialog :visible="showSettings" :mode="settingsMode" @close="showSettings = false" />
+    <SettingsDialog :visible="showSettings" @close="showSettings = false" />
 
     <!-- 登录/账户弹窗 -->
     <LoginDialog
@@ -64,7 +61,6 @@ import TopMenu from './components/layout/TopMenu.vue'
 import LeftSidebar from './components/layout/LeftSidebar.vue'
 import ThumbnailColumn from './components/layout/ThumbnailColumn.vue'
 import EditArea from './components/layout/EditArea.vue'
-import RightSidebar from './components/layout/RightSidebar.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
 import LoginDialog from './components/layout/LoginDialog.vue'
 import UpdateNotification from './components/ui/UpdateNotification.vue'
@@ -110,9 +106,6 @@ function handleMenuAction(action: string) {
     case 'settings':
       openSettings('file')
       break
-    case 'ai-settings':
-      openSettings('ai')
-      break
     case 'new-document':
       workspaceStore.createNewDocument()
       break
@@ -127,10 +120,6 @@ function handleMenuAction(action: string) {
       break
     case 'toggle-thumbnail':
       toggleThumbnailSidebar()
-      break
-    case 'toggle-right':
-    case 'open-chat':
-      toggleRightSidebar()
       break
     case 'theme':
       useThemeStore().toggleTheme()
@@ -160,17 +149,16 @@ function updateIsMobile() {
 // 侧边栏状态（桌面端默认展开，移动端默认收起）
 const leftSidebarOpen = ref(false)
 const thumbnailSidebarOpen = ref(false)
-const rightSidebarOpen = ref(false)
 const mobileDocDrawerOpen = ref(false)
 const showSettings = ref(false)
 const showLoginDialog = ref(false)
-const settingsMode = ref<'file' | 'ai'>('file')
+const settingsMode = ref<'file'>('file')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
 const isFullscreen = ref(false)
 let topMenuOpenBeforeFullscreen = true
 
-function openSettings(mode: 'file' | 'ai') {
+function openSettings(mode: 'file' = 'file') {
   settingsMode.value = mode
   showSettings.value = true
 }
@@ -322,10 +310,6 @@ const handleKeyDown = (event: KeyboardEvent) => {
       event.preventDefault()
       cycleLeftPanels()
       break
-    case 'ArrowRight':
-      event.preventDefault()
-      toggleRightSidebar()
-      break
   }
 }
 
@@ -338,20 +322,14 @@ const toggleThumbnailSidebar = () => {
   thumbnailSidebarOpen.value = !thumbnailSidebarOpen.value
 }
 
-const toggleRightSidebar = () => {
-  rightSidebarOpen.value = !rightSidebarOpen.value
-}
-
 // 根据移动端状态同步侧边栏默认状态
 watch(isMobile, (mobile) => {
   if (mobile) {
     leftSidebarOpen.value = false
     thumbnailSidebarOpen.value = false
-    rightSidebarOpen.value = false
   } else {
     leftSidebarOpen.value = true
     thumbnailSidebarOpen.value = true
-    rightSidebarOpen.value = true
   }
 })
 
@@ -361,7 +339,6 @@ onMounted(() => {
   // 根据初始屏幕尺寸设置侧边栏默认状态
   leftSidebarOpen.value = !isMobile.value
   thumbnailSidebarOpen.value = !isMobile.value
-  rightSidebarOpen.value = !isMobile.value
 
   window.addEventListener('resize', updateIsMobile)
   window.addEventListener('keydown', handleKeyDown);

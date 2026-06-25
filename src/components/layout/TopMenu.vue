@@ -37,9 +37,6 @@
       <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" :title="'显示/隐藏缩略图栏 (' + modKey() + '←)'">
         <IconThumbnailSidebar />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" :title="'显示/隐藏 AI 聊天 (' + modKey() + '→)'">
-        <IconRightSidebar />
-      </button>
       <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" :class="{ 'spin': syncing }">
           <path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/>
@@ -72,10 +69,7 @@
       <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
         <IconThemeToggle :mode="themeStore.theme" />
       </button>
-      <button class="window-control-btn" @click="$emit('toggle-right-sidebar')" title="AI 聊天">
-        <IconRightSidebar />
-      </button>
-      <button class="window-control-btn" @click="$emit('open-settings', 'file')" title="设置">
+      <button class="window-control-btn" @click="$emit('open-settings')" title="设置">
         <IconSettings />
       </button>
       <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
@@ -99,7 +93,6 @@
 import { ref, type ComponentPublicInstance, computed, onMounted, onBeforeUnmount } from 'vue'
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
-import IconRightSidebar from '../../components/icons/IconRightSidebar.vue'
 import IconSettings from '../../components/icons/IconSettings.vue'
 import IconMinimize from '../../components/icons/IconMinimize.vue'
 import IconMaximize from '../../components/icons/IconMaximize.vue'
@@ -116,7 +109,6 @@ import { useSyncStore } from '../../stores/sync'
 import {
   fileMenuItems,
   editMenuItems,
-  aiMenuItems,
   markMenuItems,
   viewMenuItems,
   helpMenuItems
@@ -162,7 +154,6 @@ class TopMenu {
   static menus = [
     { label: '文件', items: normalizeItems(fileMenuItems) },
     { label: '编辑', items: normalizeItems(editMenuItems) },
-    { label: 'AI', items: normalizeItems(aiMenuItems) },
     { label: '标记', items: normalizeItems(markMenuItems) },
     { label: '查看', items: normalizeItems(viewMenuItems) },
     { label: '帮助', items: normalizeItems(helpMenuItems) }
@@ -216,8 +207,7 @@ const emit = defineEmits<{
   'toggle-left-sidebar': []
   'toggle-thumbnail-sidebar': []
   'toggle-document-drawer': []
-  'toggle-right-sidebar': []
-  'open-settings': [mode: 'file' | 'ai']
+  'open-settings': []
   'toggle-top-menu': []
   'toggle-status-bar': []
   'open-login': []
@@ -307,15 +297,7 @@ const handleMenuAction = (action: string) => {
     return
   }
   if (action === 'settings') {
-    emit('open-settings', 'file')
-    return
-  }
-  if (action === 'ai-settings') {
-    emit('open-settings', 'ai')
-    return
-  }
-  if (action === 'open-chat') {
-    emit('toggle-right-sidebar')
+    emit('open-settings')
     return
   }
   // 编辑器命令（如 'link'）通过自定义事件传递给 EditArea
