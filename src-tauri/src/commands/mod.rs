@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod document;
+pub mod external_file;
 pub mod folder;
 pub mod lock;
 pub mod sync;

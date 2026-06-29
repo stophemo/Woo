@@ -72,6 +72,8 @@ import { useSyncStore } from './stores/sync'
 import { isModKey } from './config/shortcutUtils'
 import { useLockStore } from './stores/lock'
 import { log } from './services/logger'
+import { listen } from '@tauri-apps/api/event'
+import { popPendingOpenFiles } from './services/externalFileApi'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
 useThemeStore()
@@ -334,6 +336,22 @@ watch(isMobile, (mobile) => {
 })
 
 // 组件挂载时添加键盘事件监听
+// 取消监听的函数引用（用于组件卸载时清理）
+let unlistenOpenFile: (() => void) | null = null
+let unlistenDragDrop: (() => void) | null = null
+
+/** 处理从外部打开的文件路径（拖拽或"打开方式"） */
+function handleExternalFilePaths(paths: string[]) {
+  const textExtensions = ['.md', '.markdown', '.txt', '.text', '.mdown', '.mkd']
+  for (const p of paths) {
+    const ext = p.toLowerCase().split('.').pop()
+    if (ext && textExtensions.some(e => e.endsWith(ext!))) {
+      workspaceStore.openExternalFile(p)
+      break // 每次只打开第一个匹配的文件
+    }
+  }
+}
+
 onMounted(() => {
   updateIsMobile()
   // 根据初始屏幕尺寸设置侧边栏默认状态
@@ -346,7 +364,26 @@ onMounted(() => {
   if (window.electronAPI && window.electronAPI.onMenuAction) {
     window.electronAPI.onMenuAction(handleMenuAction)
   }
-  initApp();
+  initApp().then(async () => {
+    // 先注册监听器（后续拖拽 / "打开方式" 都能收到）
+    listen<string[]>('open-file', (event) => {
+      handleExternalFilePaths(event.payload)
+    }).then(fn => { unlistenOpenFile = fn })
+
+    listen<{ paths: string[]; position: { x: number; y: number } }>('tauri://drag-drop', (event) => {
+      handleExternalFilePaths(event.payload.paths)
+    }).then(fn => { unlistenDragDrop = fn })
+
+    // 再处理前端就绪前收到的文件打开请求（启动时"打开方式"）
+    try {
+      const pendingFiles = await popPendingOpenFiles()
+      if (pendingFiles.length > 0) {
+        handleExternalFilePaths(pendingFiles)
+      }
+    } catch (e) {
+      log.app.warn('[App] 拉取待处理文件失败:', e)
+    }
+  })
 });
 
 // 组件卸载前移除键盘事件监听和菜单监听，防止内存泄漏
@@ -356,6 +393,8 @@ onBeforeUnmount(() => {
   if (window.electronAPI && window.electronAPI.removeMenuActionListener) {
     window.electronAPI.removeMenuActionListener()
   }
+  unlistenOpenFile?.()
+  unlistenDragDrop?.()
 });
 </script>
 

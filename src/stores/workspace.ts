@@ -16,6 +16,7 @@ import * as documentApi from '../services/documentApi'
 import * as lockApi from '../services/lockApi'
 import type { FolderTreeNodeDTO } from '../services/folderApi'
 import type { DocumentDTO } from '../services/documentApi'
+import { log } from '../services/logger'
 
 function mapFolder(node: FolderTreeNodeDTO): FolderNode {
   return {
@@ -49,6 +50,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const ALL_FOLDER_ID = '__all__'
   const DRAFT_STORAGE_KEY = 'woo:drafts'
   const TRASH_DRAFT_STORAGE_KEY = 'woo:trash_drafts'
+  const EXTERNAL_FILE_MAP_KEY = 'woo:externalFileMap'
 
   function loadDrafts(): Document[] {
     try {
@@ -77,6 +79,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function persistTrashDrafts(list: Document[]) {
     try {
       localStorage.setItem(TRASH_DRAFT_STORAGE_KEY, JSON.stringify(list))
+    } catch { /* ignore */ }
+  }
+
+  // 外部文件路径映射：draft_id → file_path
+  // 用于通过"打开方式"或拖拽打开的文件，保存时写回源文件
+  const externalFilePathMap = ref<Record<string, string>>(loadExternalFilePathMap())
+
+  function loadExternalFilePathMap(): Record<string, string> {
+    try {
+      const raw = localStorage.getItem(EXTERNAL_FILE_MAP_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  function persistExternalFilePathMap() {
+    try {
+      localStorage.setItem(EXTERNAL_FILE_MAP_KEY, JSON.stringify(externalFilePathMap.value))
     } catch { /* ignore */ }
   }
 
@@ -425,6 +446,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         draft.content = content
         draft.updatedAt = new Date().toISOString()
         persistDrafts(drafts.value)
+        // 若该草稿关联了外部文件，异步写回源文件
+        const filePath = externalFilePathMap.value[documentId]
+        if (filePath) {
+          import('../services/externalFileApi').then(({ writeExternalFile }) => {
+            writeExternalFile(filePath, content).catch(e => {
+              log.app.error('[Workspace] 写入外部文件失败:', e)
+              error.value = `写入外部文件失败: ${e}`
+            })
+          })
+        }
       }
       return
     }
@@ -624,6 +655,48 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return draft
   }
 
+  /**
+   * 打开外部文件（拖拽或"打开方式"）：读取文件内容，创建草稿并关联文件路径。
+   * 保存时内容会写回源文件。
+   */
+  async function openExternalFile(filePath: string) {
+    try {
+      const { readExternalFile } = await import('../services/externalFileApi')
+      const result = await readExternalFile(filePath)
+
+      const now = new Date().toISOString()
+      const docId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+      const doc: Document = {
+        id: docId,
+        title: result.fileName,
+        content: result.content,
+        folderId: DRAFT_FOLDER_ID,
+        createdAt: now,
+        updatedAt: now
+      }
+
+      // 添加到草稿列表
+      drafts.value.unshift(doc)
+      persistDrafts(drafts.value)
+
+      // 保存文件路径映射
+      externalFilePathMap.value[docId] = result.filePath
+      persistExternalFilePathMap()
+
+      // 切换到草稿箱视图并选中
+      selectedFolderId.value = DRAFT_FOLDER_ID
+      selectedFolderLocked.value = false
+      folderDocuments.value = drafts.value.map(d => ({ ...d }))
+      await selectDocument(docId)
+
+      log.app.info('[Workspace] 已打开外部文件:', result.filePath)
+    } catch (e: any) {
+      error.value = e?.message || '打开外部文件失败'
+      log.app.error('[Workspace] 打开外部文件失败:', e)
+    }
+  }
+
   // 统一入口：有选中真实目录 → 后端创建；否则归入草稿箱
   // 后端创建失败（目录不存在等）自动回退为草稿
   async function createNewDocument() {
@@ -653,6 +726,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function deleteDocument(documentId: string) {
     if (isDraftId(documentId)) {
+      // 清理外部文件路径映射（若有）
+      if (externalFilePathMap.value[documentId]) {
+        delete externalFilePathMap.value[documentId]
+        persistExternalFilePathMap()
+      }
       const idx = drafts.value.findIndex(d => d.id === documentId)
       if (idx !== -1) {
         const [deleted] = drafts.value.splice(idx, 1)
@@ -713,6 +791,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function hardDeleteDocument(documentId: string) {
     // 废纸篓中的草稿：彻底删除（从 localStorage 移除）
     if (isDraftId(documentId)) {
+      // 清理外部文件路径映射（若有）
+      if (externalFilePathMap.value[documentId]) {
+        delete externalFilePathMap.value[documentId]
+        persistExternalFilePathMap()
+      }
       const idx = trashDrafts.value.findIndex(d => d.id === documentId)
       if (idx !== -1) {
         trashDrafts.value.splice(idx, 1)
@@ -1072,6 +1155,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     openAllDocuments,
     openTrashBox,
     openSearch,
+    openExternalFile,
+    externalFilePathMap,
     renameDocument,
     deleteDocument,
     restoreDocument,

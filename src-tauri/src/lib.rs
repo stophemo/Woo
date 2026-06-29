@@ -11,6 +11,14 @@ use tauri::{Emitter, Manager};
 // Global AppHandle for emitting events to the frontend from background tasks.
 static APP_HANDLE: Lazy<Mutex<Option<tauri::AppHandle>>> = Lazy::new(|| Mutex::new(None));
 
+// Buffer for file open requests received before the frontend is ready.
+static PENDING_OPEN_FILES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+/// Drain and return all pending file open paths (called by the frontend after init).
+pub fn drain_pending_open_files() -> Vec<String> {
+    PENDING_OPEN_FILES.lock().ok().map_or(Vec::new(), |mut v| std::mem::take(&mut *v))
+}
+
 pub fn get_app_handle() -> Option<tauri::AppHandle> {
     APP_HANDLE.lock().ok().and_then(|h| h.clone())
 }
@@ -101,6 +109,78 @@ fn resolve_macos_icon_path() -> Option<PathBuf> {
     None
 }
 
+/// macOS: 给 tao 的 AppDelegate 类动态添加 application:openFiles: 方法.
+/// Tauri/tao 默认只实现了 openURLs，拖拽到 Dock 图标和"打开方式"发给已运行
+/// 实例时走的是 kAEOpenDocuments → application:openFiles: 没有被处理。
+#[cfg(target_os = "macos")]
+fn patch_app_delegate_open_files() {
+    use objc2::runtime::{AnyClass, Sel, AnyObject};
+    use objc2_foundation::{NSArray, NSString};
+    use objc2::msg_send;
+
+    unsafe {
+        let Some(cls) = AnyClass::get(c"TaoAppDelegateParent") else {
+            log::warn!("[Odoc] TaoAppDelegateParent class not found");
+            return;
+        };
+
+        // Define the openFiles handler
+        unsafe extern "C-unwind" fn application_open_files(
+            _this: &AnyObject,
+            _sel: Sel,
+            _ns_app: &AnyObject,
+            files: &NSArray<NSString>,
+        ) {
+            let count = files.count();
+            log::info!("[Odoc] openFiles: called with {} file(s)", count);
+            let mut paths = Vec::with_capacity(count as usize);
+            for i in 0..count {
+                let s = files.objectAtIndex(i);
+                paths.push(s.to_string());
+            }
+            log::info!("[Odoc] paths: {:?}", paths);
+
+            if let (Ok(mut buf), Some(ref app_handle)) =
+                (PENDING_OPEN_FILES.lock(), APP_HANDLE.lock().unwrap().as_ref())
+            {
+                buf.extend(paths.clone());
+                let _ = app_handle.emit("open-file", paths);
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        }
+
+        // Cast fn pointer to objc2 runtime's Imp type
+        let imp: unsafe extern "C-unwind" fn() = unsafe {
+            std::mem::transmute(application_open_files as unsafe extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSString>))
+        };
+
+        let sel = Sel::register(c"application:openFiles:");
+        let types = c"v@:@@";
+
+        let ok = objc2::ffi::class_addMethod(
+            cls as *const AnyClass as *mut AnyClass,
+            sel,
+            imp,
+            types.as_ptr(),
+        );
+
+        if ok.as_bool() {
+            log::info!("[Odoc] Successfully patched AppDelegate with application:openFiles:");
+        } else {
+            log::warn!("[Odoc] Failed to add application:openFiles: (may already exist)");
+        }
+
+        // Drain queued Apple Events
+        let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+        let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+        let _: () = msg_send![&ns_app, replyToOpenOrPrint: 0i32];
+        log::info!("[Odoc] Called replyToOpenOrPrint");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logger();
@@ -110,7 +190,10 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
-            set_macos_dock_icon();
+            {
+                set_macos_dock_icon();
+                patch_app_delegate_open_files();
+            }
 
             // Store AppHandle for event emission
             *APP_HANDLE.lock().unwrap() = Some(app.handle().clone());
@@ -275,13 +358,17 @@ pub fn run() {
             commands::system::dialog_save_document,
             commands::system::document_export_pdf,
             commands::system::log_write,
+            // External file (open with / drag-drop)
+            commands::external_file::read_external_file,
+            commands::external_file::write_external_file,
+            commands::external_file::pop_pending_open_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
+        .run(|_app_handle, event| {
             if let tauri::RunEvent::Reopen { .. } = event {
                 // macOS: 点击 Dock 图标时重新显示窗口
-                if let Some(window) = app_handle.get_webview_window("main") {
+                if let Some(window) = _app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

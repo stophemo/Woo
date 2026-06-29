@@ -39,6 +39,20 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown",
+        "description": "Markdown 文档",
+        "role": "Editor"
+      },
+      {
+        "ext": ["txt"],
+        "name": "纯文本",
+        "description": "文本文件",
+        "role": "Editor"
+      }
     ]
   },
   "plugins": {

@@ -46,6 +46,13 @@
           <p class="locked-placeholder-text">文档已加锁，请在左侧验证密码后查看</p>
         </div>
         <div v-else class="editor-scale-wrap">
+          <div v-if="isExternalFile" class="external-file-badge">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M10 1h5v5M15 1L6 10M13 9v5a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>外部文件</span>
+            <span class="external-file-path" :title="externalFilePath">{{ externalFilePath }}</span>
+          </div>
           <EditorContent :editor="editor" class="editor-content" :style="editorScaleStyle" />
         </div>
       </template>
@@ -147,6 +154,17 @@ turndownService.addRule('taskList', {
 
 const store = useWorkspaceStore()
 const { headings } = useEditorNavigation()
+
+// 检测当前编辑的是否为外部文件
+const isExternalFile = computed(() => {
+  if (!store.currentDocument) return false
+  return !!store.externalFilePathMap?.[store.currentDocument.id]
+})
+
+const externalFilePath = computed(() => {
+  if (!store.currentDocument) return ''
+  return store.externalFilePathMap?.[store.currentDocument.id] || ''
+})
 const TRASH_FOLDER_ID = '__trash__'
 
 interface Props { isStatusBarOpen?: boolean }
@@ -1184,5 +1202,33 @@ const menuActionHandler = (e: Event) => {
   background: var(--accent, #0071e3);
   border-color: var(--accent, #0071e3);
   color: #fff;
+}
+
+/* ============ 外部文件标识 ============ */
+.external-file-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin: 0 0 8px 0;
+  border-radius: 6px;
+  background: var(--bg-elevated, #f5f5f7);
+  border: 1px solid var(--border-primary, #d2d2d7);
+  font-size: 12px;
+  color: var(--text-secondary, #6e6e73);
+  flex-shrink: 0;
+}
+
+.external-file-badge svg {
+  flex-shrink: 0;
+}
+
+.external-file-path {
+  color: var(--text-muted, #999);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;  /* 显示文件名部分 */
+  text-align: left;
 }
 </style>
