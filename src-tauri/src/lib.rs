@@ -366,6 +366,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 // macOS: 点击 Dock 图标时重新显示窗口
                 if let Some(window) = _app_handle.get_webview_window("main") {
