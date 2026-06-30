@@ -128,10 +128,7 @@ jobs:
       - name: 安装 Rust（含 Android 目标）
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: |
-            aarch64-linux-android
-            armv7-linux-androideabi
-            x86_64-linux-android
+          targets: aarch64-linux-android
 
       - name: 缓存 Cargo
         uses: swatinem/rust-cache@v2
