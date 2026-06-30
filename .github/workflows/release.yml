@@ -153,6 +153,14 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 限定 APK 单架构 (aarch64)
+        run: |
+          cat >> src-tauri/gen/android/gradle.properties << 'EOF'
+          targetList=aarch64
+          abiList=arm64-v8a
+          archList=arm64
+          EOF
+
       - name: 构建 Android APK
         env:
           CI: true
