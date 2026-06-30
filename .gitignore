@@ -44,3 +44,8 @@ Thumbs.db
 .deepseek/
 .opencode/
 .claude/
+
+# 代码签名私钥（机密）
+*.p12
+*.key
+!woo-codesign.cer

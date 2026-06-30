@@ -60,10 +60,10 @@ pub fn copy_local_to_user_db_on_first_login(username: &str) -> Result<(), String
                 std::fs::copy(&src, &dst).ok();
             }
         }
-        // Reset last_sync_time so full sync is triggered
+        // 清除 last_sync_time，让首次同步不传 update_time 过滤条件，拉取全部远端数据
         if let Ok(conn) = rusqlite::Connection::open(&user_db) {
             conn.execute(
-                "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('last_sync_time', '')",
+                "DELETE FROM sync_meta WHERE key = 'last_sync_time'",
                 [],
             )
             .ok();

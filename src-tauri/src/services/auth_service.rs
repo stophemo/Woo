@@ -96,6 +96,11 @@ pub async fn sign_in(identifier: &str, password: &str) -> Result<AuthSession, St
         *s = Some(sb_session.clone());
     }
 
+    // 立即触发一次同步，拉取远端数据（后台执行，不阻塞登录响应）
+    tauri::async_runtime::spawn(async {
+        let _ = crate::services::sync_engine::sync_now_async().await;
+    });
+
     Ok(map_session(&sb_session))
 }
 
