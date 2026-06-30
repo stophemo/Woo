@@ -101,22 +101,18 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run tauri:build
 
-      - name: macOS 代码签名
+      - name: macOS 代码签名 (rcodesign)
         if: matrix.os == 'macos-latest'
         env:
           CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
         run: |
-          # 创建临时钥匙串并导入签名证书
           echo "$CODESIGN_P12" | base64 -d > woo-codesign.p12
-          security create-keychain -p "" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security import woo-codesign.p12 -k build.keychain -P woo2026 -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
-          # 签名 .app
-          codesign --sign "Woo Notes Root CA" --force --deep --options runtime \
+          curl -sL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-aarch64-apple-darwin.tar.gz" | tar xz
+          ./rcodesign sign \
+            --p12-file woo-codesign.p12 \
+            --p12-password woo2026 \
+            --code-signature-flags runtime \
             src-tauri/target/release/bundle/macos/Woo.app
-          # 把公证书复制到 bundle 目录，随 Release 一起发布
           cp woo-codesign.cer src-tauri/target/release/bundle/macos/
 
       - name: 上传桌面端构建产物
