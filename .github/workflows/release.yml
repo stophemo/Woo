@@ -96,10 +96,18 @@ jobs:
         run: npm ci
 
       - name: 构建桌面应用
+        if: matrix.os != 'macos-latest'
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run tauri:build
+
+      - name: 构建桌面应用（仅 .app）
+        if: matrix.os == 'macos-latest'
+        env:
+          CI: true
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx tauri build --bundles app
 
       - name: macOS 代码签名 (rcodesign)
         if: matrix.os == 'macos-latest'
@@ -113,7 +121,17 @@ jobs:
             --p12-password woo2026 \
             --code-signature-flags runtime \
             src-tauri/target/release/bundle/macos/Woo.app
-          cp woo-codesign.cer src-tauri/target/release/bundle/macos/
+
+      - name: 打包 DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP="src-tauri/target/release/bundle/macos/Woo.app"
+          DMG="src-tauri/target/release/bundle/dmg/Woo_${VERSION}_aarch64.dmg"
+          mkdir -p "$(dirname "$DMG")"
+          hdiutil create -fs HFS+ -srcfolder "$APP" -volname "Woo" "$DMG"
+          cp woo-codesign.cer src-tauri/target/release/bundle/dmg/
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
 
       - name: 上传桌面端构建产物
         uses: actions/upload-artifact@v4
