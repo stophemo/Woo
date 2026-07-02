@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>无我笔记 Woo — 云端同步的 Markdown 笔记应用</title>
+  <meta name="description" content="Woo（无我笔记）是一款支持云端同步、跨平台的 Markdown 笔记应用。所见即所得编辑、多设备实时同步、AI 辅助写作，随时随地开始写作。">
+  <style>
+    /* ========== Reset & Base ========== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Helvetica Neue", sans-serif;
+      color: #37342f;
+      background: #fdfcfa;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+
+    /* ========== Nav ========== */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(31, 33, 64, 0.92);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 0 24px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 18px; font-weight: 700; color: #fff;
+    }
+    .nav-brand svg { width: 32px; height: 32px; }
+    .nav-links { display: flex; gap: 32px; }
+    .nav-links a { color: rgba(255,255,255,0.72); font-size: 14px; transition: color 0.2s; }
+    .nav-links a:hover { color: #fff; }
+
+    /* ========== Hero ========== */
+    .hero {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #1f2140 0%, #2d3250 40%, #121227 100%);
+      text-align: center; padding: 120px 24px 80px; position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: ""; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle at 30% 40%, rgba(90,154,207,0.12) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 60%, rgba(255,255,255,0.04) 0%, transparent 50%);
+      animation: heroFloat 20s ease-in-out infinite;
+    }
+    @keyframes heroFloat {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(20px, -20px); }
+      66% { transform: translate(-10px, 10px); }
+    }
+    .hero-content { position: relative; z-index: 1; max-width: 680px; }
+    .hero-logo { width: 96px; height: 96px; margin: 0 auto 32px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); }
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 56px); font-weight: 800; color: #fff;
+      letter-spacing: -0.02em; margin-bottom: 16px;
+    }
+    .hero h1 span { color: #5a9acf; }
+    .hero .tagline {
+      font-size: 18px; color: rgba(255,255,255,0.64); margin-bottom: 48px; line-height: 1.6;
+    }
+    .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600;
+      transition: all 0.2s; cursor: pointer; border: none;
+    }
+    .btn-primary { background: #5a9acf; color: #fff; }
+    .btn-primary:hover { background: #4889be; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(90,154,207,0.4); }
+    .btn-outline { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.16); }
+    .btn-outline:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.28); }
+    .btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+    /* ========== Sections ========== */
+    section { padding: 100px 24px; }
+    .section-head { text-align: center; margin-bottom: 64px; }
+    .section-head h2 { font-size: 32px; font-weight: 700; color: #1f1d1a; margin-bottom: 12px; }
+    .section-head p { font-size: 16px; color: #9a9690; max-width: 500px; margin: 0 auto; }
+    .container { max-width: 1080px; margin: 0 auto; }
+
+    /* ========== Features ========== */
+    .features { background: #f5f3f0; }
+    .feature-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;
+    }
+    .feature-card {
+      background: #fff; border-radius: 16px; padding: 32px;
+      border: 1px solid #e4e0da; transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .feature-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); transform: translateY(-2px); }
+    .feature-icon {
+      width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px; font-size: 24px;
+    }
+    .feature-icon.blue { background: rgba(90,154,207,0.12); color: #5a9acf; }
+    .feature-icon.green { background: rgba(76,175,80,0.12); color: #4caf50; }
+    .feature-icon.purple { background: rgba(156,39,176,0.12); color: #9c27b0; }
+    .feature-icon.orange { background: rgba(255,152,0,0.12); color: #ff9800; }
+    .feature-icon.teal { background: rgba(0,150,136,0.12); color: #009688; }
+    .feature-icon.red { background: rgba(244,67,54,0.12); color: #f44336; }
+    .feature-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; color: #1f1d1a; }
+    .feature-card p { font-size: 14px; color: #68645e; line-height: 1.7; }
+
+    /* ========== Download ========== */
+    .download-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px;
+    }
+    .download-card {
+      background: #fff; border: 1px solid #e4e0da; border-radius: 16px; padding: 32px; text-align: center;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .download-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); transform: translateY(-2px); }
+    .download-card .platform-icon { font-size: 40px; margin-bottom: 16px; }
+    .download-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .download-card .version { font-size: 13px; color: #9a9690; margin-bottom: 16px; }
+    .download-card .arch { font-size: 12px; color: #b8b4ae; margin-bottom: 20px; }
+    .download-card .btn { width: 100%; justify-content: center; }
+
+    /* ========== Footer ========== */
+    footer {
+      background: #1f2140; color: rgba(255,255,255,0.6); text-align: center; padding: 48px 24px;
+      font-size: 14px;
+    }
+    footer a { color: rgba(255,255,255,0.8); transition: color 0.2s; }
+    footer a:hover { color: #fff; }
+    footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
+
+    /* ========== Responsive ========== */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      section { padding: 64px 16px; }
+      .hero { padding: 100px 16px 60px; }
+      .hero-actions { flex-direction: column; align-items: center; }
+      .btn { width: 240px; justify-content: center; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .download-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ========== Nav ========== -->
+<nav>
+  <a href="#" class="nav-brand">
+    <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="108" fill="transparent"/>
+      <g>
+        <path d="M140 92 H342 L416 166 V418 C416 434 403 448 386 448 H140 C123 448 110 434 110 418 V122 C110 106 123 92 140 92 Z" fill="#faf6ea"/>
+        <path d="M342 92 L416 166 H362 C351 166 342 157 342 146 Z" fill="#c9be9b"/>
+        <path d="M342 92 L342 146 C342 157 351 166 362 166 L416 166" fill="none" stroke="#a89a72" stroke-width="2"/>
+      </g>
+      <path d="M150 196 C152 188,164 186,170 196 L208 316 C214 334,230 336,238 318 L272 216 C278 200,290 200,296 216 L330 318 C338 336,354 334,360 316 L398 196 C404 186,416 188,418 196" fill="none" stroke="#1a1a2e" stroke-width="18" stroke-linecap="round"/>
+      <circle cx="152" cy="196" r="8" fill="#1a1a2e"/>
+      <circle cx="416" cy="196" r="8" fill="#1a1a2e"/>
+      <rect x="212" y="376" width="88" height="44" rx="6" fill="#c73e3a"/>
+      <g fill="#faf6ea">
+        <rect x="224" y="386" width="22" height="4"/>
+        <rect x="233" y="386" width="4" height="24"/>
+        <rect x="224" y="406" width="22" height="4"/>
+        <rect x="258" y="386" width="30" height="4"/>
+        <rect x="258" y="386" width="4" height="24"/>
+        <rect x="284" y="386" width="4" height="24"/>
+        <rect x="258" y="395" width="30" height="4"/>
+        <rect x="258" y="406" width="30" height="4"/>
+      </g>
+    </svg>
+    无我笔记
+  </a>
+  <div class="nav-links">
+    <a href="#features">功能</a>
+    <a href="#download">下载</a>
+    <a href="https://github.com/nonegonotes/woo" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<!-- ========== Hero ========== -->
+<header class="hero">
+  <div class="hero-content">
+    <svg class="hero-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#3d4278"/>
+          <stop offset="100%" stop-color="#1f2140"/>
+        </linearGradient>
+        <filter id="heroShadow">
+          <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <rect width="512" height="512" rx="108" fill="url(#bgGrad)"/>
+      <g filter="url(#heroShadow)">
+        <path d="M140 92 H342 L416 166 V418 C416 434 403 448 386 448 H140 C123 448 110 434 110 418 V122 C110 106 123 92 140 92 Z" fill="#faf6ea"/>
+        <path d="M342 92 L416 166 H362 C351 166 342 157 342 146 Z" fill="#c9be9b"/>
+      </g>
+      <path d="M150 196 C152 188,164 186,170 196 L208 316 C214 334,230 336,238 318 L272 216 C278 200,290 200,296 216 L330 318 C338 336,354 334,360 316 L398 196 C404 186,416 188,418 196" fill="none" stroke="#1a1a2e" stroke-width="18" stroke-linecap="round"/>
+      <circle cx="152" cy="196" r="8" fill="#1a1a2e"/>
+      <circle cx="416" cy="196" r="8" fill="#1a1a2e"/>
+      <rect x="212" y="376" width="88" height="44" rx="6" fill="#c73e3a"/>
+      <g fill="#faf6ea">
+        <rect x="224" y="386" width="22" height="4"/>
+        <rect x="233" y="386" width="4" height="24"/>
+        <rect x="224" y="406" width="22" height="4"/>
+        <rect x="258" y="386" width="30" height="4"/>
+        <rect x="258" y="386" width="4" height="24"/>
+        <rect x="284" y="386" width="4" height="24"/>
+        <rect x="258" y="395" width="30" height="4"/>
+        <rect x="258" y="406" width="30" height="4"/>
+      </g>
+    </svg>
+    <h1>写你所想，<span>无我</span>无拘</h1>
+    <p class="tagline">
+      跨平台云端同步 Markdown 笔记<br>
+      所见即所得编辑 · 多设备实时同步 · AI 辅助写作<br>
+      随时随地，无缝衔接
+    </p>
+    <div class="hero-actions">
+      <a href="#download" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        免费下载
+      </a>
+      <a href="https://github.com/nonegonotes/woo" target="_blank" rel="noopener" class="btn btn-outline">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- ========== Features ========== -->
+<section id="features" class="features">
+  <div class="container">
+    <div class="section-head">
+      <h2>为什么选择 Woo</h2>
+      <p>融合现代编辑器体验与本地数据主权，让笔记回归纯粹</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon purple">☁️</div>
+        <h3>云端同步</h3>
+        <p>基于 Supabase 的多设备实时同步，增量推拉 + 冲突检测。手机记灵感，电脑继续写，无缝衔接。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon green">📝</div>
+        <h3>所见即所得</h3>
+        <p>基于 Tiptap (ProseMirror) 的富文本编辑器，支持 Markdown 语法输入，实时预览，流畅切换。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon orange">🤖</div>
+        <h3>AI 辅助写作</h3>
+        <p>集成 Google Gemini 与 DeepSeek，支持续写、摘要、翻译、头脑风暴。带来你的 API Key 即可使用。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon teal">⏱️</div>
+        <h3>版本历史</h3>
+        <p>自动保存 + 手动版本快照，随时回退到任意历史版本。重大编辑自动提交，绝不错过任何灵感。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon blue">📶</div>
+        <h3>离线可用</h3>
+        <p>所有数据本地留存，断网也不影响写作。网络恢复后自动同步，你的笔记始终完整。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon red">🔒</div>
+        <h3>隐私安全</h3>
+        <p>开源透明，密码锁保护。数据经过你的 Supabase 项目传输，基础设施完全由你掌控。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== Download ========== -->
+<section id="download">
+  <div class="container">
+    <div class="section-head">
+      <h2>下载 Woo</h2>
+      <p>支持 macOS、Windows、Linux、Android 多平台</p>
+    </div>
+    <div class="download-grid">
+      <div class="download-card">
+        <div class="platform-icon">🍎</div>
+        <h3>macOS</h3>
+        <div class="version">Apple Silicon · Intel</div>
+        <div class="arch">需手动安装开发者证书（见安装说明）</div>
+        <a href="https://github.com/nonegonotes/woo/releases/latest" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 DMG
+        </a>
+      </div>
+      <div class="download-card">
+        <div class="platform-icon">🪟</div>
+        <h3>Windows</h3>
+        <div class="version">x64 · NSIS 安装包</div>
+        <div class="arch">&nbsp;</div>
+        <a href="https://github.com/nonegonotes/woo/releases/latest" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 EXE
+        </a>
+      </div>
+      <div class="download-card">
+        <div class="platform-icon">🤖</div>
+        <h3>Android</h3>
+        <div class="version">ARM64 · APK</div>
+        <div class="arch">&nbsp;</div>
+        <a href="https://github.com/nonegonotes/woo/releases/latest" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 APK
+        </a>
+      </div>
+      <div class="download-card">
+        <div class="platform-icon">🐧</div>
+        <h3>Linux</h3>
+        <div class="version">AppImage · 即将推出</div>
+        <div class="arch">或从源码编译</div>
+        <a href="https://github.com/nonegonotes/woo#开发与构建" class="btn btn-outline">
+          构建指南
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== Footer ========== -->
+<footer>
+  <div class="footer-links">
+    <a href="https://github.com/nonegonotes/woo" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/nonegonotes/woo/releases" target="_blank" rel="noopener">Release Notes</a>
+    <a href="https://github.com/nonegonotes/woo/issues" target="_blank" rel="noopener">反馈问题</a>
+  </div>
+  <p>© 2025–2026 Woo Notes · MIT License · 用 Rust + Vue 3 构建</p>
+</footer>
+
+</body>
+</html>

@@ -1,281 +1,178 @@
-# Woo (Tauri 重构版)
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="Woo Notes">
+</p>
 
-> 无我笔记 — `app-desktop` 的 Tauri v2 重构版本
+<h1 align="center">无我笔记 Woo</h1>
 
-Tauri v2 重构版本，使用 Rust 重写主进程，业务 IPC 一一映射，UI 层沿用 Vue 3 + Pinia + Tiptap，
-数据格式与 `app-desktop`（Electron 版）完全兼容，可平滑过渡。
+<p align="center">
+  <strong>跨平台云同步 · Markdown 笔记应用</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nonegonotes/woo/releases"><img src="https://img.shields.io/github/v/release/nonegonotes/woo?color=%235a9acf" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+  <a href="https://github.com/nonegonotes/woo/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Android-blue" alt="Platform"></a>
+  <a href="https://github.com/nonegonotes/woo/stargazers"><img src="https://img.shields.io/github/stars/nonegonotes/woo?style=social" alt="Stars"></a>
+</p>
+
+<p align="center">
+  <a href="https://woo.nonegonotes.com">🌐 官网</a> ·
+  <a href="https://github.com/nonegonotes/woo/releases/latest">📦 下载</a> ·
+  <a href="#-开发">🛠️ 开发</a> ·
+  <a href="#-路线图">🗺️ 路线图</a>
+</p>
 
 ---
 
-## 为什么重构
+## ✨ 为什么选择 Woo
 
-| 维度 | `app-desktop` (Electron) | `app-tauri` (Tauri v2) |
-| --- | --- | --- |
-| 运行时 | Chromium + Node | 系统 WebView (WKWebView / WebView2 / WebKitGTK) |
-| 安装包体积 | ~120 MB+ | ~10-20 MB |
-| 内存占用 | 较高 | 显著降低 |
-| 启动速度 | 较慢 | 更快 |
-| 主进程语言 | JavaScript (CJS) | Rust |
-| 原生能力 | 任意 Node 模块 | 通过 plugin 显式授权 |
+Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在手机、电脑、平板上无缝切换，写作体验始终如一。
+
+| | |
+|---|---|
+| ☁️ **云端同步** | 基于 Supabase 的多设备实时同步，增量推拉 + 冲突检测 |
+| 📝 **所见即所得** | Tiptap 富文本编辑器，Markdown 语法实时转换 |
+| 🤖 **AI 辅助** | 集成 Gemini + DeepSeek，续写、摘要、翻译、头脑风暴 |
+| ⏱️ **版本历史** | 自动保存 + 手动快照，随时回退到任意历史版本 |
+| 📶 **离线可用** | 所有数据本地留存，断网也能写作，恢复后自动同步 |
+| 🔒 **隐私安全** | 开源透明，密码锁保护，数据经过你的 Supabase 项目传输 |
+| 🎨 **极简设计** | 温暖柔和的日间主题 + 护眼暗色主题 |
+| 🌍 **跨平台** | macOS · Windows · Linux · Android，同一套代码 |
 
 ---
 
-## 目录结构
+## 📦 下载
+
+| 平台 | 下载 | 说明 |
+|------|------|------|
+| 🍎 macOS | [DMG (Apple Silicon)](https://github.com/nonegonotes/woo/releases/latest) | 需安装自签证书（见 Release 安装说明） |
+| 🪟 Windows | [NSIS 安装包 (x64)](https://github.com/nonegonotes/woo/releases/latest) | 双击安装 |
+| 🤖 Android | [APK (ARM64)](https://github.com/nonegonotes/woo/releases/latest) | 允许安装未知来源应用 |
+| 🐧 Linux | 即将推出 | 或从源码编译（见下方） |
+
+> 💡 **macOS 用户**：Woo 使用自签证书签名。首次使用请双击 Release 附带的 `woo-codesign.cer` 安装证书，然后在钥匙串中设为"始终信任"。未来 Homebrew Cask 支持计划中。
+
+---
+
+## 🚀 快速开始（用户）
+
+1. 前往 [Releases](https://github.com/nonegonotes/woo/releases/latest) 下载对应平台安装包
+2. 安装并启动
+3. 开始写作——你的笔记自动保存在本地
+4. （可选）登录 Supabase 账号启用云同步
+5. （可选）在设置中配置 AI API Key
+
+---
+
+## 🛠️ 开发
+
+### 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 桌面框架 | [Tauri v2](https://v2.tauri.app/) (Rust) |
+| 前端 | Vue 3 + Pinia + Vite + TypeScript |
+| 编辑器 | Tiptap (ProseMirror) |
+| 数据库 | SQLite (rusqlite, bundled) |
+| 云服务 | Supabase (Auth + REST API) |
+| 移动端 | Tauri Mobile (Android / iOS) |
+
+### 项目结构
 
 ```
-src/                        # 渲染进程（ESM，Vue 3）
-│   ├── App.vue                 # 根组件：组合三大侧栏 + 编辑区
-│   ├── main.ts                 # 入口：setupTauriBridge + Pinia + mount
-│   ├── setup.ts                # Tauri → window.electronAPI 桥接层
-│   ├── components/
-│   │   ├── layout/             # 三大侧栏、缩略图列、顶部菜单
-│   │   └── settings/           # 设置、AI 配置、登录等弹窗
-│   ├── stores/                 # Pinia stores
-│   │   ├── workspace.ts        # 文件夹 / 文档状态
-│   │   ├── auth.ts             # 登录 / 会话
-│   │   ├── aiChat.ts           # AI 对话 + Agent
-│   │   ├── lock.ts             # 密码锁
-│   │   ├── sync.ts             # 云同步
-│   │   └── theme.ts            # 主题
-│   ├── services/
-│   │   ├── api.ts              # ⭐ 统一 IPC 客户端
-│   │   ├── folderApi.ts        # 文件夹 API 封装
-│   │   ├── documentApi.ts      # 文档 API 封装
-│   │   ├── versionApi.ts       # 版本历史 API
-│   │   ├── lockApi.ts          # 密码锁 API
-│   │   ├── agent/              # AI Agent（工具调用 / 确认）
-│   │   ├── gemini.ts           # Google Gemini 客户端
-│   │   ├── deepseek.ts         # OpenAI-兼容客户端
-│   │   ├── assetLink.ts        # 资产链接解析
-│   │   └── logger.ts           # 命名空间日志
-│   ├── types/                  # 共享 DTO 类型
-│   └── style.css
-└── src-tauri/                  # 主进程（Rust）
-    ├── Cargo.toml
-    ├── tauri.conf.json         # 应用配置 + 窗口定义
-    ├── capabilities/
-    │   └── default.json        # 权限白名单
-    └── src/
-        ├── main.rs             # 入口
-        ├── lib.rs              # Builder、setup 钩子
-        ├── commands/           # Tauri commands（IPC 处理器）
-        │   ├── mod.rs
-        │   ├── auth.rs         # auth:*
-        │   ├── folder.rs       # folder:*
-        │   ├── document.rs     # document:*
-        │   ├── version.rs      # version:*
-        │   ├── lock.rs         # lock:*
-        │   ├── system.rs       # app:*, dialog:*
-        │   ├── kb.rs           # kb:*
-        │   └── sync.rs         # sync:*
-        ├── services/           # 业务服务
-        │   ├── folder_service.rs
-        │   ├── document_service.rs
-        │   ├── version_service.rs
-        │   ├── lock_service.rs
-        │   ├── auth_service.rs
-        │   ├── kb_service.rs
-        │   ├── embedding_service.rs
-        │   └── sync_engine.rs
-        ├── db/                 # SQLite 连接 + Schema 迁移
-        ├── models/             # DTO / 表结构
-        └── supabase/           # 云同步客户端（占位）
+Woo/
+├── src/                    # 桌面端前端 (Vue 3, ESM)
+│   ├── stores/             # Pinia 状态管理 (workspace, auth, sync, lock…)
+│   ├── services/           # IPC 客户端 + AI 服务 (api.ts, gemini, deepseek…)
+│   ├── components/         # 桌面端 UI 组件 (layout/, settings/)
+│   └── types/              # TypeScript 类型定义
+├── src-mobile/             # 移动端前端 (Vue 3 + Vant UI)
+│   ├── views/              # 移动端页面
+│   └── router/             # 移动端路由
+├── src-tauri/              # Rust 后端 (桌面端 + 移动端共用)
+│   ├── src/
+│   │   ├── commands/       # Tauri IPC 命令入口
+│   │   ├── services/       # 业务逻辑 (folder, document, sync_engine…)
+│   │   ├── db/             # SQLite 连接管理 + Schema 迁移
+│   │   ├── supabase/       # Supabase REST API 客户端
+│   │   └── models/         # 数据模型
+│   └── gen/android/        # Android 项目骨架
+├── landing/                # 官网落地页 (部署于 Vercel)
+├── index.html              # 桌面端入口
+├── index-mobile.html       # 移动端入口
+├── vite.config.ts          # 桌面端 Vite 配置
+└── vite.mobile.config.ts   # 移动端 Vite 配置
 ```
 
----
-
-## IPC 约定
-
-`app-desktop` 使用 Electron 的 `ipcMain.handle('channel:action', …)` 模式：
-- 通道名是 `domain:action` 形式
-- 主进程 `wrap()` 把所有响应包成 `{ ok, data, message }`
-
-Tauri v2 没有内建 channel / wrap 机制，所以本项目在前端用一层薄适配模拟同样的接口：
-
-```
-调用 invoke('document:listByFolder', { folderId })
-   ↓ toCamelCase
-   documentListByFolder
-   ↓ @tauri-apps/api/core → invoke
-   Rust #[tauri::command(rename_all = "camelCase", rename = "documentListByFolder")]
-   ↓ 业务返回 { ok, data, message }
-前端 services/api.ts 自动 unwrap，!ok 时 throw
-```
-
-### 通道命名规则
-
-- 命名空间：`document`、`folder`、`auth`、`lock`、`version`、`system`、`app`、`kb`、`sync`
-- 格式：`namespace:action`（动作用驼峰），例如 `document:listByFolder`
-- 前端传给 `invoke` 的参数必须是单个对象（不是位置参数），键名与 Rust 函数参数同名
-  - 例：`invoke('document:search', { keyword: 'foo', limit: 10 })`
-- Rust 端必须用 `#[tauri::command(rename_all = "camelCase")]` 让 snake_case 参数自动转换为 camelCase
-
-### `services/api.ts` 行为
-
-| 入参 | 发送负载 |
-| --- | --- |
-| `invoke('folder:tree')` | `undefined` |
-| `invoke('document:get', { id })` | `{ id }` |
-| 返回 `{ ok, data, message }` | 自动解包 `data`，`!ok` 抛 `Error(message)` |
-| 返回原生值（数字、字符串、null） | 原样透传 |
-
-> **禁止** 在业务代码里直接 `import { invoke } from '@tauri-apps/api/core'` —— 一律走 `services/api.ts`，
-> 这样才能享受 `wrap()` 自动解包、错误信息中文本地化等收益。
-
----
-
-## 主窗口配置
-
-主窗口在 `src-tauri/tauri.conf.json` 中声明（不再在 `setup` 中手动创建），由 Tauri 自动创建：
-
-- dev 模式 → `devUrl: http://localhost:5173`
-- prod 模式 → `frontendDist: ../dist`（经过 `vite build`）
-- macOS 样式：hidden title + overlay + traffic light 自定义位置
-
-> ⚠️ 早期重构版曾在 `setup` 中通过 `WebviewWindowBuilder` 创建窗口，并用 `TAURI_DEV` 环境变量切换 URL。
-> 但 Tauri v2 CLI 不会自动设置该变量，导致 dev 模式指向 `tauri://localhost/`，渲染进程无法加载，出现白屏。
-> **当前版本已改为在 `tauri.conf.json` 中声明窗口**，由 Tauri 自动选择正确的 URL。
-
----
-
-## 开发与构建
-
-| 命令 | 作用 |
-| --- | --- |
-| `npm install` | 安装前端依赖 + postinstall 重建原生模块 |
-| `npm run dev` | 启动 Vite dev server（`localhost:5173`） |
-| `npm run tauri:dev` | 启动 Tauri 开发模式（自动调用 `npm run dev`） |
-| `npm run build` | `vue-tsc --noEmit && vite build`（仅前端） |
-| `npm run tauri:build` | 完整打包桌面端（含 Rust release 编译） |
-| `npm run tauri:icon` | 重新生成应用图标 |
-| `npm run tauri:android:dev` | Android 开发模式（自动 `--host`） |
-| `npm run tauri:android:build` | 构建 Android APK / AAB |
-| `npm run tauri:android:init` | 重新生成 Android 项目骨架 |
-
-> **Tip**: `tauri:dev` 首次运行需要编译大量 Rust crate，请耐心等待；后续增量编译很快。
-
----
-
-## 重要环境变量
-
-读取自仓库根目录的 `.env`（vite 通过 `envDir: '..'` 加载）：
-
-| 变量 | 作用 |
-| --- | --- |
-| `WOO_LOG` | Rust 端日志级别（`info` / `debug` / `trace`），默认 `info` |
-| `ELECTRON_DEVTOOLS` | **当前版本不生效**（保留自旧 Electron 版本） |
-
----
-
-## Android 支持
-
-本项目已启用 Tauri v2 的 Mobile 能力，可在 Android 设备/模拟器上运行。
-
-### 环境要求
-
-- JDK 17+
-- Android SDK（含 platform-tools、platforms、build-tools、NDK）
-- 设置环境变量：
-  ```bash
-  export JAVA_HOME=/path/to/jdk-17
-  export ANDROID_HOME=/path/to/android-sdk
-  export NDK_HOME=$ANDROID_HOME/ndk/<版本>
-  ```
-
-### 常用命令
+### 构建命令
 
 ```bash
-# 开发调试（需要连接设备或启动模拟器）
-npm run tauri:android:dev
+# 桌面端
+npm install                  # 安装前端依赖
+npm run dev                  # 启动 Vite 开发服务器 (localhost:5173)
+npm run tauri:dev            # Tauri 开发模式（自动启动 Vite + Rust 编译）
+npm run build                # vue-tsc + vite build（仅前端）
+npm run tauri:build          # 生产构建（含 Rust release 编译）
 
-# 构建 Debug APK
-npx tauri android build --apk --debug
-
-# 构建 Release AAB
-npx tauri android build --aab
+# 移动端
+npm run dev:mobile           # 移动端 Vite 服务器 (localhost:5174)
+npm run tauri:android:dev    # Android 开发模式（连接真机）
+npm run tauri:android:build  # Android 生产构建
 ```
 
-### 为 Android 做的关键调整
+### IPC 约定
 
-1. `Cargo.toml` 中 `reqwest` 改用 `rustls-tls`，避免交叉编译时依赖系统 OpenSSL。
-2. `vite.config.ts` 开启 `host: true`，让移动设备可以访问开发服务器。
-3. `capabilities/default.json` 的 `windows` 改为 `["*"]`，覆盖桌面与移动端窗口。
-4. `src-tauri/gen/android/` 为 Tauri 自动生成的 Android Studio / Gradle 项目。
-
-> ✅ 移动端已做响应式适配：小屏下左侧目录、右侧 AI 聊天变为抽屉滑入，顶部菜单切换为汉堡按钮 + 精简工具栏，文稿列表使用底部抽屉，设置/登录弹窗底部弹出并适配安全区。
-
----
-
-## 与 `app-desktop` 的差异
-
-### 已对齐
-
-- 文件夹 / 文档 CRUD、版本历史、密码锁、回收站的 IPC 通道全部一一对应
-- SQLite 表结构、字段命名保持兼容（`create_time` / `update_time` 仍为 snake_case）
-- UI 层组件、Pinia store 接口、消息总线事件名沿用同一套
-- Tiptap 编辑器、Markmap 脑图、AI Agent 工具调用保持一致
-
-### 待完成
-
-- `auth_service` 仍为占位实现（`signIn` / `signOut` 仅返回 mock session）
-- `supabase` 模块为占位，云同步暂未启用
-- `embedding_service` / `kb_service` 仍为占位（知识库 RAG 暂未生效）
-- 自动更新尚未实现
-- 原生菜单（macOS App Menu）暂未配置
-- Windows / Linux 平台的 code signing 未配置
-
-### 风格差异
-
-- `app-desktop` 用 CJS（`.cjs`），本项目前端沿用 ESM（`.ts` / `.vue`）+ Vite
-- 主进程不再有 `wrap()` 函数，由前端 `services/api.ts` 承担等价职责
-- IPC 调用不再是位置参数，必须是对象形式（更类型友好）
-
----
-
-## 故障排查
-
-### 启动后白屏
-
-确认 `src-tauri/tauri.conf.json` 的 `app.windows` 至少含一个名为 `main` 的窗口，
-且 `capabilities/default.json` 的 `windows` 包含该窗口标签（桌面端可写 `["main"]`，跨平台建议写 `["*"]`）。
-Tauri 不会为未在配置或代码中创建的窗口渲染任何内容。
-
-### 找不到 channel
-
-- 前端用 `'document:listByFolder'`，Rust 命令必须为 `#[tauri::command(rename = "documentListByFolder")]`
-- 确认 `commands::xxx` 模块在 `lib.rs` 的 `tauri::Builder::invoke_handler` 中已注册
-
-### 权限被拒
-
-在 `capabilities/default.json` 的 `permissions` 中追加对应权限集，例如：
-
-```json
-"permissions": [
-  "core:default",
-  "dialog:default",
-  "shell:default"
-]
+```
+Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
+                    ↓                                             ↓
+              自动拆包 { ok, data }                          Supabase (同步时)
 ```
 
-### 数据库未初始化
+- 所有 Rust 命令返回 `CommandResult<T> { ok, data?, message? }`
+- 前端 `api.ts` 自动解包：`ok=false` 抛异常，原始值直接透传
+- IPC 格式：`namespace:action`（如 `document:listByFolder`），参数为对象
 
-主进程 `setup` 钩子会调用 `db::set_data_dir(...)` 和 `db::with_db(...)`。
-若路径不可写，应用会 panic。macOS 默认数据目录为
-`~/Library/Application Support/com.nonegonotes.woo.tauri/`。
+> ⚠️ 禁止直接 `import { invoke }` —— 一律走 `services/api.ts`
+
+### 数据库
+
+未登录 → `woo.db`，登录后 → `woo-{username}.db`（首次登录自动迁移）。
+
+| 表 | 说明 |
+|---|---|
+| `note_folder` | 文件夹树，`parent_id` 层级结构，软删除三态 |
+| `note_document` | 文档，HTML `content`，标题从第一行自动提取 |
+| `note_document_version` | 版本历史 (auto / manual / restore) |
+| `sync_meta` | 键值存储 (last_sync_time, last_tombstone_pull) |
+
+**软删除三态**：`deleted = 0` 正常 → `1` 回收站 → `2` 待硬删除（7 天清理窗口）
+
+### 同步引擎
+
+60 秒间隔运行，流程：拉墓碑 → 拉远端 → 推本地 → 清理 → 墓碑 GC。采用最后写入胜出 + 增量同步 + 冲突副本保护策略。
 
 ---
 
-## 路线图
+## 🗺️ 路线图
 
-- [ ] 完成 `auth_service`（接入 Supabase Auth）
-- [ ] 完成 `sync_engine`（基于 `app-desktop` 的 last-write-wins + tombstone 同步）
-- [ ] 完成知识库 / 嵌入检索（`embedding_service` + `kb_service`）
+- [ ] 完成云同步 (Supabase Auth + Sync Engine)
 - [ ] macOS 原生菜单 + 完整快捷键
-- [ ] Windows / Linux 平台打包与签名
-- [x] Android 平台编译与运行（UI 响应式适配持续优化中）
+- [ ] Homebrew Cask 分发
+- [ ] iOS 支持 (Tauri Mobile)
+- [ ] Windows / Linux 代码签名
+- [x] 跨平台基础框架 (macOS + Windows + Android)
+- [x] 自签证书 macOS 签名方案
+- [x] 移动端响应式 UI 适配
+- [x] AI Agent 框架 (8 个内置工具)
 
 ---
 
-## 许可
+## 📄 许可
 
-MIT
+[MIT](LICENSE) © 2025–2026 Woo Notes
+
+---
+
+<p align="center">
+  <sub>🏗️ 用 Rust + Vue 3 构建 · 跑在 Tauri v2 上</sub>
+</p>

@@ -109,29 +109,120 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx tauri build --bundles app
 
-      - name: macOS 代码签名 (rcodesign)
+      - name: 下载 rcodesign
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-aarch64-apple-darwin.tar.gz" | tar xz --strip-components=1
+
+      - name: macOS 代码签名 (.app)
         if: matrix.os == 'macos-latest'
         env:
           CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
         run: |
           echo "$CODESIGN_P12" | base64 -d > woo-codesign.p12
-          curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-aarch64-apple-darwin.tar.gz" | tar xz --strip-components=1
           ./rcodesign sign \
             --p12-file woo-codesign.p12 \
             --p12-password woo2026 \
             --code-signature-flags runtime \
             src-tauri/target/release/bundle/macos/Woo.app
 
-      - name: 打包 DMG
+      - name: 打包 DMG（Tauri 2 兼容）
         if: matrix.os == 'macos-latest'
-        run: |
-          APP="src-tauri/target/release/bundle/macos/Woo.app"
-          DMG="src-tauri/target/release/bundle/dmg/Woo_${VERSION}_aarch64.dmg"
-          mkdir -p "$(dirname "$DMG")"
-          hdiutil create -fs HFS+ -srcfolder "$APP" -volname "Woo" "$DMG"
-          cp woo-codesign.cer src-tauri/target/release/bundle/dmg/
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
+        run: |
+          set -eo pipefail
+
+          APP="src-tauri/target/release/bundle/macos/Woo.app"
+          DMG_DIR="src-tauri/target/release/bundle/dmg"
+          DMG_NAME="Woo_${VERSION}_aarch64"
+          DMG_TEMP="$DMG_DIR/rw.${DMG_NAME}.dmg"
+          DMG_FINAL="$DMG_DIR/${DMG_NAME}.dmg"
+
+          rm -rf "$DMG_DIR"
+          mkdir -p "$DMG_DIR"
+
+          # 1. 创建临时 UDRW DMG（与 Tauri 2 bundle_dmg.sh 完全一致）
+          echo "→ 创建临时 DMG..."
+          hdiutil create \
+            -srcfolder "$APP" \
+            -volname "Woo" \
+            -fs HFS+ \
+            -fsargs "-c c=64,a=16,e=16" \
+            -format UDRW \
+            "$DMG_TEMP"
+
+          # 2. 扩容（Tauri 2: 源大小 + 20MB，不低于 hdiutil 下限）
+          SIZE_BLOCKS=$(du -B 512 -s "$DMG_TEMP" | sed -e 's/\t.*//g')
+          SIZE_MB=$(( ($SIZE_BLOCKS * 512 / 1000 / 1000) + 1 + 20 ))
+          MIN_SIZE=$(hdiutil resize -limits "$DMG_TEMP" | awk 'NR==1{print int($1/2048+1)}')
+          if [ "$MIN_SIZE" -gt "$SIZE_MB" ]; then SIZE_MB="$MIN_SIZE"; fi
+          echo "→ 扩容至 ${SIZE_MB}MB..."
+          hdiutil resize -size "${SIZE_MB}m" "$DMG_TEMP"
+
+          # 3. 挂载
+          echo "→ 挂载 DMG..."
+          DEV_LINE=$(hdiutil attach -mountrandom /Volumes -readwrite -noverify -noautoopen -nobrowse "$DMG_TEMP" | grep -E --color=never '^/dev/')
+          DEV_NAME=$(echo "$DEV_LINE" | sed 1q | awk '{print $1}')
+
+          # 查找挂载目录（与 Tauri 2 find_mount_dir 一致）
+          MOUNT_DIR=""
+          for i in $(seq 1 9); do
+            CANDIDATE=$(hdiutil info | grep -E --color=never "$DEV_NAME" | head -$i | awk '{print $3}' | xargs)
+            if [ -n "$CANDIDATE" ]; then
+              MOUNT_DIR="$CANDIDATE"
+              break
+            fi
+          done
+          if [ -z "$MOUNT_DIR" ]; then
+            echo "错误: 无法找到挂载目录"
+            exit 1
+          fi
+          echo "→ 挂载目录: $MOUNT_DIR"
+
+          # 4. 创建 Applications 快捷方式（与 Tauri 2 一致）
+          echo "→ 创建 Applications 快捷方式..."
+          ln -s /Applications "$MOUNT_DIR/Applications"
+
+          # 5. 修复权限（与 Tauri 2 一致）
+          echo "→ 修复权限..."
+          chmod -Rf go-w "$MOUNT_DIR" || true
+
+          # 6. 清理 .fseventsd（与 Tauri 2 一致）
+          echo "→ 清理 .fseventsd..."
+          rm -rf "$MOUNT_DIR/.fseventsd" || true
+
+          # 7. 卸载（带重试，与 Tauri 2 hdiutil_detach_retry 一致）
+          echo "→ 卸载 DMG..."
+          ATTEMPT=0
+          until hdiutil detach "$DEV_NAME"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -ge 3 ]; then
+              echo "错误: 卸载失败"
+              exit 1
+            fi
+            echo "重试 $ATTEMPT..."
+            sleep $((1 * (2 ** ATTEMPT)))
+          done
+
+          # 8. 转换为最终 UDZO 格式（与 Tauri 2 一致: zlib-level=9）
+          echo "→ 压缩为最终 DMG..."
+          hdiutil convert "$DMG_TEMP" -format UDZO -imagekey zlib-level=9 -o "$DMG_FINAL"
+          rm -f "$DMG_TEMP"
+
+          # 9. 对 DMG 签名（与 Tauri 2 codesign -s 一致，改用 rcodesign）
+          echo "→ 签名 DMG..."
+          echo "$CODESIGN_P12" | base64 -d > woo-codesign.p12
+          ./rcodesign sign \
+            --p12-file woo-codesign.p12 \
+            --p12-password woo2026 \
+            --code-signature-flags runtime \
+            "$DMG_FINAL"
+
+          # 10. 附上公钥证书
+          cp woo-codesign.cer "$DMG_DIR/"
+          ls -lh "$DMG_DIR"
 
       - name: 上传桌面端构建产物
         uses: actions/upload-artifact@v4
