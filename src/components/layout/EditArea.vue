@@ -717,8 +717,19 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   isSettingContent = true
   if (newDoc && newDoc.isLocked) {
     editor.value.commands.setContent('')
+  } else if (newDoc && newDoc.content) {
+    let html = newDoc.content
+    // 如果内容不含 HTML 标签，很可能是 Markdown 原始文本，需要转为 HTML 再渲染
+    if (!/<(p|h[1-6]|table|ul|ol|blockquote|pre|div|span|br|hr|img|a|strong|em|code)\b[^>]*>/i.test(html)) {
+      try {
+        html = marked.parse(html, { gfm: true, breaks: true }) as string
+      } catch {
+        // 转换失败则保持原文
+      }
+    }
+    editor.value.commands.setContent(html)
   } else {
-    editor.value.commands.setContent(newDoc ? newDoc.content : '')
+    editor.value.commands.setContent('')
   }
   isSettingContent = false
   // AI 流式编辑时，自动滚动到文档底部展现打字效果

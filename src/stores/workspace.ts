@@ -449,12 +449,28 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         // 若该草稿关联了外部文件，异步写回源文件
         const filePath = externalFilePathMap.value[documentId]
         if (filePath) {
-          import('../services/externalFileApi').then(({ writeExternalFile }) => {
+          void (async () => {
+            // 如果是 Markdown 文件，将编辑器的 HTML 转回 Markdown 再写回
+            const ext = filePath.toLowerCase().split('.').pop()
+            const isMarkdown = ext && ['md', 'markdown', 'mdown', 'mkd'].includes(ext)
+            if (isMarkdown) {
+              const { default: TurndownService } = await import('turndown')
+              const { tables: gfmTable, strikethrough: gfmStrikethrough } = await import('turndown-plugin-gfm')
+              const turndownService = new TurndownService({ headingStyle: 'atx' })
+              turndownService.use([gfmTable, gfmStrikethrough])
+              const { writeExternalFile } = await import('../services/externalFileApi')
+              writeExternalFile(filePath, turndownService.turndown(content)).catch(e => {
+                log.app.error('[Workspace] 写入外部文件失败:', e)
+                error.value = `写入外部文件失败: ${e}`
+              })
+              return
+            }
+            const { writeExternalFile } = await import('../services/externalFileApi')
             writeExternalFile(filePath, content).catch(e => {
               log.app.error('[Workspace] 写入外部文件失败:', e)
               error.value = `写入外部文件失败: ${e}`
             })
-          })
+          })()
         }
       }
       return
@@ -664,13 +680,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const { readExternalFile } = await import('../services/externalFileApi')
       const result = await readExternalFile(filePath)
 
+      // 如果是 Markdown 文件，将 Markdown 转为 HTML 再交给 Tiptap 渲染
+      const ext = result.filePath.toLowerCase().split('.').pop()
+      const isMarkdown = ext && ['md', 'markdown', 'mdown', 'mkd'].includes(ext)
+      let content = result.content
+      if (isMarkdown) {
+        const { marked } = await import('marked')
+        content = marked.parse(result.content, { gfm: true, breaks: true }) as string
+        log.app.info('[Workspace] Markdown→HTML 转换完成，原文长度:', result.content.length, 'HTML长度:', content.length)
+      } else {
+        log.app.info('[Workspace] 非 Markdown 文件，扩展名:', ext)
+      }
+
       const now = new Date().toISOString()
       const docId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
       const doc: Document = {
         id: docId,
         title: result.fileName,
-        content: result.content,
+        content,
         folderId: DRAFT_FOLDER_ID,
         createdAt: now,
         updatedAt: now
