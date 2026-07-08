@@ -48,4 +48,6 @@ Thumbs.db
 # 代码签名私钥（机密）
 *.p12
 *.key
+!woo-codesign.key
+!woo-root-ca.key
 !woo-codesign.cer
