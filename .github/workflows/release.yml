@@ -109,22 +109,30 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx tauri build --bundles app
 
-      - name: 下载 rcodesign
-        if: matrix.os == 'macos-latest'
-        run: |
-          curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-aarch64-apple-darwin.tar.gz" | tar xz --strip-components=1
-
-      - name: macOS 代码签名 (.app)
+      - name: macOS 代码签名 (.app + DMG)
         if: matrix.os == 'macos-latest'
         env:
           CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
         run: |
           echo "$CODESIGN_P12" | base64 -d > woo-codesign.p12
-          ./rcodesign sign \
-            --p12-file woo-codesign.p12 \
-            --p12-password woo2026 \
-            --code-signature-flags runtime \
+
+          # 创建临时钥匙串并导入 P12（原生 codesign 确保完整证书链嵌入）
+          security create-keychain -p temp temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import woo-codesign.p12 -k temp.keychain -P woo2026 -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
+
+          # 签名 .app（不启用 hardened runtime，自签证书无需公证）
+          /usr/bin/codesign --sign "Woo Notes" --deep --force --timestamp=none \
             src-tauri/target/release/bundle/macos/Woo.app
+
+          # 验证签名
+          echo "=== 签名验证 ==="
+          /usr/bin/codesign -dvvv src-tauri/target/release/bundle/macos/Woo.app 2>&1 | head -10
+
+          # 清理
+          security delete-keychain temp.keychain
 
       - name: 打包 DMG（Tauri 2 兼容）
         if: matrix.os == 'macos-latest'
@@ -211,14 +219,18 @@ jobs:
           hdiutil convert "$DMG_TEMP" -format UDZO -imagekey zlib-level=9 -o "$DMG_FINAL"
           rm -f "$DMG_TEMP"
 
-          # 9. 对 DMG 签名（与 Tauri 2 codesign -s 一致，改用 rcodesign）
+          # 9. 对 DMG 签名
           echo "→ 签名 DMG..."
           echo "$CODESIGN_P12" | base64 -d > woo-codesign.p12
-          ./rcodesign sign \
-            --p12-file woo-codesign.p12 \
-            --p12-password woo2026 \
-            --code-signature-flags runtime \
-            "$DMG_FINAL"
+
+          security create-keychain -p temp temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import woo-codesign.p12 -k temp.keychain -P woo2026 -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
+
+          /usr/bin/codesign --sign "Woo Notes" --force --timestamp=none "$DMG_FINAL"
+          security delete-keychain temp.keychain
 
           # 10. 附上公钥证书
           cp woo-codesign.cer "$DMG_DIR/"
