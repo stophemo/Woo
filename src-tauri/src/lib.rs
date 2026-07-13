@@ -356,7 +356,6 @@ pub fn run() {
             commands::system::dialog_save_image,
             commands::system::file_write,
             commands::system::dialog_save_document,
-            commands::system::document_export_pdf,
             commands::system::log_write,
             // External file (open with / drag-drop)
             commands::external_file::read_external_file,

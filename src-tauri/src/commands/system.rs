@@ -3,27 +3,7 @@ use crate::commands::CommandResult;
 use serde::Deserialize;
 use tauri::AppHandle;
 use std::fs;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveImagePayload {
-    pub default_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileWritePayload {
-    pub file_path: String,
-    pub data: String,
-    pub is_base64: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveDocumentPayload {
-    pub default_name: Option<String>,
-    pub filters: Option<Vec<FileFilter>>,
-}
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,20 +12,13 @@ pub struct FileFilter {
     pub extensions: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportPdfPayload {
-    pub file_path: String,
-    pub html: String,
-}
-
 /// Save image dialog
 #[tauri::command(rename_all = "camelCase", rename = "dialogSaveImage")]
 pub async fn dialog_save_image(
     app: AppHandle,
-    payload: SaveImagePayload,
+    default_name: Option<String>,
 ) -> Result<CommandResult<ImageSaveResult>, String> {
-    let default_name = payload.default_name.unwrap_or_else(|| "mindmap.png".to_string());
+    let default_name = default_name.unwrap_or_else(|| "mindmap.png".to_string());
     
     use tauri_plugin_dialog::DialogExt;
     let file = app.dialog()
@@ -85,34 +58,59 @@ pub struct ImageSaveResult {
     pub format: String,
 }
 
-/// Write data to file
+/// Write data to file. When `is_base64` is true, decode `data` as standard
+/// base64 and write the raw bytes (used for binary exports like PNG);
+/// otherwise write the string as-is (text like Markdown / TXT).
 #[tauri::command(rename_all = "camelCase", rename = "fileWrite")]
 pub async fn file_write(
-    payload: FileWritePayload,
+    file_path: String,
+    data: String,
+    is_base64: Option<bool>,
 ) -> Result<CommandResult<()>, String> {
-    match std::fs::write(&payload.file_path, &payload.data) {
+    let write_result = if is_base64.unwrap_or(false) {
+        match STANDARD.decode(data.as_bytes()) {
+            Ok(bytes) => fs::write(&file_path, &bytes),
+            Err(e) => return Ok(CommandResult::error(&format!("base64 解码失败: {}", e))),
+        }
+    } else {
+        fs::write(&file_path, &data)
+    };
+    match write_result {
         Ok(_) => Ok(CommandResult::success(())),
         Err(e) => Ok(CommandResult::error(&format!("写入文件失败: {}", e))),
     }
 }
 
-/// Save document dialog
+/// Save document dialog. Uses the filters supplied by the frontend when
+/// present (each export format passes its own), falling back to a default set.
 #[tauri::command(rename_all = "camelCase", rename = "dialogSaveDocument")]
 pub async fn dialog_save_document(
     app: AppHandle,
-    payload: SaveDocumentPayload,
+    default_name: Option<String>,
+    filters: Option<Vec<FileFilter>>,
 ) -> Result<CommandResult<DocumentSaveResult>, String> {
-    let default_name = payload.default_name.unwrap_or_else(|| "untitled.md".to_string());
-    
+    let default_name = default_name.unwrap_or_else(|| "untitled.md".to_string());
+
     use tauri_plugin_dialog::DialogExt;
-    let file = app.dialog()
-        .file()
-        .add_filter("Markdown", &["md"])
-        .add_filter("HTML", &["html", "htm"])
-        .add_filter("PDF", &["pdf"])
-        .add_filter("PNG", &["png"])
-        .set_file_name(&default_name)
-        .blocking_save_file();
+    let mut builder = app.dialog().file().set_file_name(&default_name);
+
+    match &filters {
+        Some(filters) if !filters.is_empty() => {
+            for f in filters {
+                let exts: Vec<&str> = f.extensions.iter().map(|s| s.as_str()).collect();
+                builder = builder.add_filter(&f.name, &exts);
+            }
+        }
+        _ => {
+            builder = builder
+                .add_filter("Markdown", &["md"])
+                .add_filter("HTML", &["html", "htm"])
+                .add_filter("PDF", &["pdf"])
+                .add_filter("PNG", &["png"]);
+        }
+    }
+
+    let file = builder.blocking_save_file();
 
     match file {
         Some(path) => Ok(CommandResult::success(DocumentSaveResult {
@@ -125,6 +123,7 @@ pub async fn dialog_save_document(
 }
 
 #[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentSaveResult {
     pub file_path: String,
 }
@@ -137,19 +136,6 @@ pub fn log_write(level: String, tag: String, message: String) {
         "error" => log::error!("[WebView] {}", msg),
         "warn"  => log::warn!("[WebView] {}", msg),
         _       => log::info!("[WebView] {}", msg),
-    }
-}
-
-/// Export document as PDF (simplified: writes HTML to file with .pdf extension)
-#[tauri::command(rename_all = "camelCase", rename = "documentExportPdf")]
-pub async fn document_export_pdf(
-    payload: ExportPdfPayload,
-) -> Result<CommandResult<()>, String> {
-    // Write HTML to the requested path
-    // For proper PDF conversion, a headless browser or wkhtmltopdf would be needed
-    match fs::write(&payload.file_path, &payload.html) {
-        Ok(_) => Ok(CommandResult::success(())),
-        Err(e) => Ok(CommandResult::error(&format!("导出失败: {}", e))),
     }
 }
 

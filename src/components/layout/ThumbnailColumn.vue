@@ -186,9 +186,7 @@ import IconGrip from '../icons/IconGrip.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 import LockPasswordDialog from './LockPasswordDialog.vue'
-import TurndownService from 'turndown'
-import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
-import { invoke } from '../../services/api'
+import { exportDocumentInteractive } from '../../services/exportDocument'
 
 interface Props {
   isOpen: boolean
@@ -428,90 +426,10 @@ async function handleHardDeleteDocument(docId: string) {
   await store.hardDeleteDocument(docId)
 }
 
-const _turndown = new TurndownService({
-  headingStyle: 'atx',       // ## 标题
-  codeBlockStyle: 'fenced',  // ``` 代码块
-  emDelimiter: '*',          // *斜体*
-  bulletListMarker: '-',     // - 无序列表
-})
-_turndown.use(gfmTable)
-_turndown.use(gfmStrikethrough)
-// 任务列表（- [x] / - [ ]），与 EditArea 中的规则保持一致
-_turndown.addRule('taskList', {
-  filter: (node: HTMLElement) =>
-    node.nodeName === 'LI' &&
-    (node.getAttribute('data-checked') !== null ||
-     (!!node.parentElement && node.parentElement.getAttribute('data-type') === 'taskList')),
-  replacement: (content: string, node: HTMLElement) => {
-    const checked = node.getAttribute('data-checked') === 'true'
-    return `- [${checked ? 'x' : ' '}] ${content.trim()}\n`
-  },
-})
-
 async function handleExportDoc(docId: string) {
   const doc = store.currentFolderDocuments.find(d => d.id === docId)
   if (!doc) return
-
-  const title = doc.title || '未命名文稿'
-  const html = doc.content || ''
-
-  const result = await invoke<{ filePath: string }>('dialog:save-document', {
-    defaultName: `${title}.md`,
-    filters: [
-      { name: 'Markdown 文件', extensions: ['md'] },
-      { name: 'PDF 文件', extensions: ['pdf'] },
-      { name: '图片文件', extensions: ['webp'] },
-    ],
-  })
-  if (!result?.filePath) return
-
-  const ext = result.filePath.toLowerCase()
-  if (ext.endsWith('.md')) {
-    const md = _turndown.turndown(html)
-    await invoke('file:write', { filePath: result.filePath, data: md, isBase64: false })
-  } else if (ext.endsWith('.pdf')) {
-    await invoke('document:export-pdf', { filePath: result.filePath, html })
-  } else if (ext.endsWith('.webp')) {
-    const webpBase64 = await renderHtmlToWebPBase64(html)
-    await invoke('file:write', { filePath: result.filePath, data: webpBase64, isBase64: true })
-  }
-}
-
-async function renderHtmlToWebPBase64(html: string): Promise<string> {
-  // Render HTML to canvas using SVG foreignObject, then encode as WebP
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600">
-  <foreignObject width="100%" height="100%">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:-apple-system,&quot;Microsoft YaHei&quot;,sans-serif;padding:20px;background:#fff;color:#333;">
-      ${html}
-    </div>
-  </foreignObject>
-</svg>`
-  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
-  const url = URL.createObjectURL(svgBlob)
-
-  const img = new Image()
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve()
-    img.onerror = () => reject(new Error('渲染 HTML 为图片失败'))
-    img.src = url
-  })
-
-  const canvas = document.createElement('canvas')
-  canvas.width = img.naturalWidth
-  canvas.height = img.naturalHeight
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(img, 0, 0)
-
-  URL.revokeObjectURL(url)
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) { reject(new Error('WebP 转换失败')); return }
-      const buf = await blob.arrayBuffer()
-      resolve(btoa(String.fromCharCode(...new Uint8Array(buf))))
-    }, 'image/webp', 0.92)
-  })
+  await exportDocumentInteractive(doc)
 }
 
 function handleDocContextMenu(event: MouseEvent, docId: string) {

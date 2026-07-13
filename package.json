@@ -34,6 +34,7 @@
     "@tiptap/vue-3": "^3.22.4",
     "@vant/use": "^1.6.0",
     "d3": "^7.9.0",
+    "html2canvas": "^1.4.1",
     "marked": "^15.0.12",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",

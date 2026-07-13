@@ -106,6 +106,8 @@ import Dropdown from '../ui/Dropdown.vue'
 import DropdownMenu from '../ui/DropdownMenu.vue'
 import { useThemeStore } from '../../stores/theme'
 import { useSyncStore } from '../../stores/sync'
+import { useWorkspaceStore } from '../../stores/workspace'
+import { exportDocumentAs, type ExportFormat } from '../../services/exportDocument'
 import {
   fileMenuItems,
   editMenuItems,
@@ -116,6 +118,7 @@ import {
 
 const themeStore = useThemeStore()
 const syncStore = useSyncStore()
+const workspaceStore = useWorkspaceStore()
 
 import { isMac, shortcutDisplay } from '../../config/shortcutUtils'
 
@@ -298,6 +301,17 @@ const handleMenuAction = (action: string) => {
   }
   if (action === 'settings') {
     emit('open-settings')
+    return
+  }
+  // 导出（作用于当前打开的文稿）
+  if (action.startsWith('export-')) {
+    const formatMap: Record<string, ExportFormat> = {
+      'export-markdown': 'markdown',
+      'export-txt': 'txt',
+      'export-image': 'image',
+    }
+    const format = formatMap[action]
+    if (format) exportDocumentAs(workspaceStore.currentDocument, format)
     return
   }
   // 编辑器命令（如 'link'）通过自定义事件传递给 EditArea

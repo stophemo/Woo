@@ -31,7 +31,6 @@ export const fileMenuItems: MenuItem[] = [
     label: '导出',
     children: [
       { type: 'item', label: '图片', action: 'export-image' },
-      { type: 'item', label: 'PDF', action: 'export-pdf' },
       { type: 'item', label: 'Markdown', action: 'export-markdown' },
       { type: 'item', label: 'TXT', action: 'export-txt' }
     ]
