@@ -22,6 +22,11 @@ const doc = computed(() => store.currentDocument)
 const title = computed(() => doc.value?.title || '无标题')
 const content = computed(() => doc.value?.content || '')
 const isLocked = computed(() => !!doc.value?.isLocked)
+const isDraft = noteId.startsWith('draft_')
+
+function openVersions() {
+  router.push(`/versions/${noteId}`)
+}
 
 // 解锁
 const unlockPwd = ref('')
@@ -90,6 +95,10 @@ async function saveEdit() {
     } catch { /* 回退：原文当作 HTML 存 */ }
     store.updateDocumentContent(noteId, html)
     await store.flushPendingSave()
+    // 正式文档保存后提交一个版本，便于历史回溯（草稿不产生版本）
+    if (!isDraft) {
+      try { await store.commitDocumentVersion(noteId, 'auto') } catch { /* 忽略 */ }
+    }
     editing.value = false
     showToast('已保存')
   } catch {
@@ -130,6 +139,7 @@ function goBack() {
       @click-left="goBack"
     >
       <template #right>
+        <van-icon v-if="!isDraft && !isLocked" name="clock-o" class="action-icon" @click="openVersions" />
         <van-icon name="delete" class="action-icon" @click="confirmDelete" />
       </template>
     </van-nav-bar>
