@@ -28,6 +28,51 @@ function openVersions() {
   router.push(`/versions/${noteId}`)
 }
 
+// ------- 分享/导出 -------
+const showShare = ref(false)
+const shareActions = [
+  { name: '分享为 Markdown', key: 'markdown' },
+  { name: '分享为纯文本', key: 'txt' },
+]
+
+async function shareAs(action: { key: string }) {
+  showShare.value = false
+  const html = content.value
+  if (!html.trim()) { showToast('内容为空'); return }
+  let text = ''
+  if (action.key === 'markdown') {
+    try {
+      const { default: TurndownService } = await import('turndown')
+      const { gfm } = await import('turndown-plugin-gfm')
+      const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+      td.use(gfm)
+      text = td.turndown(html)
+    } catch { text = html }
+  } else {
+    const tmp = document.createElement('div')
+    tmp.innerHTML = html
+    tmp.querySelectorAll('br').forEach((br) => br.replaceWith('\n'))
+    tmp.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,tr,blockquote,pre').forEach((el) => el.append('\n'))
+    text = (tmp.textContent || '').replace(/\n{3,}/g, '\n\n').trim()
+  }
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: title.value, text })
+    } else {
+      await navigator.clipboard.writeText(text)
+      showToast('已复制到剪贴板')
+    }
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return // 用户取消分享
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('已复制到剪贴板')
+    } catch {
+      showToast('分享失败')
+    }
+  }
+}
+
 // 解锁
 const unlockPwd = ref('')
 const unlocking = ref(false)
@@ -139,6 +184,7 @@ function goBack() {
       @click-left="goBack"
     >
       <template #right>
+        <van-icon v-if="!isLocked" name="share-o" class="action-icon" @click="showShare = true" />
         <van-icon v-if="!isDraft && !isLocked" name="clock-o" class="action-icon" @click="openVersions" />
         <van-icon name="delete" class="action-icon" @click="confirmDelete" />
       </template>
@@ -193,6 +239,15 @@ function goBack() {
         </van-button>
       </div>
     </template>
+
+    <!-- 分享/导出 -->
+    <van-action-sheet
+      v-model:show="showShare"
+      :actions="shareActions"
+      cancel-text="取消"
+      close-on-click-action
+      @select="shareAs"
+    />
   </div>
 </template>
 

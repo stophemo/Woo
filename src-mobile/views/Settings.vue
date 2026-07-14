@@ -6,6 +6,7 @@ import { useAuthStore } from '../../src/stores/auth'
 import { useSyncStore } from '../../src/stores/sync'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
+import { useThemeStore } from '../../src/stores/theme'
 
 const router = useRouter()
 const appVersion = __APP_VERSION__
@@ -13,6 +14,7 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
+const themeStore = useThemeStore()
 
 const showLogin = ref(false)
 const loginMode = ref<'login' | 'signup'>('login')
@@ -188,6 +190,19 @@ async function beforePwdClose(action: string) {
         :label="lockStore.hasPassword ? '已启用，可在笔记列表滑动加锁' : '设置后可对笔记加锁隐藏'"
         @click="openPwdDialog"
       />
+    </van-cell-group>
+
+    <!-- 外观 -->
+    <van-cell-group inset title="外观">
+      <van-cell title="深色模式" center>
+        <template #right-icon>
+          <van-switch
+            :model-value="themeStore.theme === 'dark'"
+            size="20"
+            @update:model-value="(v: boolean) => (themeStore.theme = v ? 'dark' : 'light')"
+          />
+        </template>
+      </van-cell>
     </van-cell-group>
 
     <!-- 关于 -->

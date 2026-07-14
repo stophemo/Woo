@@ -7,6 +7,7 @@ import { useAuthStore } from '../src/stores/auth'
 import { useSyncStore } from '../src/stores/sync'
 import { useWorkspaceStore } from '../src/stores/workspace'
 import { useLockStore } from '../src/stores/lock'
+import { useThemeStore } from '../src/stores/theme'
 
 const router = useRouter()
 const route = useRoute()
@@ -14,6 +15,7 @@ const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
+const themeStore = useThemeStore()
 
 const TAB_ROUTES = ['/', '/drafts', '/settings']
 const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(route.path) : 0)
@@ -67,16 +69,18 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mobile-app">
-    <div class="page-content">
-      <router-view />
+  <van-config-provider :theme="themeStore.theme">
+    <div class="mobile-app">
+      <div class="page-content">
+        <router-view />
+      </div>
+      <van-tabbar v-model="active" @change="onTabChange" safe-area-inset-bottom>
+        <van-tabbar-item icon="notes-o">笔记</van-tabbar-item>
+        <van-tabbar-item icon="edit-o">草稿</van-tabbar-item>
+        <van-tabbar-item icon="setting-o">设置</van-tabbar-item>
+      </van-tabbar>
     </div>
-    <van-tabbar v-model="active" @change="onTabChange" safe-area-inset-bottom>
-      <van-tabbar-item icon="notes-o">笔记</van-tabbar-item>
-      <van-tabbar-item icon="edit-o">草稿</van-tabbar-item>
-      <van-tabbar-item icon="setting-o">设置</van-tabbar-item>
-    </van-tabbar>
-  </div>
+  </van-config-provider>
 </template>
 
 <style>
@@ -91,5 +95,13 @@ body {
 }
 .page-content {
   padding-bottom: 50px;
+}
+/* 暗色主题：覆盖自定义背景（Vant 组件由 van-config-provider 处理） */
+html[data-theme='dark'] body,
+html[data-theme='dark'] .mobile-app {
+  background: #0f0f0f;
+}
+html[data-theme='dark'] .editor-content {
+  color: #e0e0e0;
 }
 </style>
