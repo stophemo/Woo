@@ -4,11 +4,13 @@ import { showToast } from 'vant'
 import { useAuthStore } from '../../src/stores/auth'
 import { useSyncStore } from '../../src/stores/sync'
 import { useWorkspaceStore } from '../../src/stores/workspace'
+import { useLockStore } from '../../src/stores/lock'
 
 const appVersion = __APP_VERSION__
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
+const lockStore = useLockStore()
 
 const showLogin = ref(false)
 const loginMode = ref<'login' | 'signup'>('login')
@@ -102,6 +104,38 @@ async function onSyncNow() {
   const ok = await syncStore.triggerSync()
   showToast(ok ? '同步完成' : (syncStore.errorMsg || '同步失败'))
 }
+
+// ------- 密码锁 -------
+const showPwdDialog = ref(false)
+const pwd = reactive({ value: '', confirm: '' })
+
+function openPwdDialog() {
+  pwd.value = ''
+  pwd.confirm = ''
+  showPwdDialog.value = true
+}
+
+// 返回 false 阻止对话框关闭（校验不通过时保持打开）
+async function beforePwdClose(action: string) {
+  if (action !== 'confirm') return true
+  if (pwd.value.length < 4) {
+    showToast('密码至少 4 位')
+    return false
+  }
+  if (pwd.value !== pwd.confirm) {
+    showToast('两次输入不一致')
+    return false
+  }
+  try {
+    const existed = lockStore.hasPassword
+    await lockStore.setPassword(pwd.value)
+    showToast(existed ? '密码已更新' : '密码锁已设置')
+    return true
+  } catch (e: any) {
+    showToast(e?.message || '设置失败')
+    return false
+  }
+}
 </script>
 
 <template>
@@ -137,6 +171,16 @@ async function onSyncNow() {
           <van-loading v-if="syncStore.isSyncing" size="16" />
         </template>
       </van-cell>
+    </van-cell-group>
+
+    <!-- 安全 -->
+    <van-cell-group inset title="安全">
+      <van-cell
+        :title="lockStore.hasPassword ? '修改密码锁' : '设置密码锁'"
+        is-link
+        :label="lockStore.hasPassword ? '已启用，可在笔记列表滑动加锁' : '设置后可对笔记加锁隐藏'"
+        @click="openPwdDialog"
+      />
     </van-cell-group>
 
     <!-- 关于 -->
@@ -212,6 +256,19 @@ async function onSyncNow() {
         </van-form>
       </div>
     </van-popup>
+
+    <!-- 密码锁设置对话框 -->
+    <van-dialog
+      v-model:show="showPwdDialog"
+      :title="lockStore.hasPassword ? '修改密码锁' : '设置密码锁'"
+      show-cancel-button
+      :before-close="beforePwdClose"
+    >
+      <div class="pwd-fields">
+        <van-field v-model="pwd.value" type="password" label="密码" placeholder="至少 4 位" />
+        <van-field v-model="pwd.confirm" type="password" label="确认" placeholder="再次输入" />
+      </div>
+    </van-dialog>
   </div>
 </template>
 
@@ -232,5 +289,8 @@ async function onSyncNow() {
 }
 .login-actions {
   padding: 16px;
+}
+.pwd-fields {
+  padding: 8px 0;
 }
 </style>

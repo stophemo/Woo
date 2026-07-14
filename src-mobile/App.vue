@@ -6,12 +6,14 @@ import { listen } from '@tauri-apps/api/event'
 import { useAuthStore } from '../src/stores/auth'
 import { useSyncStore } from '../src/stores/sync'
 import { useWorkspaceStore } from '../src/stores/workspace'
+import { useLockStore } from '../src/stores/lock'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
+const lockStore = useLockStore()
 
 const TAB_ROUTES = ['/', '/drafts', '/settings']
 const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(route.path) : 0)
@@ -52,6 +54,7 @@ onMounted(async () => {
 
   // 恢复会话 + 拉一次首屏同步状态
   await authStore.bootstrap()
+  try { await lockStore.bootstrap() } catch { /* ignore */ }
   try { await syncStore.refreshStatus() } catch { /* ignore */ }
 })
 </script>

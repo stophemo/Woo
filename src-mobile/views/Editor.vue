@@ -3,10 +3,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
+import { useLockStore } from '../../src/stores/lock'
 
 const route = useRoute()
 const router = useRouter()
 const store = useWorkspaceStore()
+const lockStore = useLockStore()
 const noteId = route.params.id as string
 
 const loading = ref(true)
@@ -18,6 +20,25 @@ const editText = ref('')
 const doc = computed(() => store.currentDocument)
 const title = computed(() => doc.value?.title || '无标题')
 const content = computed(() => doc.value?.content || '')
+const isLocked = computed(() => !!doc.value?.isLocked)
+
+// 解锁
+const unlockPwd = ref('')
+const unlocking = ref(false)
+async function doUnlock() {
+  if (!unlockPwd.value) return
+  unlocking.value = true
+  try {
+    const ok = await lockStore.verify(unlockPwd.value)
+    if (!ok) { showToast('密码错误'); return }
+    await lockStore.unlockDocument(noteId)
+    await store.selectDocument(noteId) // 重新加载，已解锁后含正文
+    unlockPwd.value = ''
+    showToast('已解锁')
+  } finally {
+    unlocking.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -91,8 +112,18 @@ function goBack() {
 
     <van-loading v-if="loading" class="loading" />
 
+    <!-- 加密遮罩 -->
+    <template v-else-if="isLocked">
+      <div class="locked-box">
+        <van-icon name="lock" size="40" color="#ff976a" />
+        <p class="locked-title">此笔记已加密</p>
+        <van-field v-model="unlockPwd" type="password" placeholder="输入密码锁密码" class="locked-field" />
+        <van-button type="primary" round :loading="unlocking" @click="doUnlock">解锁查看</van-button>
+      </div>
+    </template>
+
     <!-- 阅读模式 -->
-    <template v-if="!loading && !editing">
+    <template v-else-if="!editing">
       <div class="editor-content" v-html="content" />
       <div v-if="!content" class="empty-hint">暂无内容</div>
       <van-button
@@ -108,7 +139,7 @@ function goBack() {
     </template>
 
     <!-- 编辑模式（过渡：Markdown/HTML 源码，富文本为子项目 6） -->
-    <template v-if="editing">
+    <template v-else>
       <van-field
         v-model="editText"
         type="textarea"
@@ -136,6 +167,21 @@ function goBack() {
   display: flex;
   justify-content: center;
   margin-top: 40px;
+}
+.locked-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 32px;
+  gap: 16px;
+}
+.locked-title {
+  color: #646566;
+  margin: 0;
+}
+.locked-field {
+  border: 1px solid #ebedf0;
+  border-radius: 8px;
 }
 .editor-content {
   padding: 16px;

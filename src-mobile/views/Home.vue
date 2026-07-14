@@ -3,9 +3,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
+import { useLockStore } from '../../src/stores/lock'
 
 const router = useRouter()
 const store = useWorkspaceStore()
+const lockStore = useLockStore()
 
 // 0 = 全部；>=1 对应 store.folders[activeTab-1]（移动端只做根目录，扁平 tab）
 const activeTab = ref(0)
@@ -92,6 +94,46 @@ async function onDeleteDoc(d: { id: string; title?: string }) {
     await store.deleteDocument(d.id)
     showToast('已移入回收站')
   } catch { /* 取消 */ }
+}
+
+// ------- 加锁/解锁 -------
+const showUnlock = ref(false)
+const unlockPwd = ref('')
+let unlockResolve: ((v: string | null) => void) | null = null
+
+function promptPassword(): Promise<string | null> {
+  unlockPwd.value = ''
+  showUnlock.value = true
+  return new Promise((r) => { unlockResolve = r })
+}
+function unlockConfirm() {
+  showUnlock.value = false
+  unlockResolve?.(unlockPwd.value)
+  unlockResolve = null
+}
+function unlockCancel() {
+  showUnlock.value = false
+  unlockResolve?.(null)
+  unlockResolve = null
+}
+
+async function onToggleLock(d: { id: string; isLocked?: boolean }) {
+  if (d.isLocked) {
+    const pw = await promptPassword()
+    if (pw === null) return
+    const ok = await lockStore.verify(pw)
+    if (!ok) { showToast('密码错误'); return }
+    await lockStore.unlockDocument(d.id)
+    showToast('已解锁')
+  } else {
+    if (!lockStore.hasPassword) {
+      showToast('请先在设置里设置密码锁')
+      return
+    }
+    await lockStore.lockDocument(d.id)
+    showToast('已加锁')
+  }
+  await onTabChange(activeTab.value)
 }
 
 // ------- 文件夹管理 -------
@@ -194,6 +236,7 @@ function formatTime(ts: string) {
         <van-swipe-cell v-for="d in documents" :key="d.id">
           <van-cell @click="openNote(d.id)">
             <template #title>
+              <van-icon v-if="d.isLocked" name="lock" class="lock-ic" />
               <span class="doc-title">{{ d.title || '无标题' }}</span>
             </template>
             <template #label>
@@ -202,6 +245,7 @@ function formatTime(ts: string) {
             </template>
           </van-cell>
           <template #right>
+            <van-button square type="warning" :text="d.isLocked ? '解锁' : '加锁'" class="swipe-lock" @click="onToggleLock(d)" />
             <van-button square type="danger" text="删除" class="swipe-del" @click="onDeleteDoc(d)" />
           </template>
         </van-swipe-cell>
@@ -250,6 +294,17 @@ function formatTime(ts: string) {
     >
       <van-field v-model="newTitle" placeholder="输入笔记标题" autofocus maxlength="200" clearable />
     </van-dialog>
+
+    <!-- 解锁密码对话框 -->
+    <van-dialog
+      v-model:show="showUnlock"
+      title="解锁笔记"
+      show-cancel-button
+      @confirm="unlockConfirm"
+      @cancel="unlockCancel"
+    >
+      <van-field v-model="unlockPwd" type="password" placeholder="输入密码锁密码" autofocus />
+    </van-dialog>
   </div>
 </template>
 
@@ -281,5 +336,13 @@ function formatTime(ts: string) {
 }
 .swipe-del {
   height: 100%;
+}
+.swipe-lock {
+  height: 100%;
+}
+.lock-ic {
+  color: #ff976a;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 </style>
