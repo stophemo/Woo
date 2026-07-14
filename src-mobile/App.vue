@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { showToast } from 'vant'
+import { listen } from '@tauri-apps/api/event'
+import { useAuthStore } from '../src/stores/auth'
+import { useSyncStore } from '../src/stores/sync'
+import { useWorkspaceStore } from '../src/stores/workspace'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
+const syncStore = useSyncStore()
+const workspaceStore = useWorkspaceStore()
 
 const TAB_ROUTES = ['/', '/drafts', '/settings']
 const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(route.path) : 0)
@@ -16,6 +24,36 @@ watch(() => route.path, (path) => {
 function onTabChange(index: number) {
   router.push(TAB_ROUTES[index])
 }
+
+onMounted(async () => {
+  // Tauri 后端事件 → DOM CustomEvent 桥（移动端此前缺失，导致同步状态永不刷新）。
+  // 仅搬事件桥三段，不整体调用桌面 setupTauriBridge（其耦合窗口控制/electronAPI，移动端不需要）。
+  try {
+    listen<unknown>('sync-status', (e) => {
+      window.dispatchEvent(new CustomEvent('sync-status', { detail: e.payload }))
+    })
+    listen<unknown>('sync-data-changed', (e) => {
+      window.dispatchEvent(new CustomEvent('sync-data-changed', { detail: e.payload }))
+    })
+    listen<unknown>('sync:toast', (e) => {
+      window.dispatchEvent(new CustomEvent('sync:toast', { detail: e.payload }))
+    })
+  } catch { /* 非 Tauri 环境（纯浏览器预览）忽略 */ }
+
+  // 先注册监听，确保首次事件到达前已就绪
+  syncStore.listen()
+  window.addEventListener('sync-data-changed', () => {
+    void workspaceStore.syncRefresh()
+  })
+  window.addEventListener('sync:toast', ((e: CustomEvent) => {
+    const msg = e.detail?.message
+    if (msg) showToast(msg)
+  }) as EventListener)
+
+  // 恢复会话 + 拉一次首屏同步状态
+  await authStore.bootstrap()
+  try { await syncStore.refreshStatus() } catch { /* ignore */ }
+})
 </script>
 
 <template>

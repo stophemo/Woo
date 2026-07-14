@@ -1,0 +1,10 @@
+/* 覆盖 Vant 默认 @font-face：去掉指向 at.alicdn.com 的 woff 回退，改用本地内置 woff2，
+   避免被 Tauri CSP（font-src 'self' data:）拦截。必须在 vant/lib/index.css 之后导入。
+   族名/字重/样式需与 Vant 精确一致（vant-icon / 400 / normal）才能构成同 key 覆盖。 */
+@font-face {
+  font-weight: 400;
+  font-family: vant-icon;
+  font-style: normal;
+  font-display: auto;
+  src: url('./vant-icon.woff2') format('woff2');
+}
