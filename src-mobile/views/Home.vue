@@ -1,59 +1,51 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { getTree } from '../../src/services/folderApi'
-import { listByFolder, listAll, create as createDoc } from '../../src/services/documentApi'
-import type { FolderTreeNodeDTO } from '../../src/services/folderApi'
-import type { DocumentDTO } from '../../src/services/documentApi'
+import { useWorkspaceStore } from '../../src/stores/workspace'
 
 const router = useRouter()
-const folders = ref<FolderTreeNodeDTO[]>([])
-const documents = ref<DocumentDTO[]>([])
-const loading = ref(false)
-const currentFolderId = ref<string | null>(null)
+const store = useWorkspaceStore()
+
+// 0 = 全部；>=1 对应 store.folders[activeTab-1]
+const activeTab = ref(0)
+const refreshing = ref(false)
 const showCreate = ref(false)
 const newTitle = ref('')
 
-onMounted(async () => {
-  await loadFolders()
-  await loadAllDocs()
+const topFolders = computed(() => store.folders)
+const documents = computed(() => store.currentFolderDocuments)
+// 当前是否处于真实目录（草稿/全部视图不可直接新建到目录）
+const currentRealFolderId = computed<string | null>(() => {
+  const f = activeTab.value >= 1 ? topFolders.value[activeTab.value - 1] : null
+  return f ? f.id : null
 })
 
-async function loadFolders() {
+onMounted(async () => {
   try {
-    folders.value = await getTree()
+    await store.bootstrap()
   } catch {
     showToast('加载文件夹失败')
   }
-}
+  await store.openAllDocuments()
+})
 
-async function loadAllDocs() {
-  loading.value = true
-  try {
-    documents.value = await listAll()
-  } catch {
-    // ignore
-  } finally {
-    loading.value = false
+async function onTabChange(index: number) {
+  activeTab.value = index
+  if (index === 0) {
+    await store.openAllDocuments()
+  } else {
+    const folder = topFolders.value[index - 1]
+    if (folder) await store.selectFolder(folder.id)
   }
 }
 
-async function onFolderClick(folderId: string) {
-  currentFolderId.value = folderId
-  loading.value = true
+async function onRefresh() {
   try {
-    documents.value = await listByFolder(folderId)
-  } catch {
-    showToast('加载文档失败')
+    await onTabChange(activeTab.value)
   } finally {
-    loading.value = false
+    refreshing.value = false
   }
-}
-
-function showAll() {
-  currentFolderId.value = null
-  loadAllDocs()
 }
 
 function openNote(id: string) {
@@ -61,14 +53,15 @@ function openNote(id: string) {
 }
 
 async function createDocument() {
-  if (!newTitle.value.trim() || !currentFolderId.value) return
-  try {
-    await createDoc({ title: newTitle.value.trim(), folderId: currentFolderId.value })
-    newTitle.value = ''
-    showCreate.value = false
-    await onFolderClick(currentFolderId.value)
+  const fid = currentRealFolderId.value
+  if (!newTitle.value.trim() || !fid) return
+  const doc = await store.createDocument(fid, newTitle.value.trim())
+  newTitle.value = ''
+  showCreate.value = false
+  if (doc) {
     showToast('创建成功')
-  } catch {
+    router.push(`/note/${doc.id}`)
+  } else {
     showToast('创建失败')
   }
 }
@@ -82,15 +75,11 @@ function formatTime(ts: string) {
   }
   return d.toLocaleDateString('zh-CN')
 }
-
-function stripHtml(html: string) {
-  return html.replace(/<[^>]+>/g, '').slice(0, 100)
-}
 </script>
 
 <template>
   <div class="home-page">
-    <!-- 顶部搜索栏 -->
+    <!-- 顶部搜索栏（搜索为子项目 3） -->
     <van-search
       placeholder="搜索笔记..."
       readonly
@@ -99,18 +88,18 @@ function stripHtml(html: string) {
 
     <!-- 文件夹横向滚动 -->
     <van-tabs
-      v-if="folders.length"
+      v-model:active="activeTab"
       sticky
       offset-top="54"
-      @change="(i: number) => folders[i] ? onFolderClick(folders[i].id) : showAll()"
+      @change="onTabChange"
     >
-      <van-tab title="全部" @click="showAll" />
-      <van-tab v-for="f in folders" :key="f.id" :title="f.name" />
+      <van-tab title="全部" />
+      <van-tab v-for="f in topFolders" :key="f.id" :title="f.name" />
     </van-tabs>
 
     <!-- 新建文档按钮 -->
     <van-button
-      v-if="currentFolderId"
+      v-if="currentRealFolderId"
       type="primary"
       size="small"
       plain
@@ -123,7 +112,7 @@ function stripHtml(html: string) {
 
     <!-- 文档列表 -->
     <div class="doc-list">
-      <van-pull-refresh v-model="loading" @refresh="showAll">
+      <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
         <van-cell
           v-for="d in documents"
           :key="d.id"
@@ -133,12 +122,12 @@ function stripHtml(html: string) {
             <span class="doc-title">{{ d.title || '无标题' }}</span>
           </template>
           <template #label>
-            <span class="doc-preview">{{ stripHtml(d.content ?? '') }}</span>
-            <span class="doc-time">{{ formatTime(d.updateTime) }}</span>
+            <span class="doc-preview">{{ store.getDocumentPreview(d) }}</span>
+            <span class="doc-time">{{ formatTime(d.updatedAt) }}</span>
           </template>
         </van-cell>
 
-        <van-empty v-if="!documents.length && !loading" description="暂无笔记" />
+        <van-empty v-if="!documents.length && !store.loading" description="暂无笔记" />
       </van-pull-refresh>
     </div>
 

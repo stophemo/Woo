@@ -1,37 +1,33 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
-import { getById, updateContent, remove as deleteDoc } from '../../src/services/documentApi'
-import type { DocumentDTO } from '../../src/services/documentApi'
+import { useWorkspaceStore } from '../../src/stores/workspace'
 
 const route = useRoute()
 const router = useRouter()
+const store = useWorkspaceStore()
 const noteId = route.params.id as string
 
-const title = ref('')
-const content = ref('')
 const loading = ref(true)
 const saving = ref(false)
 const editing = ref(false)
 const editText = ref('')
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+// 统一从 store 读取当前文档（草稿走 localStorage，正式文档走后端）
+const doc = computed(() => store.currentDocument)
+const title = computed(() => doc.value?.title || '无标题')
+const content = computed(() => doc.value?.content || '')
 
 onMounted(async () => {
-  await loadNote()
-})
-
-async function loadNote() {
   try {
-    const doc: DocumentDTO = await getById(noteId)
-    title.value = doc.title
-    content.value = doc.content ?? ''
+    await store.selectDocument(noteId)
   } catch {
     showToast('加载失败')
   } finally {
     loading.value = false
   }
-}
+})
 
 function startEdit() {
   editText.value = content.value
@@ -46,8 +42,9 @@ function cancelEdit() {
 async function saveEdit() {
   saving.value = true
   try {
-    await updateContent(noteId, editText.value)
-    content.value = editText.value
+    // 经 store：草稿写 localStorage，正式文档 800ms 防抖 + flush 强制落库
+    store.updateDocumentContent(noteId, editText.value)
+    await store.flushPendingSave()
     editing.value = false
     showToast('已保存')
   } catch {
@@ -60,7 +57,7 @@ async function saveEdit() {
 async function confirmDelete() {
   try {
     await showConfirmDialog({ title: '删除笔记', message: '确定删除此笔记？' })
-    await deleteDoc(noteId)
+    await store.deleteDocument(noteId)
     showToast('已删除')
     router.back()
   } catch {
@@ -77,16 +74,12 @@ function goBack() {
   }
   router.back()
 }
-
-function stripHtml(html: string) {
-  return html.replace(/<[^>]+>/g, '').trim()
-}
 </script>
 
 <template>
   <div class="editor-page">
     <van-nav-bar
-      :title="title || '无标题'"
+      :title="title"
       left-text="返回"
       left-arrow
       @click-left="goBack"
@@ -114,7 +107,7 @@ function stripHtml(html: string) {
       </van-button>
     </template>
 
-    <!-- 编辑模式 -->
+    <!-- 编辑模式（过渡：Markdown/HTML 源码，富文本为子项目 6） -->
     <template v-if="editing">
       <van-field
         v-model="editText"

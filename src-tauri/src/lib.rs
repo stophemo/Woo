@@ -35,12 +35,23 @@ fn init_logger() {
 /// - dev  (debug):  ~/Library/Application Support/woo-dev/
 /// - prod (release): ~/Library/Application Support/Woo/
 fn resolve_data_dir(app: &tauri::App) -> PathBuf {
-    let mut base = app.path().app_data_dir().expect("failed to get app data dir");
-    // Go up one level to remove bundle identifier, use our own dir name
-    base.pop();
-    let dir_name = if cfg!(debug_assertions) { "woo-dev" } else { "Woo" };
-    base.push(dir_name);
-    base
+    let base = app.path().app_data_dir().expect("failed to get app data dir");
+    #[cfg(mobile)]
+    {
+        // Android/iOS：app_data_dir() 已是应用私有可写目录（如 /data/data/<pkg>/files），
+        // 不能像桌面那样 pop 上跳一级，否则会落到沙盒外导致 SQLite 初始化失败。
+        base
+    }
+    #[cfg(not(mobile))]
+    {
+        // 桌面：app_data_dir() 形如 .../Application Support/<bundle-id>，
+        // 上跳一级后拼自定义目录名，与历史数据目录保持一致。
+        let mut dir = base;
+        dir.pop();
+        let dir_name = if cfg!(debug_assertions) { "woo-dev" } else { "Woo" };
+        dir.push(dir_name);
+        dir
+    }
 }
 
 use std::path::PathBuf;
