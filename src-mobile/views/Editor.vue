@@ -15,6 +15,7 @@ const loading = ref(true)
 const saving = ref(false)
 const editing = ref(false)
 const editText = ref('')
+const editOriginal = ref('')
 
 // 统一从 store 读取当前文档（草稿走 localStorage，正式文档走后端）
 const doc = computed(() => store.currentDocument)
@@ -50,21 +51,44 @@ onMounted(async () => {
   }
 })
 
-function startEdit() {
-  editText.value = content.value
+async function startEdit() {
   editing.value = true
+  const html = content.value
+  if (!html) {
+    editText.value = ''
+    editOriginal.value = ''
+    return
+  }
+  // 将存储的 HTML 转成 Markdown 供编辑（方案 B：编辑 Markdown，存 HTML）
+  try {
+    const { default: TurndownService } = await import('turndown')
+    const { gfm } = await import('turndown-plugin-gfm')
+    const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+    td.use(gfm)
+    editText.value = td.turndown(html)
+  } catch {
+    editText.value = html // 回退：直接编辑原文
+  }
+  editOriginal.value = editText.value
 }
 
 function cancelEdit() {
   editing.value = false
   editText.value = ''
+  editOriginal.value = ''
 }
 
 async function saveEdit() {
   saving.value = true
   try {
-    // 经 store：草稿写 localStorage，正式文档 800ms 防抖 + flush 强制落库
-    store.updateDocumentContent(noteId, editText.value)
+    // Markdown → HTML 后入库，保持与桌面一致的 HTML 内容模型
+    let html = editText.value
+    try {
+      const { marked } = await import('marked')
+      const out = marked.parse(editText.value)
+      html = typeof out === 'string' ? out : await out
+    } catch { /* 回退：原文当作 HTML 存 */ }
+    store.updateDocumentContent(noteId, html)
     await store.flushPendingSave()
     editing.value = false
     showToast('已保存')
@@ -87,7 +111,7 @@ async function confirmDelete() {
 }
 
 function goBack() {
-  if (editing.value && editText.value !== content.value) {
+  if (editing.value && editText.value !== editOriginal.value) {
     showConfirmDialog({ title: '放弃编辑？', message: '未保存的更改将丢失' })
       .then(() => router.back())
       .catch(() => {})
@@ -144,7 +168,7 @@ function goBack() {
         v-model="editText"
         type="textarea"
         autosize
-        placeholder="在此输入 Markdown 或 HTML 内容..."
+        placeholder="使用 Markdown 编写，保存时自动转为富文本…"
         class="edit-textarea"
       />
       <div class="edit-actions">
