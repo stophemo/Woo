@@ -25,6 +25,13 @@ function openNote(id: string) {
   router.push(`/note/${id}`)
 }
 
+async function newDraft() {
+  // openDraftBox 已把 selectedFolderId 设为草稿箱 → createNewDocument 走本地草稿分支
+  await store.createNewDocument()
+  const id = store.selectedDocumentId
+  if (id) router.push(`/note/${id}`)
+}
+
 function formatTime(ts: string) {
   const d = new Date(ts)
   return d.toLocaleString('zh-CN', { hour12: false })
@@ -33,6 +40,11 @@ function formatTime(ts: string) {
 
 <template>
   <div class="drafts-page">
+    <van-nav-bar title="草稿">
+      <template #right>
+        <van-icon name="plus" class="nav-plus" @click="newDraft" />
+      </template>
+    </van-nav-bar>
     <van-cell-group title="草稿箱">
       <van-cell
         v-for="d in drafts"
@@ -57,6 +69,9 @@ function formatTime(ts: string) {
   display: flex;
   justify-content: center;
   margin-top: 40px;
+}
+.nav-plus {
+  font-size: 20px;
 }
 .draft-source {
   color: #1989fa;

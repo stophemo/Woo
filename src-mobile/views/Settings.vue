@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useAuthStore } from '../../src/stores/auth'
 import { useSyncStore } from '../../src/stores/sync'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
 
+const router = useRouter()
 const appVersion = __APP_VERSION__
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
@@ -171,6 +173,11 @@ async function beforePwdClose(action: string) {
           <van-loading v-if="syncStore.isSyncing" size="16" />
         </template>
       </van-cell>
+    </van-cell-group>
+
+    <!-- 数据 -->
+    <van-cell-group inset title="数据">
+      <van-cell title="回收站" is-link icon="delete-o" @click="router.push('/trash')" />
     </van-cell-group>
 
     <!-- 安全 -->

@@ -52,6 +52,13 @@ onMounted(async () => {
     if (msg) showToast(msg)
   }) as EventListener)
 
+  // 移动端进程易被系统回收：切后台/隐藏时强制落库，避免未保存内容丢失
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      void workspaceStore.flushPendingSave()
+    }
+  })
+
   // 恢复会话 + 拉一次首屏同步状态
   await authStore.bootstrap()
   try { await lockStore.bootstrap() } catch { /* ignore */ }

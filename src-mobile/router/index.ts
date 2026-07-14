@@ -25,6 +25,11 @@ const router = createRouter({
       component: () => import('../views/Search.vue'),
     },
     {
+      path: '/trash',
+      name: 'trash',
+      component: () => import('../views/Trash.vue'),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('../views/Settings.vue'),
