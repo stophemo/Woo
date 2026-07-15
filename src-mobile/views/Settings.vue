@@ -54,10 +54,11 @@ async function onSubmit() {
     }
     const ok = await authStore.login(form.identifier.trim(), form.password)
     if (ok) {
-      showToast('登录成功')
       showLogin.value = false
-      await workspaceStore.bootstrap() // 切到用户库后重新加载
-      void syncStore.triggerSync()
+      const synced = await syncStore.triggerSync()
+      // 同步完成后再读取用户库，避免首屏停留在同步前的空状态。
+      await workspaceStore.bootstrap()
+      showToast(synced ? '登录并同步成功' : (syncStore.errorMsg || '登录成功，同步失败'))
     } else {
       showToast(authStore.errorMsg || '登录失败')
     }
@@ -87,10 +88,10 @@ async function onSubmit() {
     switchMode('login')
   } else {
     // 直接注册并登录成功
-    showToast('注册成功')
     showLogin.value = false
+    const synced = await syncStore.triggerSync()
     await workspaceStore.bootstrap()
-    void syncStore.triggerSync()
+    showToast(synced ? '注册并同步成功' : (syncStore.errorMsg || '注册成功，同步失败'))
   }
 }
 

@@ -385,7 +385,11 @@ pub async fn delete(table: &str, id_field: &str, ids: &[&str], access_token: &st
 
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
-        log::warn!("[Supabase] delete failed [{}]: {}", table, text);
+        return Err(format!(
+            "删除失败 [{}]: {}",
+            table,
+            extract_data_error(&text)
+        ));
     }
     Ok(())
 }
@@ -418,7 +422,7 @@ pub async fn insert_tombstone(
 
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
-        log::warn!("[Supabase] insert_tombstone failed: {}", text);
+        return Err(format!("写入墓碑失败: {}", extract_data_error(&text)));
     }
     Ok(())
 }

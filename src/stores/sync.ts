@@ -11,6 +11,7 @@ export const useSyncStore = defineStore('sync', () => {
   const lastSyncTime = ref<string | null>(null)
   const pendingChanges = ref(0)
   const errorMsg = ref<string>('')
+  let listening = false
 
   // 格式化的上次同步时间
   const lastSyncLabel = computed(() => {
@@ -29,6 +30,8 @@ export const useSyncStore = defineStore('sync', () => {
    * 监听主进程推送的同步状态
    */
   function listen() {
+    if (listening) return
+    listening = true
     window.addEventListener('sync-status', ((event: CustomEvent) => {
       const status = event.detail
       isSyncing.value = status.isSyncing ?? false
@@ -49,6 +52,8 @@ export const useSyncStore = defineStore('sync', () => {
       if (result) {
         lastSyncTime.value = result.syncTime || new Date().toISOString()
         pendingChanges.value = 0
+        // 手动同步和登录后同步也走统一的数据刷新事件。
+        window.dispatchEvent(new CustomEvent('sync-data-changed', { detail: result }))
         return true
       }
       return false

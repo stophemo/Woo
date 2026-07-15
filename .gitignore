@@ -45,9 +45,13 @@ Thumbs.db
 .opencode/
 .claude/
 
-# 代码签名私钥（机密）
+# 代码签名与发布凭据（机密）
+.signing/
 *.p12
+*.p8
 *.key
-!woo-codesign.key
-!woo-root-ca.key
-!woo-codesign.cer
+*.pem
+*.srl
+*.cer
+*.jks
+*.keystore

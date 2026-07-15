@@ -169,12 +169,17 @@ function openLoginDialog() {
   showLoginDialog.value = true
 }
 
-function onLoginSuccess() {
+async function onLoginSuccess() {
   showLoginDialog.value = false
-  // 登录成功后重新拉取云端锁密码
-  useLockStore().bootstrap()
-  // 重新加载工作区数据
-  workspaceStore.bootstrap()
+  const synced = await syncStore.triggerSync()
+  if (!synced && syncStore.errorMsg) {
+    showToast(syncStore.errorMsg, 'error')
+  }
+  // 同步完成后再读取用户库，确保首次登录能直接显示远端数据。
+  await Promise.all([
+    useLockStore().bootstrap().catch(() => {}),
+    workspaceStore.bootstrap().catch(() => {})
+  ])
 }
 
 function onLogout() {
@@ -184,21 +189,26 @@ function onLogout() {
 
 // 启动流程：认证恢复 + 工作区加载
 async function initApp() {
-  // 并行初始化：认证、工作区、锁状态互不依赖，同时开始
-  // 注：主进程已通过 tryRestoreSession() 在打开数据库前恢复了 session，
-  // 所以数据库已是对应用户的数据库，工作区数据可以直接加载
+  // 先注册监听，再恢复认证和同步，避免首次同步事件早于前端监听器。
+  syncStore.listen()
+  setupSyncToast()
+  setupSyncDataRefresh()
+
+  await authStore.bootstrap()
+  if (authStore.isLoggedIn) {
+    const synced = await syncStore.triggerSync()
+    if (!synced && syncStore.errorMsg) {
+      showToast(syncStore.errorMsg, 'error')
+    }
+  }
+
   await Promise.all([
-    authStore.bootstrap(),
     workspaceStore.bootstrap()
       .then(() => workspaceStore.restoreLastView())
       .catch(() => {}),
     useLockStore().bootstrap().catch(() => {})
   ])
 
-  // 同步相关初始化（非阻塞，不影响数据展示）
-  syncStore.listen()
-  setupSyncToast()
-  setupSyncDataRefresh()
   try {
     await syncStore.refreshStatus()
   } catch { /* ignore */ }

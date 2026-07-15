@@ -61,8 +61,19 @@ onMounted(async () => {
     }
   })
 
-  // 恢复会话 + 拉一次首屏同步状态
+  // 恢复会话后等待首次同步，再刷新当前移动端视图。
   await authStore.bootstrap()
+  if (authStore.isLoggedIn) {
+    const synced = await syncStore.triggerSync()
+    if (!synced && syncStore.errorMsg) {
+      showToast(syncStore.errorMsg)
+    }
+    if (route.path === '/') {
+      await workspaceStore.openAllDocuments()
+    } else {
+      await workspaceStore.syncRefresh()
+    }
+  }
   try { await lockStore.bootstrap() } catch { /* ignore */ }
   try { await syncStore.refreshStatus() } catch { /* ignore */ }
 })

@@ -241,6 +241,8 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                // Tokio 的首次 tick 会立即返回；先消费它，避免前端监听器注册前完成同步并丢失刷新事件。
+                interval.tick().await;
                 loop {
                     interval.tick().await;
                     // Only sync if logged in
