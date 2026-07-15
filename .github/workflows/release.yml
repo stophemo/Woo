@@ -268,7 +268,7 @@ jobs:
 
           SIGN_INFO="$(codesign -d --verbose=4 "$APP" 2>&1)"
           printf '%s\n' "$SIGN_INFO"
-          if ! grep -Eq '^flags=.*runtime' <<< "$SIGN_INFO"; then
+          if ! grep -Eq '^CodeDirectory .*flags=.*\([^)]*runtime[^)]*\)' <<< "$SIGN_INFO"; then
             echo "错误: .app 未启用 Hardened Runtime" >&2
             exit 1
           fi
