@@ -24,6 +24,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: short
@@ -37,6 +41,8 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      revision: ${{ steps.resolve.outputs.revision }}
       is_manual: ${{ steps.resolve.outputs.is_manual }}
     steps:
       - uses: actions/checkout@v4
@@ -77,10 +83,13 @@ jobs:
           fi
 
           VERSION="${TAG#v}"
+          REVISION="${TAG_COMMIT:0:8}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "commit=${TAG_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "revision=${REVISION}" >> "$GITHUB_OUTPUT"
           echo "is_manual=${IS_MANUAL}" >> "$GITHUB_OUTPUT"
-          echo "✓ 版本: ${VERSION}  标签: ${TAG}"
+          echo "✓ 版本: ${VERSION}  标签: ${TAG}  修订: ${REVISION}"
 
   # ─── 桌面端构建 ───────────────────────────────────
   desktop:
@@ -102,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.meta.outputs.tag }}
+          ref: ${{ needs.meta.outputs.commit }}
 
       - name: 安装 Node.js
         uses: actions/setup-node@v4
@@ -223,6 +232,10 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx tauri build --bundles app --target "${{ matrix.target }}" --no-sign --ci
 
+      - name: 运行 Rust 库测试
+        if: matrix.os == 'macos-latest'
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+
       - name: 签名并按条件公证 macOS 应用
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -303,6 +316,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          REVISION: ${{ needs.meta.outputs.revision }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
@@ -312,9 +326,9 @@ jobs:
           STAGING_DIR="$RUNNER_TEMP/woo-dmg-root"
           OUTPUT_DIR="$GITHUB_WORKSPACE/release-output"
           if [[ "$MACOS_SIGNING_MODE" == "developer-id" ]]; then
-            DMG="$OUTPUT_DIR/Woo_${VERSION}_aarch64.dmg"
+            DMG="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_macos-arm64.dmg"
           else
-            DMG="$OUTPUT_DIR/Woo_${VERSION}_aarch64-adhoc.dmg"
+            DMG="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_macos-arm64-adhoc.dmg"
           fi
 
           rm -rf "$STAGING_DIR"
@@ -387,15 +401,35 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: woo-desktop-macos
-          path: release-output/Woo_${{ needs.meta.outputs.version }}_aarch64*.dmg
+          path: release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_macos-arm64*.dmg
           if-no-files-found: error
+
+      - name: 规范化 Windows 安装包名称
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          REVISION: ${{ needs.meta.outputs.revision }}
+        run: |
+          set -euo pipefail
+
+          INSTALLERS=(src-tauri/target/release/bundle/nsis/*.exe)
+          if (( ${#INSTALLERS[@]} != 1 )) || [[ ! -f "${INSTALLERS[0]}" ]]; then
+            echo "错误: 预期恰好一个 Windows 安装包" >&2
+            exit 1
+          fi
+
+          OUTPUT_DIR="release-output"
+          WINDOWS_INSTALLER="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_windows-x64-setup.exe"
+          mkdir -p "$OUTPUT_DIR"
+          cp "${INSTALLERS[0]}" "$WINDOWS_INSTALLER"
 
       - name: 上传 Windows 安装包
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: woo-desktop-windows
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_windows-x64-setup.exe
           if-no-files-found: error
 
   # ─── Android 构建 ───────────────────────────────────
@@ -408,7 +442,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.meta.outputs.tag }}
+          ref: ${{ needs.meta.outputs.commit }}
 
       - name: 安装 Node.js
         uses: actions/setup-node@v4
@@ -481,6 +515,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          REVISION: ${{ needs.meta.outputs.revision }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -493,7 +528,7 @@ jobs:
           KEYSTORE_PATH="$RUNNER_TEMP/woo-release.keystore"
           ALIGNED_APK="$RUNNER_TEMP/woo-aligned.apk"
           OUTPUT_DIR="$GITHUB_WORKSPACE/release-output"
-          SIGNED_APK="$OUTPUT_DIR/Woo_${VERSION}_arm64-v8a.apk"
+          SIGNED_APK="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_android-arm64-v8a.apk"
 
           cleanup() {
             rm -f "$KEYSTORE_PATH" "$ALIGNED_APK"
@@ -545,7 +580,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: woo-android
-          path: release-output/Woo_${{ needs.meta.outputs.version }}_arm64-v8a.apk
+          path: release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_android-arm64-v8a.apk
           if-no-files-found: error
 
   # ─── 发布 ──────────────────────────────────────────
@@ -557,7 +592,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.meta.outputs.tag }}
+          ref: ${{ needs.meta.outputs.commit }}
           fetch-depth: 0
 
       - name: 生成发布说明
@@ -604,40 +639,79 @@ jobs:
           merge-multiple: true
 
       - name: 整理发布文件
+        id: assets
         shell: bash
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          REVISION: ${{ needs.meta.outputs.revision }}
         run: |
           set -euo pipefail
 
-          ANDROID_APK="release-assets/Woo_${VERSION}_arm64-v8a.apk"
+          if [[ ! "$REVISION" =~ ^[0-9a-f]{8}$ ]]; then
+            echo "错误: revision 必须是 8 位小写十六进制，当前为: $REVISION" >&2
+            exit 1
+          fi
+
+          MAC_RELEASE_NAME="Woo_${VERSION}_${REVISION}_macos-arm64.dmg"
+          MAC_ADHOC_NAME="Woo_${VERSION}_${REVISION}_macos-arm64-adhoc.dmg"
+          ANDROID_NAME="Woo_${VERSION}_${REVISION}_android-arm64-v8a.apk"
+          WINDOWS_NAME="Woo_${VERSION}_${REVISION}_windows-x64-setup.exe"
+          CHECKSUMS_NAME="Woo_${VERSION}_${REVISION}_SHA256SUMS.txt"
+
+          mapfile -t ALL_FILES < <(find release-assets -type f -print)
+          if (( ${#ALL_FILES[@]} != 3 )); then
+            echo "错误: 预期恰好三个平台安装包，实际为 ${#ALL_FILES[@]} 个" >&2
+            exit 1
+          fi
 
           mapfile -t MAC_DMG_FILES < <(
-            find release-assets -type f -name "Woo_${VERSION}_aarch64*.dmg" -print
+            find release-assets -type f \
+              \( -name "$MAC_RELEASE_NAME" -o -name "$MAC_ADHOC_NAME" \) \
+              -print
           )
           if (( ${#MAC_DMG_FILES[@]} != 1 )); then
             echo "错误: 预期恰好一个 macOS 安装包，实际为 ${#MAC_DMG_FILES[@]} 个" >&2
             exit 1
           fi
           MAC_DMG="${MAC_DMG_FILES[0]}"
-          if [[ ! -f "$ANDROID_APK" ]]; then
-            echo "错误: 缺少已签名的 Android 安装包: $ANDROID_APK" >&2
+
+          mapfile -t ANDROID_APKS < <(
+            find release-assets -type f -name "$ANDROID_NAME" -print
+          )
+          mapfile -t ALL_APKS < <(find release-assets -type f -name '*.apk' -print)
+          if (( ${#ANDROID_APKS[@]} != 1 || ${#ALL_APKS[@]} != 1 )); then
+            echo "错误: Android artifact 必须只有一个精确命名的签名 APK" >&2
             exit 1
           fi
+          ANDROID_APK="${ANDROID_APKS[0]}"
 
           if find release-assets -type f -iname '*unsigned*.apk' -print -quit | grep -q .; then
             echo "错误: 构建产物中发现 unsigned APK，终止发布" >&2
             exit 1
           fi
 
-          mapfile -t WINDOWS_INSTALLERS < <(find release-assets -type f -name '*.exe' -print)
-          if (( ${#WINDOWS_INSTALLERS[@]} != 1 )); then
-            echo "错误: 预期恰好一个 Windows 安装包，实际为 ${#WINDOWS_INSTALLERS[@]} 个" >&2
+          mapfile -t WINDOWS_INSTALLERS < <(
+            find release-assets -type f -name "$WINDOWS_NAME" -print
+          )
+          mapfile -t ALL_WINDOWS_INSTALLERS < <(find release-assets -type f -name '*.exe' -print)
+          if (( ${#WINDOWS_INSTALLERS[@]} != 1 || ${#ALL_WINDOWS_INSTALLERS[@]} != 1 )); then
+            echo "错误: Windows artifact 必须只有一个精确命名的安装包" >&2
             exit 1
           fi
 
           mkdir -p release
           cp "$MAC_DMG" "$ANDROID_APK" "${WINDOWS_INSTALLERS[0]}" release/
+
+          MAC_NAME="$(basename "$MAC_DMG")"
+          pushd release >/dev/null
+          sha256sum "$MAC_NAME" "$ANDROID_NAME" "$WINDOWS_NAME" > "$CHECKSUMS_NAME"
+          sha256sum --check "$CHECKSUMS_NAME"
+          popd >/dev/null
+
+          echo "mac_name=$MAC_NAME" >> "$GITHUB_OUTPUT"
+          echo "android_name=$ANDROID_NAME" >> "$GITHUB_OUTPUT"
+          echo "windows_name=$WINDOWS_NAME" >> "$GITHUB_OUTPUT"
+          echo "checksums_name=$CHECKSUMS_NAME" >> "$GITHUB_OUTPUT"
           ls -lh release/
 
       - name: 创建 GitHub Release
@@ -647,12 +721,29 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           NOTES: ${{ steps.notes.outputs.notes }}
           IS_MANUAL: ${{ needs.meta.outputs.is_manual }}
+          MAC_NAME: ${{ steps.assets.outputs.mac_name }}
+          ANDROID_NAME: ${{ steps.assets.outputs.android_name }}
+          WINDOWS_NAME: ${{ steps.assets.outputs.windows_name }}
+          CHECKSUMS_NAME: ${{ steps.assets.outputs.checksums_name }}
         run: |
           set -euo pipefail
 
-          FILES=(release/*)
-          if [ ${#FILES[@]} -eq 0 ] || [ ! -e "${FILES[0]}" ]; then
-            echo "⚠️ 没有找到发布文件"
+          FILES=(
+            "release/$MAC_NAME"
+            "release/$ANDROID_NAME"
+            "release/$WINDOWS_NAME"
+            "release/$CHECKSUMS_NAME"
+          )
+          for FILE in "${FILES[@]}"; do
+            if [[ ! -f "$FILE" ]]; then
+              echo "错误: 缺少发布白名单文件: $FILE" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$ANDROID_NAME" == *unsigned* ]] \
+            || find release -type f -iname '*unsigned*.apk' -print -quit | grep -q .; then
+            echo "错误: 禁止发布 unsigned APK" >&2
             exit 1
           fi
 
@@ -667,19 +758,13 @@ jobs:
             PRERELEASE_FLAG="false"
           fi
 
-          if compgen -G 'release/*-adhoc.dmg' >/dev/null; then
+          if [[ "$MAC_NAME" == *-adhoc.dmg ]]; then
             NOTES+=$'\n\n> ⚠️ macOS 包使用 ad-hoc 签名，未完成 Apple 公证。首次打开请在 Finder 中右键 Woo.app 并选择“打开”，或在“系统设置 → 隐私与安全”中选择“仍要打开”。无需、也不要安装任何第三方根证书。'
           fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG 已存在，更新中..."
-            while IFS= read -r ASSET_NAME; do
-              if [[ -n "$ASSET_NAME" ]]; then
-                gh release delete-asset "$TAG" "$ASSET_NAME" --yes
-              fi
-            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
             gh release upload "$TAG" "${FILES[@]}" --clobber
-            gh release edit "$TAG" --notes "$NOTES"
           else
             echo "创建 Release $TAG..."
             gh release create "$TAG" \
@@ -689,4 +774,46 @@ jobs:
               --prerelease="$PRERELEASE_FLAG" \
               "${FILES[@]}"
           fi
+
+          WHITELIST=("$MAC_NAME" "$ANDROID_NAME" "$WINDOWS_NAME" "$CHECKSUMS_NAME")
+          REMOTE_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for EXPECTED_NAME in "${WHITELIST[@]}"; do
+            if ! grep -Fxq "$EXPECTED_NAME" <<< "$REMOTE_ASSETS"; then
+              echo "错误: 上传后远端缺少白名单资产: $EXPECTED_NAME" >&2
+              exit 1
+            fi
+          done
+
+          is_whitelisted() {
+            local candidate="$1"
+            local expected
+            for expected in "${WHITELIST[@]}"; do
+              if [[ "$candidate" == "$expected" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          while IFS= read -r ASSET_NAME; do
+            if [[ -n "$ASSET_NAME" ]] && ! is_whitelisted "$ASSET_NAME"; then
+              echo "删除非本轮资产: $ASSET_NAME"
+              gh release delete-asset "$TAG" "$ASSET_NAME" --yes
+            fi
+          done <<< "$REMOTE_ASSETS"
+
+          FINAL_REMOTE_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          mapfile -t FINAL_ASSET_NAMES < <(sed '/^$/d' <<< "$FINAL_REMOTE_ASSETS")
+          if (( ${#FINAL_ASSET_NAMES[@]} != ${#WHITELIST[@]} )); then
+            echo "错误: 清理后的远端资产数量不是 ${#WHITELIST[@]}" >&2
+            exit 1
+          fi
+          for EXPECTED_NAME in "${WHITELIST[@]}"; do
+            if ! grep -Fxq "$EXPECTED_NAME" <<< "$FINAL_REMOTE_ASSETS"; then
+              echo "错误: 清理后远端缺少白名单资产: $EXPECTED_NAME" >&2
+              exit 1
+            fi
+          done
+
+          gh release edit "$TAG" --notes "$NOTES"
           echo "✓ Release 发布完成: $TAG"

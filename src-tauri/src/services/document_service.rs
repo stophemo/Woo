@@ -96,7 +96,7 @@ fn restore_folder_chain(conn: &Connection, now: &str, folder_id: Option<&str>) -
     Ok(())
 }
 
-fn promote_empty_folders_inner(conn: &Connection) -> i32 {
+fn promote_empty_folders_inner(conn: &Connection) -> Result<i32, String> {
     let mut total = 0;
     loop {
         let mut stmt = conn
@@ -112,26 +112,30 @@ fn promote_empty_folders_inner(conn: &Connection) -> i32 {
                  WHERE c.parent_id = f.id AND c.deleted IN (0, 1)
                )",
             )
-            .unwrap();
+            .map_err(|e| format!("查询待清理空文件夹失败: {}", e))?;
         let empty: Vec<String> = stmt
             .query_map([], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
+            .map_err(|e| format!("查询待清理空文件夹失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取待清理空文件夹失败: {}", e))?;
         if empty.is_empty() {
             break;
         }
         let now = now_str();
         for id in &empty {
-            conn.execute(
-                "UPDATE note_folder SET deleted = 2, update_time = ? WHERE id = ?",
-                params![now, id],
-            )
-            .ok();
+            let changed = conn
+                .execute(
+                    "UPDATE note_folder SET deleted = 2, update_time = ? WHERE id = ?",
+                    params![now, id],
+                )
+                .map_err(|e| format!("清理空文件夹失败 [{}]: {}", id, e))?;
+            if changed != 1 {
+                return Err(format!("清理空文件夹失败 [{}]: 记录已变化", id));
+            }
         }
         total += empty.len() as i32;
     }
-    total
+    Ok(total)
 }
 
 pub fn list_by_folder(folder_id: &str) -> Result<Vec<DocumentDTO>, String> {
@@ -389,55 +393,68 @@ pub fn restore(id: &str) -> Result<(), String> {
     })
 }
 
+fn hard_delete_inner(conn: &Connection, id: &str, now: &str) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("开始彻底删除事务失败: {}", e))?;
+    tx.query_row(
+        "SELECT id FROM note_document WHERE id = ? AND deleted = 1",
+        params![id],
+        |_| Ok(()),
+    )
+    .map_err(|_| "文稿不存在或未在回收站中".to_string())?;
+    tx.execute(
+        "UPDATE note_document_version SET deleted = 2, update_time = ? WHERE document_id = ?",
+        params![now, id],
+    )
+    .map_err(|e| format!("更新待清理文稿版本失败: {}", e))?;
+    tx.execute(
+        "UPDATE note_document SET deleted = 2, update_time = ? WHERE id = ?",
+        params![now, id],
+    )
+    .map_err(|e| format!("更新待清理文稿失败: {}", e))?;
+    promote_empty_folders_inner(&tx)?;
+    tx.commit()
+        .map_err(|e| format!("提交彻底删除事务失败: {}", e))
+}
+
 pub fn hard_delete(id: &str) -> Result<(), String> {
     db::with_db(|conn| {
-        conn.query_row(
-            "SELECT id FROM note_document WHERE id = ? AND deleted = 1",
-            params![id],
-            |_| Ok(()),
-        )
-        .map_err(|_| "文稿不存在或未在回收站中".to_string())?;
-
         let now = now_str();
-        conn.execute(
-            "UPDATE note_document_version SET deleted = 2, update_time = ? WHERE document_id = ?",
-            params![now, id],
-        )
-        .map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE note_document SET deleted = 2, update_time = ? WHERE id = ?",
-            params![now, id],
-        )
-        .map_err(|e| e.to_string())?;
-
-        promote_empty_folders_inner(conn);
-        Ok(())
+        hard_delete_inner(conn, id, &now)
     })
+}
+
+fn empty_trash_inner(conn: &Connection, now: &str) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("开始清空废纸篓事务失败: {}", e))?;
+    tx.execute(
+        "UPDATE note_document_version SET deleted = 2, update_time = ?
+         WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)",
+        params![now],
+    )
+    .map_err(|e| format!("更新废纸篓文稿版本失败: {}", e))?;
+    tx.execute(
+        "UPDATE note_document SET deleted = 2, update_time = ? WHERE deleted = 1",
+        params![now],
+    )
+    .map_err(|e| format!("更新废纸篓文稿失败: {}", e))?;
+    promote_empty_folders_inner(&tx)?;
+    tx.commit()
+        .map_err(|e| format!("提交清空废纸篓事务失败: {}", e))
 }
 
 pub fn empty_trash() -> Result<(), String> {
     db::with_db(|conn| {
         let now = now_str();
-        conn.execute(
-            "UPDATE note_document_version SET deleted = 2, update_time = ?
-             WHERE document_id IN (SELECT id FROM note_document WHERE deleted = 1)",
-            params![now],
-        )
-        .map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE note_document SET deleted = 2, update_time = ? WHERE deleted = 1",
-            params![now],
-        )
-        .map_err(|e| e.to_string())?;
-
-        promote_empty_folders_inner(conn);
-        Ok(())
+        empty_trash_inner(conn, &now)
     })
 }
 
 #[allow(dead_code)]
 pub fn promote_empty_folders_to_deleted2() -> Result<i32, String> {
-    Ok(db::with_db(|conn| promote_empty_folders_inner(conn)))
+    db::with_db(promote_empty_folders_inner)
 }
 
 pub fn reorder_documents(_folder_id: &str, items: &[(String, i32)]) -> Result<(), String> {
@@ -464,4 +481,172 @@ pub fn verify_exists(id: &str) -> Result<DocumentDTO, String> {
         )
         .map_err(|_| "文稿不存在".to_string())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_trash_marks_only_trashed_documents_and_their_versions() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE note_document (
+                id TEXT PRIMARY KEY,
+                folder_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             CREATE TABLE note_folder (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             CREATE TABLE note_document_version (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             INSERT INTO note_document VALUES
+                ('active-doc', 'active-folder', 'old', 0),
+                ('trash-doc', 'trash-folder', 'old', 1);
+             INSERT INTO note_folder VALUES
+                ('active-folder', NULL, 'old', 0),
+                ('trash-folder', NULL, 'old', 1);
+             INSERT INTO note_document_version VALUES
+                ('active-version', 'active-doc', 'old', 0),
+                ('trash-version', 'trash-doc', 'old', 0);",
+        )
+        .unwrap();
+
+        empty_trash_inner(&conn, "2026-07-15T12:00:00").unwrap();
+
+        let active_doc: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document WHERE id = 'active-doc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let trash_doc: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document WHERE id = 'trash-doc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let active_version: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document_version WHERE id = 'active-version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let trash_version: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document_version WHERE id = 'trash-version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let trash_folder: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_folder WHERE id = 'trash-folder'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(active_doc, 0);
+        assert_eq!(trash_doc, 2);
+        assert_eq!(active_version, 0);
+        assert_eq!(trash_version, 2);
+        assert_eq!(trash_folder, 2);
+    }
+
+    #[test]
+    fn empty_trash_rolls_back_when_folder_promotion_fails() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE note_document (
+                id TEXT PRIMARY KEY,
+                folder_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             CREATE TABLE note_document_version (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             INSERT INTO note_document VALUES ('trash-doc', 'missing-folder', 'old', 1);
+             INSERT INTO note_document_version VALUES ('trash-version', 'trash-doc', 'old', 0);",
+        )
+        .unwrap();
+
+        assert!(empty_trash_inner(&conn, "2026-07-15T12:00:00").is_err());
+
+        let trash_doc: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document WHERE id = 'trash-doc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let trash_version: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document_version WHERE id = 'trash-version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(trash_doc, 1);
+        assert_eq!(trash_version, 0);
+    }
+
+    #[test]
+    fn hard_delete_rolls_back_when_folder_promotion_fails() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE note_document (
+                id TEXT PRIMARY KEY,
+                folder_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             CREATE TABLE note_document_version (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL
+             );
+             INSERT INTO note_document VALUES ('trash-doc', 'missing-folder', 'old', 1);
+             INSERT INTO note_document_version VALUES ('trash-version', 'trash-doc', 'old', 0);",
+        )
+        .unwrap();
+
+        assert!(hard_delete_inner(&conn, "trash-doc", "2026-07-15T12:00:00").is_err());
+
+        let trash_doc: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document WHERE id = 'trash-doc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let trash_version: i32 = conn
+            .query_row(
+                "SELECT deleted FROM note_document_version WHERE id = 'trash-version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(trash_doc, 1);
+        assert_eq!(trash_version, 0);
+    }
 }

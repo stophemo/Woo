@@ -57,7 +57,7 @@ onMounted(async () => {
   // 移动端进程易被系统回收：切后台/隐藏时强制落库，避免未保存内容丢失
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      void workspaceStore.flushPendingSave()
+      void workspaceStore.flushPendingSave().catch(() => {})
     }
   })
 

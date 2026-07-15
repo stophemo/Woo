@@ -139,7 +139,7 @@ async function saveEdit() {
       html = typeof out === 'string' ? out : await out
     } catch { /* 回退：原文当作 HTML 存 */ }
     store.updateDocumentContent(noteId, html)
-    await store.flushPendingSave()
+    await store.flushPendingSave(noteId)
     // 正式文档保存后提交一个版本，便于历史回溯（草稿不产生版本）
     if (!isDraft) {
       try { await store.commitDocumentVersion(noteId, 'auto') } catch { /* 忽略 */ }

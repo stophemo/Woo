@@ -389,12 +389,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  // 防抖保存 content
-  let saveTimer: number | null = null
-  // 记录当前调用中的保存请求（用于 flush 等待返回）
-  let savingPromise: Promise<void> | null = null
-  // 当前 pending 的待保存任务（在 saveTimer 到期前保留）
-  let pendingSave: { documentId: string; content: string } | null = null
+  // 保存状态按文稿隔离，避免一个文稿覆盖或永久阻塞另一个文稿。
+  const saveTimers = new Map<string, number>()
+  const pendingSaves = new Map<string, string>()
+  const savingPromises = new Map<string, Promise<void>>()
+  const saveErrors = new Map<string, Error>()
+  // 软删除成功后保持标记，直到恢复；删除过程中不得再排入该文稿的保存任务。
+  const deletingDocumentIds = new Set<string>()
 
   // 版本列表刷新信号：每次成功提交版本后自增，供版本面板 watch 实时重载
   const versionRefreshTick = ref(0)
@@ -425,7 +426,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function updateDocumentContent(documentId: string, content: string) {
-    if (selectedFolderId.value === TRASH_FOLDER_ID) {
+    if (selectedFolderId.value === TRASH_FOLDER_ID || deletingDocumentIds.has(documentId)) {
       return
     }
     // 原地修改当前文稿对象的 content（引用不变，不触发编辑器重新渲染）
@@ -476,43 +477,94 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return
     }
 
-    pendingSave = { documentId, content }
-    if (saveTimer !== null) {
-      clearTimeout(saveTimer)
-    }
-    saveTimer = window.setTimeout(() => {
-      saveTimer = null
-      void runPendingSave()
+    pendingSaves.set(documentId, content)
+    const previousTimer = saveTimers.get(documentId)
+    if (previousTimer !== undefined) clearTimeout(previousTimer)
+    const timer = window.setTimeout(() => {
+      saveTimers.delete(documentId)
+      // 自动保存错误由状态机保留；此处消费拒绝，避免 unhandled rejection。
+      void runPendingSave(documentId).catch(() => {})
     }, 800)
+    saveTimers.set(documentId, timer)
   }
 
-  async function runPendingSave(): Promise<void> {
-    if (!pendingSave) return
-    const { documentId, content } = pendingSave
-    pendingSave = null
-    savingPromise = (async () => {
+  async function drainPendingSaves(documentId: string): Promise<void> {
+    while (pendingSaves.has(documentId)) {
+      const timer = saveTimers.get(documentId)
+      if (timer !== undefined) clearTimeout(timer)
+      saveTimers.delete(documentId)
+      const content = pendingSaves.get(documentId)!
+      pendingSaves.delete(documentId)
       try {
         await documentApi.updateContent(documentId, content)
+        saveErrors.delete(documentId)
       } catch (e: any) {
-        error.value = e?.message || '保存失败'
-      } finally {
-        savingPromise = null
+        const saveError = e instanceof Error ? e : new Error(e?.message || '保存失败')
+        // 没有更新内容等待保存时保留失败任务，让下一次 flush 能重试原内容。
+        if (!pendingSaves.has(documentId)) pendingSaves.set(documentId, content)
+        saveErrors.set(documentId, saveError)
+        error.value = saveError.message
+        throw saveError
       }
-    })()
-    await savingPromise
+    }
+  }
+
+  function runPendingSave(documentId: string): Promise<void> {
+    const existing = savingPromises.get(documentId)
+    if (existing) return existing
+    if (!pendingSaves.has(documentId)) return Promise.resolve()
+
+    const run = drainPendingSaves(documentId)
+    savingPromises.set(documentId, run)
+    void run.then(
+      () => {
+        if (savingPromises.get(documentId) === run) savingPromises.delete(documentId)
+      },
+      () => {
+        if (savingPromises.get(documentId) === run) savingPromises.delete(documentId)
+      }
+    )
+    return run
   }
 
   /**
    * 立即写回当前挂起的保存任务并等待完成（用于提交版本前确保后端读到最新内容）。
    */
-  async function flushPendingSave(): Promise<void> {
-    if (saveTimer !== null) {
-      clearTimeout(saveTimer)
-      saveTimer = null
-      await runPendingSave()
-    } else if (savingPromise) {
-      await savingPromise
+  async function flushDocumentSave(documentId: string): Promise<void> {
+    const timer = saveTimers.get(documentId)
+    if (timer !== undefined) clearTimeout(timer)
+    saveTimers.delete(documentId)
+    const inFlight = savingPromises.get(documentId)
+    if (inFlight) await inFlight
+    if (pendingSaves.has(documentId)) await runPendingSave(documentId)
+    const saveError = saveErrors.get(documentId)
+    if (saveError) throw saveError
+  }
+
+  async function flushPendingSave(documentId?: string): Promise<void> {
+    if (documentId) {
+      await flushDocumentSave(documentId)
+      return
     }
+    const documentIds = new Set([
+      ...saveTimers.keys(),
+      ...pendingSaves.keys(),
+      ...savingPromises.keys(),
+      ...saveErrors.keys(),
+    ])
+    await Promise.all([...documentIds].map(flushDocumentSave))
+  }
+
+  async function discardPendingSave(documentId: string): Promise<void> {
+    const timer = saveTimers.get(documentId)
+    if (timer !== undefined) clearTimeout(timer)
+    saveTimers.delete(documentId)
+    const inFlight = savingPromises.get(documentId)
+    if (inFlight) {
+      try { await inFlight } catch { /* 删除态文稿无法再保存，丢弃其失败即可 */ }
+    }
+    pendingSaves.delete(documentId)
+    saveErrors.delete(documentId)
   }
 
   /**
@@ -522,7 +574,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function commitDocumentVersion(documentId: string, changeType: 'auto' | 'manual' = 'auto'): Promise<void> {
     if (isDraftId(documentId)) return
     try {
-      await flushPendingSave()
+      await flushPendingSave(documentId)
       const { commitVersion } = await import('../services/versionApi')
       await commitVersion(documentId, changeType)
       // 通知监听者（版本面板）：可能有新版本产生
@@ -780,12 +832,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       error.value = '请在废纸篓中使用“彻底删除”'
       return
     }
+    deletingDocumentIds.add(documentId)
     try {
+      // 删除前完成 800ms 防抖保存，避免文稿进入废纸篓后旧保存任务再报“文稿不存在”。
+      await flushPendingSave(documentId)
+      if (saveErrors.size === 0) error.value = ''
       await documentApi.remove(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
       await removeDocFromListAndAdvance(documentId)
     } catch (e: any) {
+      deletingDocumentIds.delete(documentId)
       error.value = e?.message || '删除文稿失败'
     }
   }
@@ -808,6 +865,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     try {
       await documentApi.restore(documentId)
+      deletingDocumentIds.delete(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
       await removeDocFromListAndAdvance(documentId)
@@ -834,7 +892,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       await removeDocFromListAndAdvance(documentId)
       return
     }
+    deletingDocumentIds.add(documentId)
     try {
+      await discardPendingSave(documentId)
+      if (saveErrors.size === 0) error.value = ''
       await documentApi.hardDelete(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
@@ -845,7 +906,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function emptyTrash() {
+    const persistedIds = folderDocuments.value
+      .filter(document => !isDraftId(document.id))
+      .map(document => document.id)
+    for (const documentId of persistedIds) deletingDocumentIds.add(documentId)
     try {
+      await Promise.all(persistedIds.map(discardPendingSave))
+      if (saveErrors.size === 0) error.value = ''
       await documentApi.emptyTrash()
       // 同时清空废纸篓中的本地草稿
       trashDrafts.value = []
@@ -988,7 +1055,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 // 3. 冲突检测：当前正在编辑的文稿
         if (selectedDocumentId.value && !isDraftId(selectedDocumentId.value)) {
           const cloudDoc = newDocs.find(d => d.id === selectedDocumentId.value)
-          const hasUnsaved = saveTimer !== null || pendingSave !== null || savingPromise !== null
+          const editingId = selectedDocumentId.value
+          const hasUnsaved = !!editingId && (
+            saveTimers.has(editingId)
+            || pendingSaves.has(editingId)
+            || savingPromises.has(editingId)
+            || saveErrors.has(editingId)
+          )
           const localDoc = currentDocumentData.value
           if (cloudDoc && localDoc && cloudDoc.content !== localDoc.content && !hasUnsaved) {
             // 云端内容不同，且编辑器没有未保存的修改 → 真正云端冲突（另一设备修改了同一文稿）
