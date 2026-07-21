@@ -25,6 +25,16 @@
             </div>
             <p class="settings-help">编辑区插入图片时，若输入相对路径将自动拼接为 `baseUrl/pathPrefix/relativePath`。</p>
           </div>
+          <div class="settings-section about-section">
+            <h3>关于</h3>
+            <div class="about-row">
+              <div>
+                <div class="about-name">Woo 无我笔记</div>
+                <div class="about-version">版本 {{ appVersion ? `v${appVersion}` : '读取中...' }}</div>
+              </div>
+              <button class="settings-btn secondary-btn" @click="emit('check-update')">检查更新</button>
+            </div>
+          </div>
           <div class="settings-footer">
             <button class="settings-btn save-btn" @click="handleSave">保存</button>
           </div>
@@ -36,6 +46,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { getVersion } from '@tauri-apps/api/app'
 import IconClose from '../icons/IconClose.vue'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
 
@@ -44,12 +55,21 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; 'check-update': [] }>()
 
 /* ========== 资产链接配置状态 ========== */
 const assetProviderInput = ref('custom')
 const assetBaseUrlInput = ref('')
 const assetPathPrefixInput = ref('')
+const appVersion = ref('')
+
+async function loadAppVersion() {
+  try {
+    appVersion.value = await getVersion()
+  } catch {
+    appVersion.value = '未知'
+  }
+}
 
 watch(() => props.visible, (val) => {
   if (val) {
@@ -57,6 +77,7 @@ watch(() => props.visible, (val) => {
     assetProviderInput.value = asset.provider
     assetBaseUrlInput.value = asset.baseUrl
     assetPathPrefixInput.value = asset.pathPrefix
+    void loadAppVersion()
   }
 })
 
@@ -87,10 +108,16 @@ function handleSave() {
 .settings-help { font-size: 12px; color: var(--text-muted); margin: 0; }
 .settings-help a { color: var(--accent); text-decoration: none; }
 .settings-help a:hover { text-decoration: underline; }
+.about-section { padding-top: 18px; border-top: 1px solid var(--border-secondary); }
+.about-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.about-name { color: var(--text-primary); font-size: 13px; font-weight: 600; }
+.about-version { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
 .settings-footer { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--border-secondary); margin-top: 16px; }
 .settings-btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
 .save-btn { background-color: var(--accent); color: #ffffff; }
 .save-btn:hover:not(:disabled) { background-color: var(--accent-hover); }
+.secondary-btn { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); }
+.secondary-btn:hover { background: var(--bg-hover); }
 
 @media (max-width: 640px) {
   .settings-overlay {

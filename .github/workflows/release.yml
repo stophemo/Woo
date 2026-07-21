@@ -132,6 +132,25 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 生成发布版本配置
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          printf '{"version":"%s"}\n' "$VERSION" > src-tauri/tauri.release.conf.json
+
+      - name: 验证自动更新签名密钥
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "错误: 缺少 TAURI_SIGNING_PRIVATE_KEY，无法生成可信的一键更新包" >&2
+            exit 1
+          fi
+
       - name: 确定 macOS 签名模式
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -223,14 +242,14 @@ jobs:
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run tauri:build
+        run: npx tauri build --config src-tauri/tauri.release.conf.json --ci
 
       - name: 构建桌面应用（仅 .app）
         if: matrix.os == 'macos-latest'
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx tauri build --bundles app --target "${{ matrix.target }}" --no-sign --ci
+        run: npx tauri build --config src-tauri/tauri.release.conf.json --bundles app --target "${{ matrix.target }}" --no-sign --ci
 
       - name: 运行 Rust 库测试
         if: matrix.os == 'macos-latest'
@@ -385,6 +404,26 @@ jobs:
             exit 1
           fi
 
+      - name: 生成并签名 macOS 自动更新包
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          REVISION: ${{ needs.meta.outputs.revision }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          APP="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Woo.app"
+          OUTPUT_DIR="$GITHUB_WORKSPACE/release-output"
+          ARCHIVE="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_macos-arm64.app.tar.gz"
+          mkdir -p "$OUTPUT_DIR"
+
+          tar -czf "$ARCHIVE" -C "$(dirname "$APP")" "$(basename "$APP")"
+          npx tauri signer sign --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$ARCHIVE"
+          test -s "$ARCHIVE.sig"
+
       - name: 清理 macOS 签名凭据
         if: always() && matrix.os == 'macos-latest'
         shell: bash
@@ -401,7 +440,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: woo-desktop-macos
-          path: release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_macos-arm64*.dmg
+          path: |
+            release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_macos-arm64*.dmg
+            release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_macos-arm64.app.tar.gz
+            release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_macos-arm64.app.tar.gz.sig
           if-no-files-found: error
 
       - name: 规范化 Windows 安装包名称
@@ -410,6 +452,8 @@ jobs:
         env:
           VERSION: ${{ needs.meta.outputs.version }}
           REVISION: ${{ needs.meta.outputs.revision }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -423,13 +467,17 @@ jobs:
           WINDOWS_INSTALLER="$OUTPUT_DIR/Woo_${VERSION}_${REVISION}_windows-x64-setup.exe"
           mkdir -p "$OUTPUT_DIR"
           cp "${INSTALLERS[0]}" "$WINDOWS_INSTALLER"
+          npx tauri signer sign --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$WINDOWS_INSTALLER"
+          test -s "$WINDOWS_INSTALLER.sig"
 
       - name: 上传 Windows 安装包
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: woo-desktop-windows
-          path: release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_windows-x64-setup.exe
+          path: |
+            release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_windows-x64-setup.exe
+            release-output/Woo_${{ needs.meta.outputs.version }}_${{ needs.meta.outputs.revision }}_windows-x64-setup.exe.sig
           if-no-files-found: error
 
   # ─── Android 构建 ───────────────────────────────────
@@ -478,6 +526,14 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 生成发布版本配置
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          printf '{"version":"%s"}\n' "$VERSION" > src-tauri/tauri.release.conf.json
+
       - name: 校验 Android 签名凭据
         shell: bash
         env:
@@ -509,7 +565,7 @@ jobs:
           CI: true
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
-        run: npm run tauri:android:build -- --target aarch64 --apk --ci
+        run: npm run tauri:android:build -- --config src-tauri/tauri.release.conf.json --target aarch64 --apk --ci
 
       - name: 对齐、签名并验证 Android APK
         shell: bash
@@ -644,6 +700,10 @@ jobs:
         env:
           VERSION: ${{ needs.meta.outputs.version }}
           REVISION: ${{ needs.meta.outputs.revision }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -656,11 +716,15 @@ jobs:
           MAC_ADHOC_NAME="Woo_${VERSION}_${REVISION}_macos-arm64-adhoc.dmg"
           ANDROID_NAME="Woo_${VERSION}_${REVISION}_android-arm64-v8a.apk"
           WINDOWS_NAME="Woo_${VERSION}_${REVISION}_windows-x64-setup.exe"
+          MAC_UPDATER_NAME="Woo_${VERSION}_${REVISION}_macos-arm64.app.tar.gz"
+          MAC_UPDATER_SIG_NAME="${MAC_UPDATER_NAME}.sig"
+          WINDOWS_SIG_NAME="${WINDOWS_NAME}.sig"
           CHECKSUMS_NAME="Woo_${VERSION}_${REVISION}_SHA256SUMS.txt"
+          LATEST_NAME="latest.json"
 
           mapfile -t ALL_FILES < <(find release-assets -type f -print)
-          if (( ${#ALL_FILES[@]} != 3 )); then
-            echo "错误: 预期恰好三个平台安装包，实际为 ${#ALL_FILES[@]} 个" >&2
+          if (( ${#ALL_FILES[@]} != 6 )); then
+            echo "错误: 预期三个安装包、两个更新签名和一个 macOS 更新包，实际为 ${#ALL_FILES[@]} 个" >&2
             exit 1
           fi
 
@@ -674,6 +738,15 @@ jobs:
             exit 1
           fi
           MAC_DMG="${MAC_DMG_FILES[0]}"
+
+          mapfile -t MAC_UPDATER_FILES < <(find release-assets -type f -name "$MAC_UPDATER_NAME" -print)
+          mapfile -t MAC_UPDATER_SIG_FILES < <(find release-assets -type f -name "$MAC_UPDATER_SIG_NAME" -print)
+          if (( ${#MAC_UPDATER_FILES[@]} != 1 || ${#MAC_UPDATER_SIG_FILES[@]} != 1 )); then
+            echo "错误: macOS 自动更新包或签名数量不正确" >&2
+            exit 1
+          fi
+          MAC_UPDATER="${MAC_UPDATER_FILES[0]}"
+          MAC_UPDATER_SIG="${MAC_UPDATER_SIG_FILES[0]}"
 
           mapfile -t ANDROID_APKS < <(
             find release-assets -type f -name "$ANDROID_NAME" -print
@@ -698,20 +771,69 @@ jobs:
             echo "错误: Windows artifact 必须只有一个精确命名的安装包" >&2
             exit 1
           fi
+          WINDOWS_INSTALLER="${WINDOWS_INSTALLERS[0]}"
+
+          mapfile -t WINDOWS_SIG_FILES < <(find release-assets -type f -name "$WINDOWS_SIG_NAME" -print)
+          if (( ${#WINDOWS_SIG_FILES[@]} != 1 )); then
+            echo "错误: Windows 自动更新签名数量不正确" >&2
+            exit 1
+          fi
+          WINDOWS_SIG="${WINDOWS_SIG_FILES[0]}"
 
           mkdir -p release
-          cp "$MAC_DMG" "$ANDROID_APK" "${WINDOWS_INSTALLERS[0]}" release/
+          cp \
+            "$MAC_DMG" \
+            "$MAC_UPDATER" \
+            "$MAC_UPDATER_SIG" \
+            "$ANDROID_APK" \
+            "$WINDOWS_INSTALLER" \
+            "$WINDOWS_SIG" \
+            release/
 
           MAC_NAME="$(basename "$MAC_DMG")"
           pushd release >/dev/null
-          sha256sum "$MAC_NAME" "$ANDROID_NAME" "$WINDOWS_NAME" > "$CHECKSUMS_NAME"
+          sha256sum \
+            "$MAC_NAME" \
+            "$MAC_UPDATER_NAME" \
+            "$MAC_UPDATER_SIG_NAME" \
+            "$ANDROID_NAME" \
+            "$WINDOWS_NAME" \
+            "$WINDOWS_SIG_NAME" \
+            > "$CHECKSUMS_NAME"
           sha256sum --check "$CHECKSUMS_NAME"
           popd >/dev/null
 
+          RELEASE_BASE_URL="${SERVER_URL}/${REPOSITORY}/releases/download/${TAG}"
+          PUB_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          MAC_SIGNATURE="$(tr -d '\r\n' < "release/$MAC_UPDATER_SIG_NAME")"
+          WINDOWS_SIGNATURE="$(tr -d '\r\n' < "release/$WINDOWS_SIG_NAME")"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$NOTES" \
+            --arg pubDate "$PUB_DATE" \
+            --arg macUrl "$RELEASE_BASE_URL/$MAC_UPDATER_NAME" \
+            --arg macSignature "$MAC_SIGNATURE" \
+            --arg windowsUrl "$RELEASE_BASE_URL/$WINDOWS_NAME" \
+            --arg windowsSignature "$WINDOWS_SIGNATURE" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pubDate,
+              platforms: {
+                "darwin-aarch64": { url: $macUrl, signature: $macSignature },
+                "windows-x86_64": { url: $windowsUrl, signature: $windowsSignature }
+              }
+            }' > "release/$LATEST_NAME"
+          jq empty "release/$LATEST_NAME"
+
           echo "mac_name=$MAC_NAME" >> "$GITHUB_OUTPUT"
+          echo "mac_updater_name=$MAC_UPDATER_NAME" >> "$GITHUB_OUTPUT"
+          echo "mac_updater_sig_name=$MAC_UPDATER_SIG_NAME" >> "$GITHUB_OUTPUT"
           echo "android_name=$ANDROID_NAME" >> "$GITHUB_OUTPUT"
           echo "windows_name=$WINDOWS_NAME" >> "$GITHUB_OUTPUT"
+          echo "windows_sig_name=$WINDOWS_SIG_NAME" >> "$GITHUB_OUTPUT"
           echo "checksums_name=$CHECKSUMS_NAME" >> "$GITHUB_OUTPUT"
+          echo "latest_name=$LATEST_NAME" >> "$GITHUB_OUTPUT"
           ls -lh release/
 
       - name: 创建 GitHub Release
@@ -722,17 +844,25 @@ jobs:
           NOTES: ${{ steps.notes.outputs.notes }}
           IS_MANUAL: ${{ needs.meta.outputs.is_manual }}
           MAC_NAME: ${{ steps.assets.outputs.mac_name }}
+          MAC_UPDATER_NAME: ${{ steps.assets.outputs.mac_updater_name }}
+          MAC_UPDATER_SIG_NAME: ${{ steps.assets.outputs.mac_updater_sig_name }}
           ANDROID_NAME: ${{ steps.assets.outputs.android_name }}
           WINDOWS_NAME: ${{ steps.assets.outputs.windows_name }}
+          WINDOWS_SIG_NAME: ${{ steps.assets.outputs.windows_sig_name }}
           CHECKSUMS_NAME: ${{ steps.assets.outputs.checksums_name }}
+          LATEST_NAME: ${{ steps.assets.outputs.latest_name }}
         run: |
           set -euo pipefail
 
           FILES=(
             "release/$MAC_NAME"
+            "release/$MAC_UPDATER_NAME"
+            "release/$MAC_UPDATER_SIG_NAME"
             "release/$ANDROID_NAME"
             "release/$WINDOWS_NAME"
+            "release/$WINDOWS_SIG_NAME"
             "release/$CHECKSUMS_NAME"
+            "release/$LATEST_NAME"
           )
           for FILE in "${FILES[@]}"; do
             if [[ ! -f "$FILE" ]]; then
@@ -775,7 +905,16 @@ jobs:
               "${FILES[@]}"
           fi
 
-          WHITELIST=("$MAC_NAME" "$ANDROID_NAME" "$WINDOWS_NAME" "$CHECKSUMS_NAME")
+          WHITELIST=(
+            "$MAC_NAME"
+            "$MAC_UPDATER_NAME"
+            "$MAC_UPDATER_SIG_NAME"
+            "$ANDROID_NAME"
+            "$WINDOWS_NAME"
+            "$WINDOWS_SIG_NAME"
+            "$CHECKSUMS_NAME"
+            "$LATEST_NAME"
+          )
           REMOTE_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
           for EXPECTED_NAME in "${WHITELIST[@]}"; do
             if ! grep -Fxq "$EXPECTED_NAME" <<< "$REMOTE_ASSETS"; then

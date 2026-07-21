@@ -32,7 +32,11 @@
     <MobileDocumentDrawer v-if="isMobile" v-model:open="mobileDocDrawerOpen" />
 
     <!-- 设置弹窗 -->
-    <SettingsDialog :visible="showSettings" @close="showSettings = false" />
+    <SettingsDialog
+      :visible="showSettings"
+      @close="showSettings = false"
+      @check-update="updateNotificationRef?.check()"
+    />
 
     <!-- 登录/账户弹窗 -->
     <LoginDialog
@@ -82,7 +86,7 @@ const workspaceStore = useWorkspaceStore()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
 
-const updateNotificationRef = ref<ComponentPublicInstance & { check: () => void } | null>(null)
+const updateNotificationRef = ref<ComponentPublicInstance & { check: (silent?: boolean) => Promise<void> } | null>(null)
 const editAreaRef = ref<ComponentPublicInstance | null>(null)
 
 // 编辑器滚动 → 大纲高亮联动
@@ -349,20 +353,59 @@ watch(isMobile, (mobile) => {
 // 取消监听的函数引用（用于组件卸载时清理）
 let unlistenOpenFile: (() => void) | null = null
 let unlistenDragDrop: (() => void) | null = null
+let autoUpdateTimer: ReturnType<typeof setTimeout> | null = null
+let pendingDrainRetryTimer: ReturnType<typeof setTimeout> | null = null
+let appInitialized = false
+const queuedExternalFilePaths: string[] = []
+let externalFileOpenQueue: Promise<void> = Promise.resolve()
+
+const SUPPORTED_EXTERNAL_EXTENSIONS = new Set([
+  'md', 'markdown', 'mdown', 'mkd', 'txt', 'text'
+])
 
 /** 处理从外部打开的文件路径（拖拽或"打开方式"） */
-function handleExternalFilePaths(paths: string[]) {
-  const textExtensions = ['.md', '.markdown', '.txt', '.text', '.mdown', '.mkd']
-  for (const p of paths) {
-    const ext = p.toLowerCase().split('.').pop()
-    if (ext && textExtensions.some(e => e.endsWith(ext!))) {
-      workspaceStore.openExternalFile(p)
-      break // 每次只打开第一个匹配的文件
+async function handleExternalFilePaths(paths: string[]) {
+  if (!appInitialized) {
+    for (const path of paths) {
+      if (!queuedExternalFilePaths.includes(path)) queuedExternalFilePaths.push(path)
+    }
+    return
+  }
+
+  const pathsToOpen = paths.filter((path, index) => paths.indexOf(path) === index)
+  for (const p of pathsToOpen) {
+    const ext = p.split('.').pop()?.toLowerCase()
+    if (ext && SUPPORTED_EXTERNAL_EXTENSIONS.has(ext)) {
+      await workspaceStore.openExternalFile(p)
     }
   }
 }
 
-onMounted(() => {
+function enqueueExternalFilePaths(paths: string[]): Promise<void> {
+  externalFileOpenQueue = externalFileOpenQueue
+    .then(() => handleExternalFilePaths(paths))
+    .catch((e) => log.app.error('[App] 打开外部文件队列失败:', e))
+  return externalFileOpenQueue
+}
+
+async function consumePendingOpenFiles() {
+  try {
+    const pendingFiles = await popPendingOpenFiles()
+    await enqueueExternalFilePaths([...queuedExternalFilePaths, ...pendingFiles])
+    queuedExternalFilePaths.length = 0
+    pendingDrainRetryTimer = null
+  } catch (e) {
+    log.app.warn('[App] 拉取待处理文件失败，将重试:', e)
+    if (pendingDrainRetryTimer === null) {
+      pendingDrainRetryTimer = setTimeout(() => {
+        pendingDrainRetryTimer = null
+        void consumePendingOpenFiles()
+      }, 1000)
+    }
+  }
+}
+
+onMounted(async () => {
   updateIsMobile()
   // 根据初始屏幕尺寸设置侧边栏默认状态
   leftSidebarOpen.value = !isMobile.value
@@ -374,26 +417,22 @@ onMounted(() => {
   if (window.electronAPI && window.electronAPI.onMenuAction) {
     window.electronAPI.onMenuAction(handleMenuAction)
   }
-  initApp().then(async () => {
-    // 先注册监听器（后续拖拽 / "打开方式" 都能收到）
-    listen<string[]>('open-file', (event) => {
-      handleExternalFilePaths(event.payload)
-    }).then(fn => { unlistenOpenFile = fn })
-
-    listen<{ paths: string[]; position: { x: number; y: number } }>('tauri://drag-drop', (event) => {
-      handleExternalFilePaths(event.payload.paths)
-    }).then(fn => { unlistenDragDrop = fn })
-
-    // 再处理前端就绪前收到的文件打开请求（启动时"打开方式"）
-    try {
-      const pendingFiles = await popPendingOpenFiles()
-      if (pendingFiles.length > 0) {
-        handleExternalFilePaths(pendingFiles)
-      }
-    } catch (e) {
-      log.app.warn('[App] 拉取待处理文件失败:', e)
-    }
+  // 先注册监听，Rust 端会在 popPendingOpenFiles 后切换为实时派发。
+  unlistenOpenFile = await listen<string[]>('open-file', (event) => {
+    void enqueueExternalFilePaths(event.payload)
   })
+  unlistenDragDrop = await listen<{ paths: string[]; position: { x: number; y: number } }>(
+    'tauri://drag-drop',
+    (event) => { void enqueueExternalFilePaths(event.payload.paths) }
+  )
+
+  await initApp()
+  appInitialized = true
+
+  await consumePendingOpenFiles()
+
+  // 启动后静默检查；只有发现新版本时才展示通知。
+  autoUpdateTimer = setTimeout(() => updateNotificationRef.value?.check(true), 1500)
 });
 
 // 组件卸载前移除键盘事件监听和菜单监听，防止内存泄漏
@@ -405,6 +444,8 @@ onBeforeUnmount(() => {
   }
   unlistenOpenFile?.()
   unlistenDragDrop?.()
+  if (autoUpdateTimer) clearTimeout(autoUpdateTimer)
+  if (pendingDrainRetryTimer) clearTimeout(pendingDrainRetryTimer)
 });
 </script>
 

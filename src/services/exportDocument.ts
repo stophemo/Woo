@@ -8,11 +8,10 @@
  * 流程：生成内容 → dialog:save-document 选路径 → file:write 落盘。
  * 图片以 base64 传给后端，由 Rust 端 file_write 解码写字节。
  */
-import TurndownService from 'turndown'
-import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
 import html2canvas from 'html2canvas'
 import { invoke } from './api'
 import { log } from './logger'
+import { editorHtmlToMarkdown } from './markdown'
 import type { Document } from '../types/document'
 
 export type ExportFormat = 'markdown' | 'txt' | 'image'
@@ -29,29 +28,8 @@ const FORMAT_META: Record<ExportFormat, FormatMeta> = {
 }
 
 // ============ Markdown ============
-// 与 EditArea / 原 ThumbnailColumn 中的 turndown 配置保持一致
-const turndown = new TurndownService({
-  headingStyle: 'atx',       // ## 标题
-  codeBlockStyle: 'fenced',  // ``` 代码块
-  emDelimiter: '*',          // *斜体*
-  bulletListMarker: '-',     // - 无序列表
-})
-turndown.use(gfmTable)
-turndown.use(gfmStrikethrough)
-// 任务列表（- [x] / - [ ]）
-turndown.addRule('taskList', {
-  filter: (node: HTMLElement) =>
-    node.nodeName === 'LI' &&
-    (node.getAttribute('data-checked') !== null ||
-     (!!node.parentElement && node.parentElement.getAttribute('data-type') === 'taskList')),
-  replacement: (content: string, node: HTMLElement) => {
-    const checked = node.getAttribute('data-checked') === 'true'
-    return `- [${checked ? 'x' : ' '}] ${content.trim()}\n`
-  },
-})
-
 export function htmlToMarkdown(html: string): string {
-  return turndown.turndown(html || '')
+  return editorHtmlToMarkdown(html)
 }
 
 // ============ 纯文本 ============

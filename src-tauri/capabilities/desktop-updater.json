@@ -1,0 +1,10 @@
+{
+  "identifier": "desktop-updater",
+  "description": "桌面端更新下载、安装与重启权限",
+  "windows": ["main"],
+  "platforms": ["macOS", "windows", "linux"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

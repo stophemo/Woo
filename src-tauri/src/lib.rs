@@ -5,6 +5,9 @@ mod services;
 mod supabase;
 
 use once_cell::sync::Lazy;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
@@ -14,9 +17,114 @@ static APP_HANDLE: Lazy<Mutex<Option<tauri::AppHandle>>> = Lazy::new(|| Mutex::n
 // Buffer for file open requests received before the frontend is ready.
 static PENDING_OPEN_FILES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
+// 前端注册 open-file 监听并拉取启动请求后置为 true。
+static FRONTEND_READY_FOR_OPEN_FILES: AtomicBool = AtomicBool::new(false);
+
 /// Drain and return all pending file open paths (called by the frontend after init).
 pub fn drain_pending_open_files() -> Vec<String> {
-    PENDING_OPEN_FILES.lock().ok().map_or(Vec::new(), |mut v| std::mem::take(&mut *v))
+    FRONTEND_READY_FOR_OPEN_FILES.store(true, Ordering::Release);
+    let paths = PENDING_OPEN_FILES
+        .lock()
+        .ok()
+        .map_or(Vec::new(), |mut v| std::mem::take(&mut *v));
+    if !paths.is_empty() {
+        log::info!("[OpenFile] 前端已消费 {} 个缓冲路径", paths.len());
+    }
+    paths
+}
+
+fn is_supported_external_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "md" | "markdown" | "mdown" | "mkd" | "txt" | "text"
+            )
+        })
+}
+
+fn collect_open_file_paths<I, S>(args: I, cwd: &Path) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    args.into_iter()
+        .filter_map(|arg| {
+            let path = PathBuf::from(arg.into());
+            let path = if path.is_absolute() { path } else { cwd.join(path) };
+            (path.is_file() && is_supported_external_file(&path))
+                .then(|| path.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
+fn dispatch_open_files(paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+
+    if FRONTEND_READY_FOR_OPEN_FILES.load(Ordering::Acquire) {
+        if let Some(app_handle) = get_app_handle() {
+            if app_handle.emit("open-file", &paths).is_ok() {
+                log::info!(
+                    "[OpenFile] 已向运行中的前端派发 {} 个路径",
+                    paths.len()
+                );
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                return;
+            }
+            log::warn!("[OpenFile] 前端事件派发失败，路径已退回缓冲队列");
+        }
+    }
+
+    if let Ok(mut pending) = PENDING_OPEN_FILES.lock() {
+        let original_len = pending.len();
+        for path in paths {
+            if !pending.contains(&path) {
+                pending.push(path);
+            }
+        }
+        if pending.len() > original_len {
+            log::info!(
+                "[OpenFile] 前端就绪前已缓冲 {} 个路径",
+                pending.len() - original_len
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod open_file_tests {
+    use super::{collect_open_file_paths, is_supported_external_file};
+    use std::path::Path;
+
+    #[test]
+    fn recognizes_supported_external_file_extensions_case_insensitively() {
+        for path in ["note.md", "note.MARKDOWN", "note.mdown", "note.mkd", "note.txt", "note.TEXT"] {
+            assert!(is_supported_external_file(Path::new(path)), "应支持 {path}");
+        }
+        assert!(!is_supported_external_file(Path::new("note.pdf")));
+        assert!(!is_supported_external_file(Path::new("note")));
+    }
+
+    #[test]
+    fn collects_existing_relative_file_paths() {
+        let directory = std::env::temp_dir().join(format!("woo-open-file-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("创建临时目录失败");
+        let markdown_path = directory.join("sample.md");
+        let ignored_path = directory.join("sample.pdf");
+        std::fs::write(&markdown_path, "# sample").expect("写入 Markdown 样例失败");
+        std::fs::write(&ignored_path, "sample").expect("写入忽略样例失败");
+
+        let paths = collect_open_file_paths(["sample.md", "sample.pdf", "missing.md"], &directory);
+        assert_eq!(paths, vec![markdown_path.to_string_lossy().into_owned()]);
+
+        std::fs::remove_dir_all(&directory).expect("清理临时目录失败");
+    }
 }
 
 pub fn get_app_handle() -> Option<tauri::AppHandle> {
@@ -53,8 +161,6 @@ fn resolve_data_dir(app: &tauri::App) -> PathBuf {
         dir
     }
 }
-
-use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
 fn set_macos_dock_icon() {
@@ -151,22 +257,14 @@ fn patch_app_delegate_open_files() {
             }
             log::info!("[Odoc] paths: {:?}", paths);
 
-            if let (Ok(mut buf), Some(ref app_handle)) =
-                (PENDING_OPEN_FILES.lock(), APP_HANDLE.lock().unwrap().as_ref())
-            {
-                buf.extend(paths.clone());
-                let _ = app_handle.emit("open-file", paths);
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
+            dispatch_open_files(paths);
         }
 
         // Cast fn pointer to objc2 runtime's Imp type
-        let imp: unsafe extern "C-unwind" fn() = unsafe {
-            std::mem::transmute(application_open_files as unsafe extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSString>))
-        };
+        let imp: unsafe extern "C-unwind" fn() = std::mem::transmute(
+            application_open_files
+                as unsafe extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSString>),
+        );
 
         let sel = Sel::register(c"application:openFiles:");
         let types = c"v@:@@";
@@ -196,18 +294,41 @@ fn patch_app_delegate_open_files() {
 pub fn run() {
     init_logger();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    let builder = builder
+        // 必须最先注册，确保文件关联触发的第二实例能转发启动参数。
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let paths = collect_open_file_paths(args.into_iter().skip(1), Path::new(&cwd));
+            dispatch_open_files(paths);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_process::init());
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // 在平台回调可能触发打开请求前保存 AppHandle。
+            *APP_HANDLE.lock().unwrap() = Some(app.handle().clone());
+
             #[cfg(target_os = "macos")]
             {
                 set_macos_dock_icon();
                 patch_app_delegate_open_files();
             }
 
-            // Store AppHandle for event emission
-            *APP_HANDLE.lock().unwrap() = Some(app.handle().clone());
+            let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let initial_paths = collect_open_file_paths(std::env::args_os().skip(1), &current_dir);
+            dispatch_open_files(initial_paths);
 
             // Initialize database directory (shared with app-desktop)
             let db_path = resolve_data_dir(app);
@@ -313,7 +434,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // System
             commands::app_get_version,
-            commands::update_check,
             commands::greet,
             // Folder
             commands::folder::folder_tree,

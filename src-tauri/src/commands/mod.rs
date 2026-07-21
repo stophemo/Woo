@@ -34,28 +34,6 @@ pub fn app_get_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-/// Check for app updates (placeholder)
-#[tauri::command(rename_all = "camelCase", rename = "updateCheck")]
-pub async fn update_check() -> UpdateResult {
-    UpdateResult {
-        has_update: false,
-        version: None,
-        download_url: None,
-        error: None,
-    }
-}
-
-#[derive(Serialize)]
-pub struct UpdateResult {
-    pub has_update: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub download_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
 /// Placeholder greet command
 #[tauri::command(rename_all = "camelCase")]
 pub fn greet(name: &str) -> String {

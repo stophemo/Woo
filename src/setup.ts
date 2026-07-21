@@ -40,9 +40,6 @@ export function setupTauriBridge() {
         menuActionHandler = null
       }
     },
-
-    // Update check
-    checkForUpdates: () => invoke<{ hasUpdate: boolean; version?: string; downloadUrl?: string; error?: string }>('update:check'),
   }
 
   // Bridge Tauri backend events to DOM CustomEvents for existing store listeners.

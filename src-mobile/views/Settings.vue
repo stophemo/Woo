@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import { getVersion } from '@tauri-apps/api/app'
 import { useAuthStore } from '../../src/stores/auth'
 import { useSyncStore } from '../../src/stores/sync'
 import { useWorkspaceStore } from '../../src/stores/workspace'
@@ -9,12 +10,20 @@ import { useLockStore } from '../../src/stores/lock'
 import { useThemeStore } from '../../src/stores/theme'
 
 const router = useRouter()
-const appVersion = __APP_VERSION__
+const appVersion = ref(__APP_VERSION__)
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
 const themeStore = useThemeStore()
+
+onMounted(async () => {
+  try {
+    appVersion.value = await getVersion()
+  } catch {
+    // 浏览器预览环境没有 Tauri API，继续显示构建时版本。
+  }
+})
 
 const showLogin = ref(false)
 const loginMode = ref<'login' | 'signup'>('login')

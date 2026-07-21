@@ -109,6 +109,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Underline from '@tiptap/extension-underline'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
@@ -116,7 +117,6 @@ import BulletList from '@tiptap/extension-bullet-list'
 import Link from '@tiptap/extension-link'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { DOMParser, DOMSerializer } from '@tiptap/pm/model'
-import { marked } from 'marked'
 import TurndownService from 'turndown'
 import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
 import { useWorkspaceStore } from '../../stores/workspace'
@@ -125,6 +125,7 @@ import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
 import MindmapDialog from './MindmapDialog.vue'
 import { log } from '../../services/logger'
+import { markdownToEditorHtml } from '../../services/markdown'
 /** HTML → Markdown 转换器（复制剪贴板，输出 GFM 风格 Markdown） */
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -522,7 +523,7 @@ function isMarkdownText(text: string): boolean {
  */
 function isMarkdownByParsing(text: string): boolean {
   try {
-    const html = marked.parse(text, { gfm: true, breaks: true }) as string
+    const html = markdownToEditorHtml(text)
     return /<h[1-6]|<ul|<ol|<table|<blockquote|<pre|<hr|<strong|<em|<code/.test(html)
   } catch {
     return false
@@ -551,7 +552,7 @@ const MarkdownPaste = Extension.create({
             if (text && hasMarkdownStructure(text)) {
               event.preventDefault()
               try {
-                const html = marked.parse(text, { gfm: true, breaks: true }) as string
+                const html = markdownToEditorHtml(text)
                 const div = document.createElement('div')
                 div.innerHTML = html
 
@@ -622,6 +623,10 @@ const editor = useEditor({
     Underline,
     TaskList,
     TaskItem.configure({ nested: true }),
+    Table.configure({ resizable: false }),
+    TableRow,
+    TableHeader,
+    TableCell,
     Highlight.configure({ multicolor: false }),
     Link.configure({ openOnClick: false, autolink: false }),
     Typography,
@@ -722,7 +727,7 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
     // 如果内容不含 HTML 标签，很可能是 Markdown 原始文本，需要转为 HTML 再渲染
     if (!/<(p|h[1-6]|table|ul|ol|blockquote|pre|div|span|br|hr|img|a|strong|em|code)\b[^>]*>/i.test(html)) {
       try {
-        html = marked.parse(html, { gfm: true, breaks: true }) as string
+        html = markdownToEditorHtml(html)
       } catch {
         // 转换失败则保持原文
       }
@@ -1142,6 +1147,11 @@ const menuActionHandler = (e: Event) => {
 .wysiwyg-editor ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 4px; }
 .wysiwyg-editor ul[data-type="taskList"] li > label input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 16px; height: 16px; }
 .wysiwyg-editor ul[data-type="taskList"] li > div { flex: 1; }
+.wysiwyg-editor table { width: 100%; border-collapse: collapse; table-layout: auto; margin: 14px 0; }
+.wysiwyg-editor th, .wysiwyg-editor td { min-width: 80px; padding: 8px 10px; border: 1px solid var(--border-primary); text-align: left; vertical-align: top; }
+.wysiwyg-editor th { background: var(--bg-hover); color: var(--text-primary); font-weight: 600; }
+.wysiwyg-editor td { color: var(--editor-text-secondary); }
+.wysiwyg-editor th p, .wysiwyg-editor td p { margin: 0; }
 .wysiwyg-editor code { background-color: var(--editor-code-bg); padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; color: var(--editor-code-text); }
 .wysiwyg-editor pre { background-color: var(--editor-pre-bg); padding: 16px; border-radius: 6px; overflow-x: auto; margin: 12px 0; border: 1px solid var(--editor-pre-border); }
 .wysiwyg-editor pre code { background: none; padding: 0; color: var(--editor-text); font-size: 14px; line-height: 1.6; }

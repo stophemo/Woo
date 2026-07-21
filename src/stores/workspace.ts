@@ -17,6 +17,13 @@ import * as lockApi from '../services/lockApi'
 import type { FolderTreeNodeDTO } from '../services/folderApi'
 import type { DocumentDTO } from '../services/documentApi'
 import { log } from '../services/logger'
+import {
+  editorHtmlToMarkdown,
+  editorHtmlToPlainText,
+  isMarkdownFilePath,
+  markdownToEditorHtml,
+  plainTextToEditorHtml,
+} from '../services/markdown'
 
 function mapFolder(node: FolderTreeNodeDTO): FolderNode {
   return {
@@ -394,6 +401,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const pendingSaves = new Map<string, string>()
   const savingPromises = new Map<string, Promise<void>>()
   const saveErrors = new Map<string, Error>()
+  const pendingExternalFileWrites = new Map<string, { filePath: string; content: string }>()
+  const externalFileWritingPromises = new Map<string, Promise<void>>()
+  const externalFileSaveErrors = new Map<string, Error>()
   // 软删除成功后保持标记，直到恢复；删除过程中不得再排入该文稿的保存任务。
   const deletingDocumentIds = new Set<string>()
 
@@ -425,6 +435,59 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  async function drainExternalFileWrites(documentId: string): Promise<void> {
+    const { writeExternalFile } = await import('../services/externalFileApi')
+    while (pendingExternalFileWrites.has(documentId)) {
+      const pendingWrite = pendingExternalFileWrites.get(documentId)!
+      pendingExternalFileWrites.delete(documentId)
+      try {
+        await writeExternalFile(pendingWrite.filePath, pendingWrite.content)
+        externalFileSaveErrors.delete(documentId)
+      } catch (e: any) {
+        const saveError = e instanceof Error ? e : new Error(e?.message || '写入外部文件失败')
+        // 若编辑器已有更新内容，只丢弃失败的旧快照，继续尝试写入最新内容。
+        if (!pendingExternalFileWrites.has(documentId)) {
+          pendingExternalFileWrites.set(documentId, pendingWrite)
+          externalFileSaveErrors.set(documentId, saveError)
+          error.value = `写入外部文件失败: ${saveError.message}`
+          throw saveError
+        }
+      }
+    }
+  }
+
+  function runPendingExternalFileWrite(documentId: string): Promise<void> {
+    const existing = externalFileWritingPromises.get(documentId)
+    if (existing) return existing
+    if (!pendingExternalFileWrites.has(documentId)) return Promise.resolve()
+
+    const run = drainExternalFileWrites(documentId)
+    externalFileWritingPromises.set(documentId, run)
+    void run.then(
+      () => {
+        if (externalFileWritingPromises.get(documentId) === run) {
+          externalFileWritingPromises.delete(documentId)
+        }
+      },
+      () => {
+        if (externalFileWritingPromises.get(documentId) === run) {
+          externalFileWritingPromises.delete(documentId)
+        }
+      }
+    )
+    return run
+  }
+
+  function queueExternalFileWrite(documentId: string, filePath: string, editorHtml: string) {
+    const content = isMarkdownFilePath(filePath)
+      ? editorHtmlToMarkdown(editorHtml)
+      : editorHtmlToPlainText(editorHtml)
+    pendingExternalFileWrites.set(documentId, { filePath, content })
+    void runPendingExternalFileWrite(documentId).catch((e) => {
+      log.app.error('[Workspace] 写入外部文件失败:', e)
+    })
+  }
+
   function updateDocumentContent(documentId: string, content: string) {
     if (selectedFolderId.value === TRASH_FOLDER_ID || deletingDocumentIds.has(documentId)) {
       return
@@ -450,28 +513,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         // 若该草稿关联了外部文件，异步写回源文件
         const filePath = externalFilePathMap.value[documentId]
         if (filePath) {
-          void (async () => {
-            // 如果是 Markdown 文件，将编辑器的 HTML 转回 Markdown 再写回
-            const ext = filePath.toLowerCase().split('.').pop()
-            const isMarkdown = ext && ['md', 'markdown', 'mdown', 'mkd'].includes(ext)
-            if (isMarkdown) {
-              const { default: TurndownService } = await import('turndown')
-              const { tables: gfmTable, strikethrough: gfmStrikethrough } = await import('turndown-plugin-gfm')
-              const turndownService = new TurndownService({ headingStyle: 'atx' })
-              turndownService.use([gfmTable, gfmStrikethrough])
-              const { writeExternalFile } = await import('../services/externalFileApi')
-              writeExternalFile(filePath, turndownService.turndown(content)).catch(e => {
-                log.app.error('[Workspace] 写入外部文件失败:', e)
-                error.value = `写入外部文件失败: ${e}`
-              })
-              return
-            }
-            const { writeExternalFile } = await import('../services/externalFileApi')
-            writeExternalFile(filePath, content).catch(e => {
-              log.app.error('[Workspace] 写入外部文件失败:', e)
-              error.value = `写入外部文件失败: ${e}`
-            })
-          })()
+          queueExternalFileWrite(documentId, filePath, content)
         }
       }
       return
@@ -541,9 +583,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (saveError) throw saveError
   }
 
+  async function flushExternalFileSave(documentId: string): Promise<void> {
+    const inFlight = externalFileWritingPromises.get(documentId)
+    if (inFlight) {
+      try { await inFlight } catch { /* 下面会重试保留的最新内容 */ }
+    }
+    if (pendingExternalFileWrites.has(documentId)) {
+      await runPendingExternalFileWrite(documentId)
+    }
+    const saveError = externalFileSaveErrors.get(documentId)
+    if (saveError) throw saveError
+  }
+
   async function flushPendingSave(documentId?: string): Promise<void> {
     if (documentId) {
       await flushDocumentSave(documentId)
+      await flushExternalFileSave(documentId)
       return
     }
     const documentIds = new Set([
@@ -552,7 +607,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       ...savingPromises.keys(),
       ...saveErrors.keys(),
     ])
-    await Promise.all([...documentIds].map(flushDocumentSave))
+    const externalDocumentIds = new Set([
+      ...pendingExternalFileWrites.keys(),
+      ...externalFileWritingPromises.keys(),
+      ...externalFileSaveErrors.keys(),
+    ])
+    await Promise.all([
+      ...[...documentIds].map(flushDocumentSave),
+      ...[...externalDocumentIds].map(flushExternalFileSave),
+    ])
   }
 
   async function discardPendingSave(documentId: string): Promise<void> {
@@ -730,21 +793,46 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function openExternalFile(filePath: string) {
     try {
       const { readExternalFile } = await import('../services/externalFileApi')
+      const existingDraftForPath = drafts.value.find((draft) =>
+        externalFilePathMap.value[draft.id] === filePath
+      )
+      if (existingDraftForPath) {
+        // 重新读取磁盘前先完成本地写入，避免旧磁盘快照覆盖正在编辑的内容。
+        await flushExternalFileSave(existingDraftForPath.id)
+      }
       const result = await readExternalFile(filePath)
 
       // 如果是 Markdown 文件，将 Markdown 转为 HTML 再交给 Tiptap 渲染
       const ext = result.filePath.toLowerCase().split('.').pop()
-      const isMarkdown = ext && ['md', 'markdown', 'mdown', 'mkd'].includes(ext)
       let content = result.content
-      if (isMarkdown) {
-        const { marked } = await import('marked')
-        content = marked.parse(result.content, { gfm: true, breaks: true }) as string
+      if (isMarkdownFilePath(result.filePath)) {
+        content = markdownToEditorHtml(result.content)
         log.app.info('[Workspace] Markdown→HTML 转换完成，原文长度:', result.content.length, 'HTML长度:', content.length)
       } else {
+        content = plainTextToEditorHtml(result.content)
         log.app.info('[Workspace] 非 Markdown 文件，扩展名:', ext)
       }
 
       const now = new Date().toISOString()
+
+      // 同一个外部文件可能同时从启动参数和 macOS openFiles 事件到达；
+      // 复用已有草稿，避免重复创建并确保重新打开时内容是最新的。
+      const existingDraft = drafts.value.find((draft) =>
+        externalFilePathMap.value[draft.id] === result.filePath
+      )
+      if (existingDraft) {
+        existingDraft.title = result.fileName
+        existingDraft.content = content
+        existingDraft.updatedAt = now
+        persistDrafts(drafts.value)
+        selectedFolderId.value = DRAFT_FOLDER_ID
+        selectedFolderLocked.value = false
+        folderDocuments.value = drafts.value.map(d => ({ ...d }))
+        await selectDocument(existingDraft.id)
+        log.app.info('[Workspace] 已复用外部文件草稿:', result.filePath)
+        return
+      }
+
       const docId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
       const doc: Document = {
@@ -808,8 +896,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (isDraftId(documentId)) {
       // 清理外部文件路径映射（若有）
       if (externalFilePathMap.value[documentId]) {
+        try {
+          await flushExternalFileSave(documentId)
+        } catch {
+          // 写回失败时保留草稿和路径映射，让用户可以重试而不丢失内容。
+          return
+        }
         delete externalFilePathMap.value[documentId]
         persistExternalFilePathMap()
+        pendingExternalFileWrites.delete(documentId)
+        externalFileWritingPromises.delete(documentId)
+        externalFileSaveErrors.delete(documentId)
       }
       const idx = drafts.value.findIndex(d => d.id === documentId)
       if (idx !== -1) {
