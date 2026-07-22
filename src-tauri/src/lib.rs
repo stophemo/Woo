@@ -7,26 +7,34 @@ mod supabase;
 use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
 // Global AppHandle for emitting events to the frontend from background tasks.
 static APP_HANDLE: Lazy<Mutex<Option<tauri::AppHandle>>> = Lazy::new(|| Mutex::new(None));
 
-// Buffer for file open requests received before the frontend is ready.
-static PENDING_OPEN_FILES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+#[derive(Default)]
+struct OpenFileState {
+    pending: Vec<String>,
+    frontend_ready: bool,
+}
 
-// 前端注册 open-file 监听并拉取启动请求后置为 true。
-static FRONTEND_READY_FOR_OPEN_FILES: AtomicBool = AtomicBool::new(false);
+// 前端就绪状态和待打开路径必须由同一把锁保护，避免 drain 与 dispatch 交错丢失请求。
+static OPEN_FILE_STATE: Lazy<Mutex<OpenFileState>> =
+    Lazy::new(|| Mutex::new(OpenFileState::default()));
 
 /// Drain and return all pending file open paths (called by the frontend after init).
 pub fn drain_pending_open_files() -> Vec<String> {
-    FRONTEND_READY_FOR_OPEN_FILES.store(true, Ordering::Release);
-    let paths = PENDING_OPEN_FILES
-        .lock()
-        .ok()
-        .map_or(Vec::new(), |mut v| std::mem::take(&mut *v));
+    let paths = match OPEN_FILE_STATE.lock() {
+        Ok(mut state) => {
+            state.frontend_ready = true;
+            std::mem::take(&mut state.pending)
+        }
+        Err(error) => {
+            log::error!("[OpenFile] 无法读取待打开路径: {error}");
+            Vec::new()
+        }
+    };
     if !paths.is_empty() {
         log::info!("[OpenFile] 前端已消费 {} 个缓冲路径", paths.len());
     }
@@ -59,47 +67,76 @@ where
         .collect()
 }
 
+#[cfg(target_os = "macos")]
+fn collect_open_file_urls<I>(urls: I) -> Vec<String>
+where
+    I: IntoIterator<Item = tauri::Url>,
+{
+    urls.into_iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| path.is_file() && is_supported_external_file(path))
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
+}
+
+fn append_pending_open_files(pending: &mut Vec<String>, paths: Vec<String>) -> usize {
+    let original_len = pending.len();
+    for path in paths {
+        if !pending.contains(&path) {
+            pending.push(path);
+        }
+    }
+    pending.len() - original_len
+}
+
 fn dispatch_open_files(paths: Vec<String>) {
     if paths.is_empty() {
         return;
     }
 
-    if FRONTEND_READY_FOR_OPEN_FILES.load(Ordering::Acquire) {
-        if let Some(app_handle) = get_app_handle() {
-            if app_handle.emit("open-file", &paths).is_ok() {
-                log::info!(
-                    "[OpenFile] 已向运行中的前端派发 {} 个路径",
-                    paths.len()
-                );
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-                return;
+    match OPEN_FILE_STATE.lock() {
+        Ok(mut state) if !state.frontend_ready => {
+            let added = append_pending_open_files(&mut state.pending, paths);
+            if added > 0 {
+                log::info!("[OpenFile] 前端就绪前已缓冲 {} 个路径", added);
             }
-            log::warn!("[OpenFile] 前端事件派发失败，路径已退回缓冲队列");
+            return;
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log::error!("[OpenFile] 无法访问打开文件状态: {error}");
+            return;
         }
     }
 
-    if let Ok(mut pending) = PENDING_OPEN_FILES.lock() {
-        let original_len = pending.len();
-        for path in paths {
-            if !pending.contains(&path) {
-                pending.push(path);
-            }
-        }
-        if pending.len() > original_len {
+    if let Some(app_handle) = get_app_handle() {
+        if app_handle.emit("open-file", &paths).is_ok() {
             log::info!(
-                "[OpenFile] 前端就绪前已缓冲 {} 个路径",
-                pending.len() - original_len
+                "[OpenFile] 已向运行中的前端派发 {} 个路径",
+                paths.len()
             );
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            return;
+        }
+        log::warn!("[OpenFile] 前端事件派发失败，路径已退回缓冲队列");
+    } else {
+        log::warn!("[OpenFile] AppHandle 尚未就绪，路径已退回缓冲队列");
+    }
+
+    if let Ok(mut state) = OPEN_FILE_STATE.lock() {
+        let added = append_pending_open_files(&mut state.pending, paths);
+        if added > 0 {
+            log::info!("[OpenFile] 已重新缓冲 {} 个路径", added);
         }
     }
 }
 
 #[cfg(test)]
 mod open_file_tests {
-    use super::{collect_open_file_paths, is_supported_external_file};
+    use super::{append_pending_open_files, collect_open_file_paths, is_supported_external_file};
     use std::path::Path;
 
     #[test]
@@ -123,6 +160,41 @@ mod open_file_tests {
         let paths = collect_open_file_paths(["sample.md", "sample.pdf", "missing.md"], &directory);
         assert_eq!(paths, vec![markdown_path.to_string_lossy().into_owned()]);
 
+        std::fs::remove_dir_all(&directory).expect("清理临时目录失败");
+    }
+
+    #[test]
+    fn deduplicates_pending_open_file_paths() {
+        let mut pending = vec!["first.md".to_string()];
+        let added = append_pending_open_files(
+            &mut pending,
+            vec!["first.md".to_string(), "second.md".to_string()],
+        );
+
+        assert_eq!(added, 1);
+        assert_eq!(pending, vec!["first.md", "second.md"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn collects_supported_file_urls() {
+        use super::collect_open_file_urls;
+
+        let directory = std::env::temp_dir().join(format!("woo-open-url-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("创建临时目录失败");
+        let markdown_path = directory.join("带空格 sample.md");
+        let ignored_path = directory.join("sample.pdf");
+        std::fs::write(&markdown_path, "# sample").expect("写入 Markdown 样例失败");
+        std::fs::write(&ignored_path, "sample").expect("写入忽略样例失败");
+
+        let urls = [
+            tauri::Url::from_file_path(&markdown_path).expect("生成 Markdown file URL 失败"),
+            tauri::Url::from_file_path(&ignored_path).expect("生成 PDF file URL 失败"),
+            tauri::Url::parse("https://example.com/note.md").expect("生成网络 URL 失败"),
+        ];
+        let paths = collect_open_file_urls(urls);
+
+        assert_eq!(paths, vec![markdown_path.to_string_lossy().into_owned()]);
         std::fs::remove_dir_all(&directory).expect("清理临时目录失败");
     }
 }
@@ -226,70 +298,6 @@ fn resolve_macos_icon_path() -> Option<PathBuf> {
     None
 }
 
-/// macOS: 给 tao 的 AppDelegate 类动态添加 application:openFiles: 方法.
-/// Tauri/tao 默认只实现了 openURLs，拖拽到 Dock 图标和"打开方式"发给已运行
-/// 实例时走的是 kAEOpenDocuments → application:openFiles: 没有被处理。
-#[cfg(target_os = "macos")]
-fn patch_app_delegate_open_files() {
-    use objc2::runtime::{AnyClass, Sel, AnyObject};
-    use objc2_foundation::{NSArray, NSString};
-    use objc2::msg_send;
-
-    unsafe {
-        let Some(cls) = AnyClass::get(c"TaoAppDelegateParent") else {
-            log::warn!("[Odoc] TaoAppDelegateParent class not found");
-            return;
-        };
-
-        // Define the openFiles handler
-        unsafe extern "C-unwind" fn application_open_files(
-            _this: &AnyObject,
-            _sel: Sel,
-            _ns_app: &AnyObject,
-            files: &NSArray<NSString>,
-        ) {
-            let count = files.count();
-            log::info!("[Odoc] openFiles: called with {} file(s)", count);
-            let mut paths = Vec::with_capacity(count as usize);
-            for i in 0..count {
-                let s = files.objectAtIndex(i);
-                paths.push(s.to_string());
-            }
-            log::info!("[Odoc] paths: {:?}", paths);
-
-            dispatch_open_files(paths);
-        }
-
-        // Cast fn pointer to objc2 runtime's Imp type
-        let imp: unsafe extern "C-unwind" fn() = std::mem::transmute(
-            application_open_files
-                as unsafe extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSString>),
-        );
-
-        let sel = Sel::register(c"application:openFiles:");
-        let types = c"v@:@@";
-
-        let ok = objc2::ffi::class_addMethod(
-            cls as *const AnyClass as *mut AnyClass,
-            sel,
-            imp,
-            types.as_ptr(),
-        );
-
-        if ok.as_bool() {
-            log::info!("[Odoc] Successfully patched AppDelegate with application:openFiles:");
-        } else {
-            log::warn!("[Odoc] Failed to add application:openFiles: (may already exist)");
-        }
-
-        // Drain queued Apple Events
-        let Some(mtm) = objc2::MainThreadMarker::new() else { return };
-        let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
-        let _: () = msg_send![&ns_app, replyToOpenOrPrint: 0i32];
-        log::info!("[Odoc] Called replyToOpenOrPrint");
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logger();
@@ -323,7 +331,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 set_macos_dock_icon();
-                patch_app_delegate_open_files();
             }
 
             let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -497,14 +504,24 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event {
-                // macOS: 点击 Dock 图标时重新显示窗口
-                if let Some(window) = _app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+            match event {
+                tauri::RunEvent::Opened { urls } => {
+                    let paths = collect_open_file_urls(urls);
+                    if !paths.is_empty() {
+                        log::info!("[OpenFile] 收到 macOS Opened 事件: {:?}", paths);
+                        dispatch_open_files(paths);
+                    }
                 }
+                tauri::RunEvent::Reopen { .. } => {
+                    // macOS: 点击 Dock 图标时重新显示窗口
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                _ => {}
             }
         });
 }
