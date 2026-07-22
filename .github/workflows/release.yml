@@ -719,6 +719,9 @@ jobs:
           MAC_UPDATER_NAME="Woo_${VERSION}_${REVISION}_macos-arm64.app.tar.gz"
           MAC_UPDATER_SIG_NAME="${MAC_UPDATER_NAME}.sig"
           WINDOWS_SIG_NAME="${WINDOWS_NAME}.sig"
+          MAC_DOWNLOAD_NAME="Woo_macos-arm64.dmg"
+          ANDROID_DOWNLOAD_NAME="Woo_android-arm64-v8a.apk"
+          WINDOWS_DOWNLOAD_NAME="Woo_windows-x64-setup.exe"
           CHECKSUMS_NAME="Woo_${VERSION}_${REVISION}_SHA256SUMS.txt"
           LATEST_NAME="latest.json"
 
@@ -789,15 +792,21 @@ jobs:
             "$WINDOWS_INSTALLER" \
             "$WINDOWS_SIG" \
             release/
+          cp "$MAC_DMG" "release/$MAC_DOWNLOAD_NAME"
+          cp "$ANDROID_APK" "release/$ANDROID_DOWNLOAD_NAME"
+          cp "$WINDOWS_INSTALLER" "release/$WINDOWS_DOWNLOAD_NAME"
 
           MAC_NAME="$(basename "$MAC_DMG")"
           pushd release >/dev/null
           sha256sum \
             "$MAC_NAME" \
+            "$MAC_DOWNLOAD_NAME" \
             "$MAC_UPDATER_NAME" \
             "$MAC_UPDATER_SIG_NAME" \
             "$ANDROID_NAME" \
+            "$ANDROID_DOWNLOAD_NAME" \
             "$WINDOWS_NAME" \
+            "$WINDOWS_DOWNLOAD_NAME" \
             "$WINDOWS_SIG_NAME" \
             > "$CHECKSUMS_NAME"
           sha256sum --check "$CHECKSUMS_NAME"
@@ -832,6 +841,9 @@ jobs:
           echo "android_name=$ANDROID_NAME" >> "$GITHUB_OUTPUT"
           echo "windows_name=$WINDOWS_NAME" >> "$GITHUB_OUTPUT"
           echo "windows_sig_name=$WINDOWS_SIG_NAME" >> "$GITHUB_OUTPUT"
+          echo "mac_download_name=$MAC_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
+          echo "android_download_name=$ANDROID_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
+          echo "windows_download_name=$WINDOWS_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
           echo "checksums_name=$CHECKSUMS_NAME" >> "$GITHUB_OUTPUT"
           echo "latest_name=$LATEST_NAME" >> "$GITHUB_OUTPUT"
           ls -lh release/
@@ -849,6 +861,9 @@ jobs:
           ANDROID_NAME: ${{ steps.assets.outputs.android_name }}
           WINDOWS_NAME: ${{ steps.assets.outputs.windows_name }}
           WINDOWS_SIG_NAME: ${{ steps.assets.outputs.windows_sig_name }}
+          MAC_DOWNLOAD_NAME: ${{ steps.assets.outputs.mac_download_name }}
+          ANDROID_DOWNLOAD_NAME: ${{ steps.assets.outputs.android_download_name }}
+          WINDOWS_DOWNLOAD_NAME: ${{ steps.assets.outputs.windows_download_name }}
           CHECKSUMS_NAME: ${{ steps.assets.outputs.checksums_name }}
           LATEST_NAME: ${{ steps.assets.outputs.latest_name }}
         run: |
@@ -861,6 +876,9 @@ jobs:
             "release/$ANDROID_NAME"
             "release/$WINDOWS_NAME"
             "release/$WINDOWS_SIG_NAME"
+            "release/$MAC_DOWNLOAD_NAME"
+            "release/$ANDROID_DOWNLOAD_NAME"
+            "release/$WINDOWS_DOWNLOAD_NAME"
             "release/$CHECKSUMS_NAME"
             "release/$LATEST_NAME"
           )
@@ -912,6 +930,9 @@ jobs:
             "$ANDROID_NAME"
             "$WINDOWS_NAME"
             "$WINDOWS_SIG_NAME"
+            "$MAC_DOWNLOAD_NAME"
+            "$ANDROID_DOWNLOAD_NAME"
+            "$WINDOWS_DOWNLOAD_NAME"
             "$CHECKSUMS_NAME"
             "$LATEST_NAME"
           )

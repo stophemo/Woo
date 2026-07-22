@@ -19,9 +19,9 @@ on:
         default: false
         type: boolean
       prerelease:
-        description: "Mark as pre-release"
+        description: "Deprecated workflow always publishes as pre-release"
         required: false
-        default: false
+        default: true
         type: boolean
       notes:
         description: "Custom release notes (Markdown). If unset, auto-generates brief changelog link. When set by Claude, provides polished, user-facing notes."
@@ -81,10 +81,10 @@ jobs:
           }
 
           $draft = "false"
-          $prerelease = "false"
+          # Deprecated desktop releases must never replace the Tauri latest release.
+          $prerelease = "true"
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
-            if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
           }
 
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -181,10 +181,10 @@ jobs:
           }
 
           $draft = "false"
-          $prerelease = "false"
+          # Deprecated desktop releases must never replace the Tauri latest release.
+          $prerelease = "true"
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             if ("${{ inputs.draft }}" -eq "true") { $draft = "true" }
-            if ("${{ inputs.prerelease }}" -eq "true") { $prerelease = "true" }
           }
 
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
