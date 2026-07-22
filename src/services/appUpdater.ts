@@ -1,6 +1,9 @@
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 
+const UPDATE_CHECK_TIMEOUT_MS = 15_000
+const LOCAL_UPDATE_PROXY = 'http://127.0.0.1:7892'
+
 export interface AppUpdateInfo {
   currentVersion: string
   version: string
@@ -16,6 +19,12 @@ export interface AppUpdateProgress {
 
 let pendingUpdate: Update | null = null
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'string' && error.trim()) return error.trim()
+  return '未知错误'
+}
+
 export async function clearPendingAppUpdate(): Promise<void> {
   const update = pendingUpdate
   pendingUpdate = null
@@ -25,7 +34,22 @@ export async function clearPendingAppUpdate(): Promise<void> {
 export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
   await clearPendingAppUpdate()
 
-  const update = await check({ timeout: 15_000 })
+  let update: Update | null
+  try {
+    update = await check({
+      timeout: UPDATE_CHECK_TIMEOUT_MS,
+      proxy: LOCAL_UPDATE_PROXY,
+    })
+  } catch (proxyError: unknown) {
+    try {
+      update = await check({ timeout: UPDATE_CHECK_TIMEOUT_MS })
+    } catch (directError: unknown) {
+      throw new Error(
+        `无法连接更新服务器，已尝试本地代理 ${LOCAL_UPDATE_PROXY} 和直连。` +
+        `代理：${errorMessage(proxyError)}；直连：${errorMessage(directError)}`
+      )
+    }
+  }
   if (!update) return null
 
   pendingUpdate = update

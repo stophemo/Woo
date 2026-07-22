@@ -35,7 +35,7 @@
     <SettingsDialog
       :visible="showSettings"
       @close="showSettings = false"
-      @check-update="updateNotificationRef?.check()"
+      @check-update="handleManualUpdateCheck"
     />
 
     <!-- 登录/账户弹窗 -->
@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { nextTick, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import TopMenu from './components/layout/TopMenu.vue'
 import LeftSidebar from './components/layout/LeftSidebar.vue'
@@ -167,6 +167,12 @@ let topMenuOpenBeforeFullscreen = true
 function openSettings(mode: 'file' = 'file') {
   settingsMode.value = mode
   showSettings.value = true
+}
+
+async function handleManualUpdateCheck() {
+  showSettings.value = false
+  await nextTick()
+  await updateNotificationRef.value?.check(false)
 }
 
 function openLoginDialog() {
@@ -432,7 +438,7 @@ onMounted(async () => {
   await consumePendingOpenFiles()
 
   // 启动后静默检查；只有发现新版本时才展示通知。
-  autoUpdateTimer = setTimeout(() => updateNotificationRef.value?.check(true), 1500)
+  autoUpdateTimer = setTimeout(() => { void updateNotificationRef.value?.check(true) }, 1500)
 });
 
 // 组件卸载前移除键盘事件监听和菜单监听，防止内存泄漏
