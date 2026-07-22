@@ -36,6 +36,8 @@ base64 = "0.22"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+# The updater disables reqwest's default features, so opt back into OS proxy discovery.
+reqwest-updater = { package = "reqwest", version = "0.13", default-features = false, features = ["system-proxy"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
