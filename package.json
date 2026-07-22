@@ -1,7 +1,7 @@
 {
   "name": "woo-tauri",
   "private": true,
-  "version": "0.6.2",
+  "version": "0.6.3",
   "type": "module",
   "description": "无我笔记 - Tauri v2 重构版",
   "author": "stophemo",
