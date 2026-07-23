@@ -1,6 +1,6 @@
 [package]
 name = "woo-tauri"
-version = "0.6.3"
+version = "0.6.4"
 description = "Woo Notes - Tauri v2"
 authors = ["stophemo"]
 edition = "2021"
