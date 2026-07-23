@@ -17,8 +17,8 @@
     </div>
     <!-- 桌面端完整按钮组 -->
     <div v-show="!compact && !isMobile" class="menu-right">
-      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
-        <IconThemeToggle :mode="themeStore.theme" />
+      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeToggleTitle">
+        <IconThemeToggle :mode="themeIconMode" />
       </button>
       <button
         class="window-control-btn"
@@ -66,8 +66,8 @@
       <button class="window-control-btn" @click="$emit('toggle-document-drawer')" title="文稿列表">
         <IconThumbnailSidebar />
       </button>
-      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换到夜间模式' : '切换到日间模式'">
-        <IconThemeToggle :mode="themeStore.theme" />
+      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeToggleTitle">
+        <IconThemeToggle :mode="themeIconMode" />
       </button>
       <button class="window-control-btn" @click="$emit('open-settings')" title="设置">
         <IconSettings />
@@ -119,6 +119,13 @@ import {
 const themeStore = useThemeStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
+
+const themeIconMode = computed<'light' | 'dark'>(() => (
+  themeStore.isDarkTheme(themeStore.theme) ? 'dark' : 'light'
+))
+const themeToggleTitle = computed(() => (
+  themeStore.isDarkTheme(themeStore.theme) ? '切换到云白主题' : '切换到深夜主题'
+))
 
 import { isMac, shortcutDisplay } from '../../config/shortcutUtils'
 

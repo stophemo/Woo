@@ -204,15 +204,23 @@ async function beforePwdClose(action: string) {
 
     <!-- 外观 -->
     <van-cell-group inset title="外观">
-      <van-cell title="深色模式" center>
-        <template #right-icon>
-          <van-switch
-            :model-value="themeStore.theme === 'dark'"
-            size="20"
-            @update:model-value="(v: boolean) => (themeStore.theme = v ? 'dark' : 'light')"
-          />
-        </template>
-      </van-cell>
+      <div class="mobile-theme-grid" role="radiogroup" aria-label="选择主题">
+        <button
+          v-for="option in themeStore.themeOptions"
+          :key="option.id"
+          type="button"
+          class="mobile-theme-option"
+          :class="{ selected: themeStore.theme === option.id }"
+          role="radio"
+          :aria-checked="themeStore.theme === option.id"
+          @click="themeStore.theme = option.id"
+        >
+          <span class="mobile-theme-swatch" aria-hidden="true">
+            <span v-for="color in option.colors" :key="color" :style="{ backgroundColor: color }"></span>
+          </span>
+          <span>{{ option.label }}</span>
+        </button>
+      </div>
     </van-cell-group>
 
     <!-- 关于 -->
@@ -307,6 +315,40 @@ async function beforePwdClose(action: string) {
 <style scoped>
 .pending-tag {
   margin-left: 8px;
+}
+.mobile-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+.mobile-theme-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--van-border-color);
+  border-radius: 6px;
+  background: var(--van-background-2);
+  color: var(--van-text-color);
+  font-size: 13px;
+}
+.mobile-theme-option.selected {
+  border-color: var(--van-primary-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--van-primary-color) 18%, transparent);
+}
+.mobile-theme-swatch {
+  display: flex;
+  width: 32px;
+  height: 28px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--van-border-color);
+  border-radius: 4px;
+}
+.mobile-theme-swatch span {
+  flex: 1;
 }
 .login-sheet {
   padding: 8px 0 0;

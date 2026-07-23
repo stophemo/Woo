@@ -1,7 +1,27 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'ocean' | 'forest' | 'rose'
+
+export interface ThemeOption {
+  id: ThemeMode
+  label: string
+  description: string
+  isDark: boolean
+  colors: [string, string, string]
+}
+
+export const THEME_OPTIONS: ThemeOption[] = [
+  { id: 'light', label: '云白', description: '清爽的纸张质感', isDark: false, colors: ['#fbfcfc', '#eaf0f2', '#3d8aa8'] },
+  { id: 'dark', label: '深夜', description: '低亮度深色界面', isDark: true, colors: ['#282a2d', '#202224', '#7ab0e0'] },
+  { id: 'ocean', label: '海岸', description: '冷静的蓝绿色调', isDark: false, colors: ['#f8fcfc', '#e2eff1', '#248ca0'] },
+  { id: 'forest', label: '松林', description: '柔和的自然绿色', isDark: false, colors: ['#fbfdfb', '#e5eee5', '#4c9664'] },
+  { id: 'rose', label: '暮霞', description: '温暖的珊瑚粉色', isDark: false, colors: ['#fffafa', '#f3e8e6', '#c76b7b'] },
+]
+
+export function isDarkTheme(mode: ThemeMode): boolean {
+  return mode === 'dark'
+}
 
 function getSystemTheme(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -16,7 +36,7 @@ function hasUserPreference(): boolean {
 
 function loadSavedTheme(): ThemeMode | null {
   const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
-  return saved === 'dark' || saved === 'light' ? saved : null
+  return THEME_OPTIONS.some((option) => option.id === saved) ? saved : null
 }
 
 export const useThemeStore = defineStore('theme', () => {
@@ -32,7 +52,7 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
+    theme.value = isDarkTheme(theme.value) ? 'light' : 'dark'
   }
 
   // 监听系统主题变化（仅当用户未手动保存偏好时自动跟随）
@@ -60,6 +80,8 @@ export const useThemeStore = defineStore('theme', () => {
 
   return {
     theme,
-    toggleTheme
+    toggleTheme,
+    themeOptions: THEME_OPTIONS,
+    isDarkTheme
   }
 })

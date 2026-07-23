@@ -82,10 +82,22 @@ function isDarkMode(): boolean {
   return document.documentElement.getAttribute('data-theme') === 'dark'
 }
 
+function cssVar(name: string, fallback: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
+function themeColors() {
+  return {
+    text: cssVar('--editor-text-heading', isDarkMode() ? '#d5d0c8' : '#24353d'),
+    dim: cssVar('--text-muted', isDarkMode() ? '#6a6560' : '#8da0a7'),
+    background: cssVar('--editor-bg', isDarkMode() ? '#2a2926' : '#fbfcfc'),
+  }
+}
+
 function pickColor(node: INode): string {
   const dark = isDarkMode()
   const depth = node.state.depth
-  if (depth === 0) return dark ? '#d5d0c8' : '#37342f'
+  if (depth === 0) return themeColors().text
   const palette = dark ? darkPalette : lightPalette
   let hash = 0
   for (const ch of node.content) hash = ((hash << 5) - hash) + ch.charCodeAt(0)
@@ -95,13 +107,11 @@ function pickColor(node: INode): string {
 
 /** markmap 的 style 选项：注入 CSS 到 SVG 内，确保文字和线条随主题变化 */
 function themeStyle(id: string): string {
-  const dark = isDarkMode()
-  const textClr = dark ? '#d5d0c8' : '#37342f'
-  const dim = dark ? '#6a6560' : '#9a9690'
+  const colors = themeColors()
   return `
-#${id} { background: ${dark ? '#2a2926' : '#f0ede9'} !important; }
-#${id} .markmap-node { color: ${textClr} !important; fill: ${textClr} !important; }
-#${id} .markmap-link { stroke: ${dim} !important; }
+#${id} { background: ${colors.background} !important; }
+#${id} .markmap-node { color: ${colors.text} !important; fill: ${colors.text} !important; }
+#${id} .markmap-link { stroke: ${colors.dim} !important; }
 `
 }
 
@@ -157,15 +167,13 @@ async function render() {
 
 function applyThemeToSvg() {
   if (!svgRef.value) return
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-  const textColor = isDark ? '#d5d0c8' : '#37342f'
-  const dimColor = isDark ? '#6a6560' : '#9a9690'
+  const colors = themeColors()
   // 遍历 SVG 中所有 text 元素，强制设置 fill
   const texts = svgRef.value.querySelectorAll<SVGTextElement>('text')
-  for (const t of texts) t.setAttribute('fill', textColor)
+  for (const t of texts) t.setAttribute('fill', colors.text)
   // 遍历所有 link 线条
   const links = svgRef.value.querySelectorAll<SVGPathElement>('.markmap-link')
-  for (const l of links) l.setAttribute('stroke', dimColor)
+  for (const l of links) l.setAttribute('stroke', colors.dim)
 }
 
 onMounted(() => {
@@ -201,12 +209,13 @@ async function exportImage() {
     }
 
     // ── 3. 替换 foreignObject 为 text ──
+    const exportTextColor = cssVar('--editor-text-heading', '#24353d')
     svgData = svgData.replace(
       /<foreignObject([^>]*)>[\s\S]*?<div[^>]*>(.*?)<\/div>[\s\S]*?<\/foreignObject>/gi,
       (_m: string, attrs: string, text: string) => {
         const xm = attrs.match(/x="([^"]*)"/)
         const ym = attrs.match(/y="([^"]*)"/)
-        return `<text x="${xm?.[1] || '0'}" y="${String(Number(ym?.[1] || 0) + 14)}" fill="#37342f" font-family="-apple-system, sans-serif" font-size="14px" dominant-baseline="middle">${text.replace(/<[^>]*>/g, '').trim() || '(空)'}</text>`
+        return `<text x="${xm?.[1] || '0'}" y="${String(Number(ym?.[1] || 0) + 14)}" fill="${exportTextColor}" font-family="-apple-system, sans-serif" font-size="14px" dominant-baseline="middle">${text.replace(/<[^>]*>/g, '').trim() || '(空)'}</text>`
       }
     )
 

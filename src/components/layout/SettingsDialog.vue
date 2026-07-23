@@ -9,6 +9,30 @@
           </button>
         </div>
         <div class="settings-body">
+          <div class="settings-section appearance-section">
+            <h3>外观</h3>
+            <div class="theme-grid" role="radiogroup" aria-label="选择主题">
+              <button
+                v-for="option in themeStore.themeOptions"
+                :key="option.id"
+                type="button"
+                class="theme-option"
+                :class="{ selected: themeStore.theme === option.id }"
+                role="radio"
+                :aria-checked="themeStore.theme === option.id"
+                @click="themeStore.theme = option.id"
+              >
+                <span class="theme-swatch" aria-hidden="true">
+                  <span v-for="color in option.colors" :key="color" :style="{ backgroundColor: color }"></span>
+                </span>
+                <span class="theme-option-copy">
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.description }}</small>
+                </span>
+                <span v-if="themeStore.theme === option.id" class="theme-selected-mark" aria-hidden="true">✓</span>
+              </button>
+            </div>
+          </div>
           <div class="settings-section">
             <h3>静态资源链接</h3>
             <div class="settings-field">
@@ -45,41 +69,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { getVersion } from '@tauri-apps/api/app'
+import { ref } from 'vue'
 import IconClose from '../icons/IconClose.vue'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
+import { useThemeStore } from '../../stores/theme'
 
 interface Props {
   visible: boolean
+  appVersion: string
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 const emit = defineEmits<{ close: []; 'check-update': [] }>()
+const themeStore = useThemeStore()
 
 /* ========== 资产链接配置状态 ========== */
 const assetProviderInput = ref('custom')
 const assetBaseUrlInput = ref('')
 const assetPathPrefixInput = ref('')
-const appVersion = ref('')
-
-async function loadAppVersion() {
-  try {
-    appVersion.value = await getVersion()
-  } catch {
-    appVersion.value = '未知'
-  }
+function loadSettings() {
+  const asset = getAssetLinkSettings()
+  assetProviderInput.value = asset.provider
+  assetBaseUrlInput.value = asset.baseUrl
+  assetPathPrefixInput.value = asset.pathPrefix
 }
 
-watch(() => props.visible, (val) => {
-  if (val) {
-    const asset = getAssetLinkSettings()
-    assetProviderInput.value = asset.provider
-    assetBaseUrlInput.value = asset.baseUrl
-    assetPathPrefixInput.value = asset.pathPrefix
-    void loadAppVersion()
-  }
-})
+loadSettings()
 
 function handleSave() {
   saveAssetLinkSettings({
@@ -101,6 +116,16 @@ function handleSave() {
 .settings-body { padding: 20px; }
 .settings-section { margin-bottom: 18px; }
 .settings-section h3 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 12px 0; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.theme-option { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-elevated); color: var(--text-primary); text-align: left; cursor: pointer; transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s; }
+.theme-option:hover { background: var(--bg-hover); }
+.theme-option.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.theme-swatch { display: flex; width: 34px; height: 34px; flex-shrink: 0; overflow: hidden; border: 1px solid var(--border-primary); border-radius: 5px; }
+.theme-swatch span { flex: 1; }
+.theme-option-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.theme-option-copy strong { font-size: 13px; font-weight: 600; }
+.theme-option-copy small { overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.theme-selected-mark { position: absolute; top: 6px; right: 8px; color: var(--accent); font-size: 14px; font-weight: 700; }
 .settings-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .settings-field label { font-size: 13px; color: var(--text-secondary); }
 .settings-input { flex: 1; padding: 8px 12px; border: 1px solid var(--border-primary); border-radius: 4px; font-size: 13px; background-color: var(--bg-elevated); color: var(--text-primary); outline: none; transition: border-color 0.2s; }
@@ -133,5 +158,6 @@ function handleSave() {
     border-right: none;
     border-bottom: none;
   }
+  .theme-grid { grid-template-columns: 1fr; }
 }
 </style>

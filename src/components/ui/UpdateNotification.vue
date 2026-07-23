@@ -21,8 +21,9 @@
             <div class="update-title">发现新版本 v{{ updateVersion }}</div>
             <div class="update-desc">当前 v{{ currentVersion }}，更新完成后将自动重启</div>
           </div>
+          <button class="update-btn ignore" @click="ignoreUpdate">忽略此版本</button>
           <button class="update-btn primary" @click="installUpdate">立即更新</button>
-          <button class="update-close" aria-label="关闭更新提示" title="关闭" @click="dismiss">&#x2715;</button>
+          <button class="update-close" aria-label="稍后提醒" title="稍后提醒" @click="dismiss">&#x2715;</button>
         </template>
 
         <!-- 下载中 -->
@@ -95,6 +96,7 @@ const currentVersion = ref('')
 const downloadPercent = ref(0)
 const errorTitle = ref('检查更新失败')
 const errorMessage = ref('')
+const IGNORED_VERSION_KEY = 'woo-ignored-update-version'
 
 let autoDismissTimer: ReturnType<typeof setTimeout> | null = null
 let checkPromise: Promise<void> | null = null
@@ -112,10 +114,27 @@ function dismiss() {
   void clearPendingAppUpdate()
 }
 
+function ignoreUpdate() {
+  if (updateVersion.value) {
+    localStorage.setItem(IGNORED_VERSION_KEY, updateVersion.value)
+  }
+  dismiss()
+}
+
 async function runCheck() {
   try {
     const update = await checkForAppUpdate()
     if (update) {
+      const ignoredVersion = localStorage.getItem(IGNORED_VERSION_KEY)
+      if (!manualCheckRequested && ignoredVersion === update.version) {
+        state.value = 'idle'
+        visible.value = false
+        await clearPendingAppUpdate()
+        return
+      }
+      if (ignoredVersion && ignoredVersion !== update.version) {
+        localStorage.removeItem(IGNORED_VERSION_KEY)
+      }
       updateVersion.value = update.version
       currentVersion.value = update.currentVersion
       state.value = 'available'
@@ -222,6 +241,10 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(8px);
 }
 
+.update-notification.available {
+  width: min(480px, calc(100vw - 32px));
+}
+
 .update-icon {
   font-size: 18px;
   width: 28px;
@@ -299,6 +322,16 @@ onBeforeUnmount(() => {
   background: var(--accent-light, rgba(90, 154, 207, 0.12));
 }
 
+.update-btn.ignore {
+  border-color: transparent;
+  color: var(--text-secondary, #68645e);
+}
+
+.update-btn.ignore:hover {
+  background: var(--bg-hover, #e6e3de);
+  color: var(--text-primary, #37342f);
+}
+
 .update-btn.primary {
   color: #ffffff;
   background: var(--accent, #5a9acf);
@@ -346,5 +379,19 @@ onBeforeUnmount(() => {
 .update-slide-leave-to {
   opacity: 0;
   transform: translateY(20px);
+}
+
+@media (max-width: 520px) {
+  .update-notification.available {
+    flex-wrap: wrap;
+  }
+
+  .update-notification.available .update-info {
+    flex: 1 1 calc(100% - 48px);
+  }
+
+  .update-notification.available .update-btn {
+    flex: 1 1 auto;
+  }
 }
 </style>

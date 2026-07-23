@@ -88,6 +88,7 @@
         <span class="word-count">{{ wordCount }} words</span>
         <span>{{ lineCount }} lines</span>
         <span>{{ zoomPercent }}%</span>
+        <span class="app-version" title="当前应用版本">Woo v{{ appVersion }}</span>
       </div>
     </div>
 
@@ -168,8 +169,8 @@ const externalFilePath = computed(() => {
 })
 const TRASH_FOLDER_ID = '__trash__'
 
-interface Props { isStatusBarOpen?: boolean }
-withDefaults(defineProps<Props>(), { isStatusBarOpen: true })
+interface Props { isStatusBarOpen?: boolean; appVersion?: string }
+withDefaults(defineProps<Props>(), { isStatusBarOpen: true, appVersion: __APP_VERSION__ })
 
 const emit = defineEmits<{
   (e: 'active-heading-change', headingIndex: number | null): void
@@ -1100,6 +1101,7 @@ const menuActionHandler = (e: Event) => {
 .editor-statusbar { height: 28px; background-color: var(--bg-toolbar); border-top: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 12px; color: var(--text-muted); flex-shrink: 0; overflow: hidden; transition: var(--theme-transition), height 0.25s ease, padding 0.25s ease, border-top-color 0.25s ease, opacity 0.2s ease, transform 0.25s ease; transform-origin: bottom; }
 .editor-statusbar.collapsed { height: 0; padding-top: 0; padding-bottom: 0; border-top-color: transparent; transform: translateY(100%); opacity: 0; pointer-events: none; }
 .statusbar-left, .statusbar-right { display: flex; gap: 12px; align-items: center; }
+.app-version { padding-left: 12px; border-left: 1px solid var(--border-secondary); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .current-block { color: var(--text-secondary); padding: 1px 6px; background-color: var(--editor-mark-bg); border-radius: 3px; font-size: 11px; }
 .editor-body::-webkit-scrollbar { width: 6px; }
 .editor-body::-webkit-scrollbar-track { background: var(--editor-bg); }

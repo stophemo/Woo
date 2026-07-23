@@ -24,7 +24,12 @@
       <ThumbnailColumn v-if="!isMobile" :is-open="thumbnailSidebarOpen" :active-heading="editorActiveHeading" />
       
       <!-- 中央编辑区域 -->
-      <EditArea ref="editAreaRef" :is-status-bar-open="statusBarOpen" @active-heading-change="handleActiveHeadingChange" />
+      <EditArea
+        ref="editAreaRef"
+        :is-status-bar-open="statusBarOpen"
+        :app-version="appVersion"
+        @active-heading-change="handleActiveHeadingChange"
+      />
       
     </div>
 
@@ -34,6 +39,7 @@
     <!-- 设置弹窗 -->
     <SettingsDialog
       :visible="showSettings"
+      :app-version="appVersion"
       @close="showSettings = false"
       @check-update="handleManualUpdateCheck"
     />
@@ -77,6 +83,7 @@ import { isModKey } from './config/shortcutUtils'
 import { useLockStore } from './stores/lock'
 import { log } from './services/logger'
 import { listen } from '@tauri-apps/api/event'
+import { getVersion } from '@tauri-apps/api/app'
 import { popPendingOpenFiles } from './services/externalFileApi'
 
 // 初始化主题（确保 data-theme 属性在应用启动时就被设置到 <html>）
@@ -85,6 +92,7 @@ useThemeStore()
 const workspaceStore = useWorkspaceStore()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
+const appVersion = ref(__APP_VERSION__)
 
 const updateNotificationRef = ref<ComponentPublicInstance & { check: (silent?: boolean) => Promise<void> } | null>(null)
 const editAreaRef = ref<ComponentPublicInstance | null>(null)
@@ -412,6 +420,11 @@ async function consumePendingOpenFiles() {
 }
 
 onMounted(async () => {
+  try {
+    appVersion.value = await getVersion()
+  } catch {
+    // 浏览器预览环境没有 Tauri API，使用构建时版本号。
+  }
   updateIsMobile()
   // 根据初始屏幕尺寸设置侧边栏默认状态
   leftSidebarOpen.value = !isMobile.value
