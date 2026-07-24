@@ -3,7 +3,6 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { listen } from '@tauri-apps/api/event'
-import { getVersion } from '@tauri-apps/api/app'
 import { useAuthStore } from '../src/stores/auth'
 import { useSyncStore } from '../src/stores/sync'
 import { useWorkspaceStore } from '../src/stores/workspace'
@@ -18,7 +17,6 @@ const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
 const themeStore = useThemeStore()
-const appVersion = ref(__APP_VERSION__)
 
 const vantTheme = computed<'light' | 'dark'>(() => (
   themeStore.isDarkTheme(themeStore.theme) ? 'dark' : 'light'
@@ -37,6 +35,7 @@ const mobileThemeVars = computed(() => {
 
 const TAB_ROUTES = ['/', '/drafts', '/settings']
 const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(route.path) : 0)
+const showTabbar = computed(() => TAB_ROUTES.includes(route.path))
 
 watch(() => route.path, (path) => {
   const idx = TAB_ROUTES.indexOf(path)
@@ -48,11 +47,6 @@ function onTabChange(index: number) {
 }
 
 onMounted(async () => {
-  try {
-    appVersion.value = await getVersion()
-  } catch {
-    // 浏览器预览环境没有 Tauri API，使用构建时版本号。
-  }
   // Tauri 后端事件 → DOM CustomEvent 桥（移动端此前缺失，导致同步状态永不刷新）。
   // 仅搬事件桥三段，不整体调用桌面 setupTauriBridge（其耦合窗口控制/electronAPI，移动端不需要）。
   try {
@@ -105,12 +99,11 @@ onMounted(async () => {
 <template>
   <van-config-provider :theme="vantTheme" :theme-vars="mobileThemeVars">
     <div class="mobile-app">
-      <div class="page-content">
+      <div class="page-content" :class="{ 'has-tabbar': showTabbar }">
         <router-view />
       </div>
       <MobileUpdateNotice />
-      <div class="mobile-version-strip" title="当前应用版本">Woo v{{ appVersion }}</div>
-      <van-tabbar v-model="active" @change="onTabChange" safe-area-inset-bottom>
+      <van-tabbar v-if="showTabbar" v-model="active" @change="onTabChange" safe-area-inset-bottom>
         <van-tabbar-item icon="notes-o">笔记</van-tabbar-item>
         <van-tabbar-item icon="edit-o">草稿</van-tabbar-item>
         <van-tabbar-item icon="setting-o">设置</van-tabbar-item>
@@ -132,22 +125,10 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 .page-content {
-  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-.mobile-version-strip {
-  position: fixed;
-  right: 0;
-  bottom: calc(50px + env(safe-area-inset-bottom, 0px));
-  left: 0;
-  z-index: 99;
-  height: 18px;
-  border-top: 1px solid var(--van-border-color);
-  background: var(--van-background-2);
-  color: var(--van-text-color-2);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 18px;
-  text-align: center;
+.page-content.has-tabbar {
+  padding-bottom: calc(50px + env(safe-area-inset-bottom, 0px));
 }
 /* 暗色主题：覆盖自定义背景（Vant 组件由 van-config-provider 处理） */
 html[data-theme='dark'] body {

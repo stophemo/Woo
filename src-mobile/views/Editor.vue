@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showToast, showConfirmDialog } from 'vant'
+import { showToast, showConfirmDialog, type FieldInstance } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
 
@@ -16,6 +16,7 @@ const saving = ref(false)
 const editing = ref(false)
 const editText = ref('')
 const editOriginal = ref('')
+const editField = ref<FieldInstance>()
 
 // 统一从 store 读取当前文档（草稿走 localStorage，正式文档走后端）
 const doc = computed(() => store.currentDocument)
@@ -102,24 +103,25 @@ onMounted(async () => {
 })
 
 async function startEdit() {
-  editing.value = true
   const html = content.value
   if (!html) {
     editText.value = ''
-    editOriginal.value = ''
-    return
-  }
-  // 将存储的 HTML 转成 Markdown 供编辑（方案 B：编辑 Markdown，存 HTML）
-  try {
-    const { default: TurndownService } = await import('turndown')
-    const { gfm } = await import('turndown-plugin-gfm')
-    const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
-    td.use(gfm)
-    editText.value = td.turndown(html)
-  } catch {
-    editText.value = html // 回退：直接编辑原文
+  } else {
+    // 将存储的 HTML 转成 Markdown 供编辑（方案 B：编辑 Markdown，存 HTML）
+    try {
+      const { default: TurndownService } = await import('turndown')
+      const { gfm } = await import('turndown-plugin-gfm')
+      const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+      td.use(gfm)
+      editText.value = td.turndown(html)
+    } catch {
+      editText.value = html // 回退：直接编辑原文
+    }
   }
   editOriginal.value = editText.value
+  editing.value = true
+  await nextTick()
+  editField.value?.focus()
 }
 
 function cancelEdit() {
@@ -221,6 +223,7 @@ function goBack() {
     <!-- 编辑模式（过渡：Markdown/HTML 源码，富文本为子项目 6） -->
     <template v-else>
       <van-field
+        ref="editField"
         v-model="editText"
         type="textarea"
         autosize
@@ -298,7 +301,8 @@ function goBack() {
 .edit-btn {
   position: fixed;
   right: 16px;
-  bottom: 24px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 2;
 }
 .edit-textarea {
   min-height: 200px;
