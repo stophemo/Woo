@@ -44,6 +44,8 @@ Thumbs.db
 .deepseek/
 .opencode/
 .claude/
+/AGENTS.md
+/CLAUDE.md
 
 # 代码签名与发布凭据（机密）
 .signing/
