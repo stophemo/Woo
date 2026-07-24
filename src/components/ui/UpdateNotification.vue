@@ -18,8 +18,8 @@
         <template v-else-if="state === 'available'">
           <div class="update-icon" aria-hidden="true">&#x2b06;</div>
           <div class="update-info">
-            <div class="update-title">发现新版本 v{{ updateVersion }}</div>
-            <div class="update-desc">当前 v{{ currentVersion }}，更新完成后将自动重启</div>
+            <div class="update-title">新版本 v{{ updateVersion }} 可用</div>
+            <div class="update-desc">当前 v{{ currentVersion }} · 可随时更新</div>
           </div>
           <button class="update-btn ignore" @click="ignoreUpdate">忽略此版本</button>
           <button class="update-btn primary" @click="installUpdate">立即更新</button>
@@ -111,6 +111,7 @@ function describeError(error: unknown, fallback: string): string {
 function dismiss() {
   if (autoDismissTimer) clearTimeout(autoDismissTimer)
   visible.value = false
+  state.value = 'idle'
   void clearPendingAppUpdate()
 }
 
@@ -143,7 +144,10 @@ async function runCheck() {
       state.value = 'up-to-date'
       if (manualCheckRequested) {
         visible.value = true
-        autoDismissTimer = setTimeout(() => { visible.value = false }, 2000)
+        autoDismissTimer = setTimeout(() => {
+          visible.value = false
+          state.value = 'idle'
+        }, 4000)
       } else {
         visible.value = false
       }
@@ -160,6 +164,10 @@ async function runCheck() {
     errorMessage.value = message
     state.value = 'error'
     visible.value = true
+    autoDismissTimer = setTimeout(() => {
+      visible.value = false
+      state.value = 'idle'
+    }, 10_000)
   }
 }
 
@@ -224,31 +232,33 @@ onBeforeUnmount(() => {
 <style scoped>
 .update-notification {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: 38px;
+  right: 14px;
   z-index: 10000;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 9px 11px;
   background: var(--bg-elevated, #ffffff);
   border: 1px solid var(--border-primary, #d8d4cd);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: var(--shadow-dropdown, 0 4px 12px rgba(0, 0, 0, 0.1));
   font-size: 13px;
-  width: min(360px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 28px));
   max-width: calc(100vw - 32px);
   backdrop-filter: blur(8px);
 }
 
 .update-notification.available {
-  width: min(480px, calc(100vw - 32px));
+  width: auto;
+  min-width: min(390px, calc(100vw - 28px));
+  max-width: min(430px, calc(100vw - 28px));
 }
 
 .update-icon {
-  font-size: 18px;
-  width: 28px;
-  height: 28px;
+  font-size: 15px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,7 +316,7 @@ onBeforeUnmount(() => {
 }
 
 .update-btn {
-  padding: 6px 14px;
+  padding: 5px 9px;
   border: 1px solid var(--accent, #5a9acf);
   background: transparent;
   color: var(--accent, #5a9acf);
@@ -383,6 +393,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 520px) {
   .update-notification.available {
+    min-width: 0;
     flex-wrap: wrap;
   }
 

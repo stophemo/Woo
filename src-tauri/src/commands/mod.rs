@@ -5,6 +5,7 @@ pub mod folder;
 pub mod lock;
 pub mod sync;
 pub mod system;
+pub mod update;
 pub mod version;
 
 use serde::Serialize;

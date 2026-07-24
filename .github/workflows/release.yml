@@ -822,12 +822,14 @@ jobs:
             --arg pubDate "$PUB_DATE" \
             --arg macUrl "$RELEASE_BASE_URL/$MAC_UPDATER_NAME" \
             --arg macSignature "$MAC_SIGNATURE" \
+            --arg androidUrl "$RELEASE_BASE_URL/$ANDROID_DOWNLOAD_NAME" \
             --arg windowsUrl "$RELEASE_BASE_URL/$WINDOWS_NAME" \
             --arg windowsSignature "$WINDOWS_SIGNATURE" \
             '{
               version: $version,
               notes: $notes,
               pub_date: $pubDate,
+              android: { url: $androidUrl },
               platforms: {
                 "darwin-aarch64": { url: $macUrl, signature: $macSignature },
                 "windows-x86_64": { url: $windowsUrl, signature: $windowsSignature }

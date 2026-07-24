@@ -221,6 +221,7 @@ const emit = defineEmits<{
   'toggle-top-menu': []
   'toggle-status-bar': []
   'open-login': []
+  'menu-action': [action: string]
 }>()
 
 const syncTitle = computed(() => {
@@ -326,6 +327,10 @@ const handleMenuAction = (action: string) => {
     window.dispatchEvent(new CustomEvent('woo-editor-command', { detail: { command: action } }))
     return
   }
+
+  // 应用级动作由 App.vue 统一处理。此前这里没有继续转发，导致“查看”菜单、
+  // “检查更新”等项目点击后只关闭菜单，没有任何实际响应。
+  emit('menu-action', action)
 }
 </script>
 

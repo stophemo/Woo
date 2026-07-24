@@ -441,6 +441,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // System
             commands::app_get_version,
+            commands::update::app_check_mobile_update,
             commands::greet,
             // Folder
             commands::folder::folder_tree,

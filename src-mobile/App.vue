@@ -9,6 +9,7 @@ import { useSyncStore } from '../src/stores/sync'
 import { useWorkspaceStore } from '../src/stores/workspace'
 import { useLockStore } from '../src/stores/lock'
 import { useThemeStore } from '../src/stores/theme'
+import MobileUpdateNotice from './components/MobileUpdateNotice.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -107,6 +108,7 @@ onMounted(async () => {
       <div class="page-content">
         <router-view />
       </div>
+      <MobileUpdateNotice />
       <div class="mobile-version-strip" title="当前应用版本">Woo v{{ appVersion }}</div>
       <van-tabbar v-model="active" @change="onTabChange" safe-area-inset-bottom>
         <van-tabbar-item icon="notes-o">笔记</van-tabbar-item>

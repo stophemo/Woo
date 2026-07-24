@@ -1,7 +1,11 @@
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 
-const UPDATE_CHECK_TIMEOUT_MS = 15_000
+// GitHub release downloads may take a while to finish their redirect chain on
+// slower networks. Keep the manual check visibly pending instead of failing
+// before the manifest has had a fair chance to arrive.
+const UPDATE_CHECK_TIMEOUT_MS = 45_000
+const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000
 
 export interface AppUpdateInfo {
   currentVersion: string
@@ -61,7 +65,7 @@ export async function installPendingAppUpdate(
   }
 
   const update = pendingUpdate
-  await update.downloadAndInstall(handleDownloadEvent, { timeout: 120_000 })
+  await update.downloadAndInstall(handleDownloadEvent, { timeout: UPDATE_DOWNLOAD_TIMEOUT_MS })
   pendingUpdate = null
 }
 

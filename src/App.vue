@@ -13,6 +13,7 @@
       @toggle-top-menu="toggleTopMenu"
       @toggle-status-bar="toggleStatusBar"
       @open-login="openLoginDialog"
+      @menu-action="handleMenuAction"
     />
     
     <!-- 主内容区域 -->
@@ -135,8 +136,12 @@ function handleMenuAction(action: string) {
     case 'toggle-thumbnail':
       toggleThumbnailSidebar()
       break
+    case 'appearance':
     case 'theme':
-      useThemeStore().toggleTheme()
+      openSettings('file')
+      break
+    case 'language':
+      showToast('当前版本使用简体中文')
       break
     case 'check-update':
       updateNotificationRef.value?.check()

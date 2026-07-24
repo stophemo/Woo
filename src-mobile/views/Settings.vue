@@ -119,6 +119,11 @@ async function onSyncNow() {
   showToast(ok ? '同步完成' : (syncStore.errorMsg || '同步失败'))
 }
 
+function onCheckUpdate() {
+  showToast('正在检查更新…')
+  window.dispatchEvent(new CustomEvent('woo:mobile-check-update'))
+}
+
 // ------- 密码锁 -------
 const showPwdDialog = ref(false)
 const pwd = reactive({ value: '', confirm: '' })
@@ -226,6 +231,7 @@ async function beforePwdClose(action: string) {
     <!-- 关于 -->
     <van-cell-group inset title="关于">
       <van-cell title="版本" :value="`v${appVersion}`" />
+      <van-cell title="检查更新" is-link label="发现新版本时会在右下角轻量提示" @click="onCheckUpdate" />
       <van-cell title="项目主页" value="GitHub" is-link @click="showToast('打开链接')" />
     </van-cell-group>
 

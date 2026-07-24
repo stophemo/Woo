@@ -5807,7 +5807,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woo-tauri"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "base64 0.22.1",
  "bcrypt",
@@ -5823,6 +5823,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.4",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
