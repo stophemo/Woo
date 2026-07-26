@@ -1,389 +1,441 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>无我笔记 Woo — 云端同步的 Markdown 笔记应用</title>
-  <meta name="description" content="Woo（无我笔记）是一款支持云端同步、跨平台的 Markdown 笔记应用。所见即所得编辑、多设备实时同步、AI 辅助写作，随时随地开始写作。">
-  <style>
-    /* ========== Reset & Base ========== */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Helvetica Neue", sans-serif;
-      color: #37342f;
-      background: #fdfcfa;
-      line-height: 1.7;
-      -webkit-font-smoothing: antialiased;
-    }
-    a { color: inherit; text-decoration: none; }
-    img { max-width: 100%; display: block; }
-
-    /* ========== Nav ========== */
-    nav {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-      background: rgba(31, 33, 64, 0.92);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      padding: 0 24px; height: 56px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .nav-brand {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 18px; font-weight: 700; color: #fff;
-    }
-    .nav-brand svg { width: 32px; height: 32px; }
-    .nav-links { display: flex; gap: 32px; }
-    .nav-links a { color: rgba(255,255,255,0.72); font-size: 14px; transition: color 0.2s; }
-    .nav-links a:hover { color: #fff; }
-
-    /* ========== Hero ========== */
-    .hero {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(160deg, #1f2140 0%, #2d3250 40%, #121227 100%);
-      text-align: center; padding: 120px 24px 80px; position: relative; overflow: hidden;
-    }
-    .hero::before {
-      content: ""; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-      background: radial-gradient(circle at 30% 40%, rgba(90,154,207,0.12) 0%, transparent 50%),
-                  radial-gradient(circle at 70% 60%, rgba(255,255,255,0.04) 0%, transparent 50%);
-      animation: heroFloat 20s ease-in-out infinite;
-    }
-    @keyframes heroFloat {
-      0%, 100% { transform: translate(0, 0); }
-      33% { transform: translate(20px, -20px); }
-      66% { transform: translate(-10px, 10px); }
-    }
-    .hero-content { position: relative; z-index: 1; max-width: 680px; }
-    .hero-logo { width: 96px; height: 96px; margin: 0 auto 24px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); }
-    .release-badge {
-      display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
-      margin-bottom: 18px; padding: 5px 12px; border: 1px solid rgba(255,255,255,0.16);
-      border-radius: 999px; background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.72); font-size: 13px; font-weight: 500;
-      transition: color 0.2s, background 0.2s, border-color 0.2s;
-    }
-    .release-badge:hover {
-      color: #fff; background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.26);
-    }
-    .release-badge strong { color: #fff; font-weight: 700; }
-    .release-badge .release-dot { width: 7px; height: 7px; border-radius: 50%; background: #62c987; }
-    .release-badge svg { width: 14px; height: 14px; }
-    .hero h1 {
-      font-size: clamp(36px, 6vw, 56px); font-weight: 800; color: #fff;
-      letter-spacing: -0.02em; margin-bottom: 16px;
-    }
-    .hero h1 span { color: #5a9acf; }
-    .hero .tagline {
-      font-size: 18px; color: rgba(255,255,255,0.64); margin-bottom: 48px; line-height: 1.6;
-    }
-    .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600;
-      transition: all 0.2s; cursor: pointer; border: none;
-    }
-    .btn-primary { background: #5a9acf; color: #fff; }
-    .btn-primary:hover { background: #4889be; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(90,154,207,0.4); }
-    .btn-outline { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.16); }
-    .btn-outline:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.28); }
-    .btn svg { width: 20px; height: 20px; flex-shrink: 0; }
-
-    /* ========== Sections ========== */
-    section { padding: 100px 24px; }
-    .section-head { text-align: center; margin-bottom: 64px; }
-    .section-head h2 { font-size: 32px; font-weight: 700; color: #1f1d1a; margin-bottom: 12px; }
-    .section-head p { font-size: 16px; color: #9a9690; max-width: 500px; margin: 0 auto; }
-    .container { max-width: 1080px; margin: 0 auto; }
-
-    /* ========== Features ========== */
-    .features { background: #f5f3f0; }
-    .feature-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;
-    }
-    .feature-card {
-      background: #fff; border-radius: 16px; padding: 32px;
-      border: 1px solid #e4e0da; transition: box-shadow 0.2s, transform 0.2s;
-    }
-    .feature-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); transform: translateY(-2px); }
-    .feature-icon {
-      width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-      margin-bottom: 20px; font-size: 24px;
-    }
-    .feature-icon.blue { background: rgba(90,154,207,0.12); color: #5a9acf; }
-    .feature-icon.green { background: rgba(76,175,80,0.12); color: #4caf50; }
-    .feature-icon.purple { background: rgba(156,39,176,0.12); color: #9c27b0; }
-    .feature-icon.orange { background: rgba(255,152,0,0.12); color: #ff9800; }
-    .feature-icon.teal { background: rgba(0,150,136,0.12); color: #009688; }
-    .feature-icon.red { background: rgba(244,67,54,0.12); color: #f44336; }
-    .feature-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; color: #1f1d1a; }
-    .feature-card p { font-size: 14px; color: #68645e; line-height: 1.7; }
-
-    /* ========== Download ========== */
-    .download-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px;
-    }
-    .download-card {
-      background: #fff; border: 1px solid #e4e0da; border-radius: 16px; padding: 32px; text-align: center;
-      transition: box-shadow 0.2s, transform 0.2s;
-    }
-    .download-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); transform: translateY(-2px); }
-    .download-card .platform-icon { font-size: 40px; margin-bottom: 16px; }
-    .download-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
-    .download-card .version { font-size: 13px; color: #9a9690; margin-bottom: 16px; }
-    .download-card .arch { font-size: 12px; color: #b8b4ae; margin-bottom: 20px; }
-    .download-card .btn { width: 100%; justify-content: center; }
-
-    /* ========== Footer ========== */
-    footer {
-      background: #1f2140; color: rgba(255,255,255,0.6); text-align: center; padding: 48px 24px;
-      font-size: 14px;
-    }
-    footer a { color: rgba(255,255,255,0.8); transition: color 0.2s; }
-    footer a:hover { color: #fff; }
-    footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
-
-    /* ========== Responsive ========== */
-    @media (max-width: 640px) {
-      .nav-links { display: none; }
-      section { padding: 64px 16px; }
-      .hero { padding: 100px 16px 60px; }
-      .hero-actions { flex-direction: column; align-items: center; }
-      .btn { width: 240px; justify-content: center; }
-      .feature-grid { grid-template-columns: 1fr; }
-      .download-grid { grid-template-columns: 1fr; }
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>无我笔记 Woo | 此刻落笔，随处续写</title>
+  <meta name="description" content="无我笔记 Woo 是一款本地优先的跨平台 Markdown 笔记应用。所见即所得编辑、自动版本历史、可选云同步与 AI 辅助写作，让文字在桌面与手机之间自然流动。">
+  <meta name="author" content="Woo Notes">
+  <meta name="theme-color" content="#171a19">
+  <meta name="color-scheme" content="light">
+  <link rel="canonical" href="https://woo-notes.vercel.app/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:url" content="https://woo-notes.vercel.app/">
+  <meta property="og:title" content="无我笔记 Woo | 此刻落笔，随处续写">
+  <meta property="og:description" content="本地优先的跨平台 Markdown 写作工具。断网照常写，联网后按需同步。">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-<!-- ========== Nav ========== -->
-<nav>
-  <a href="#" class="nav-brand">
-    <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-      <rect width="512" height="512" rx="108" fill="transparent"/>
-      <g>
-        <path d="M140 92 H342 L416 166 V418 C416 434 403 448 386 448 H140 C123 448 110 434 110 418 V122 C110 106 123 92 140 92 Z" fill="#faf6ea"/>
-        <path d="M342 92 L416 166 H362 C351 166 342 157 342 146 Z" fill="#c9be9b"/>
-        <path d="M342 92 L342 146 C342 157 351 166 362 166 L416 166" fill="none" stroke="#a89a72" stroke-width="2"/>
-      </g>
-      <path d="M150 196 C152 188,164 186,170 196 L208 316 C214 334,230 336,238 318 L272 216 C278 200,290 200,296 216 L330 318 C338 336,354 334,360 316 L398 196 C404 186,416 188,418 196" fill="none" stroke="#1a1a2e" stroke-width="18" stroke-linecap="round"/>
-      <circle cx="152" cy="196" r="8" fill="#1a1a2e"/>
-      <circle cx="416" cy="196" r="8" fill="#1a1a2e"/>
-      <rect x="212" y="376" width="88" height="44" rx="6" fill="#c73e3a"/>
-      <g fill="#faf6ea">
-        <rect x="224" y="386" width="22" height="4"/>
-        <rect x="233" y="386" width="4" height="24"/>
-        <rect x="224" y="406" width="22" height="4"/>
-        <rect x="258" y="386" width="30" height="4"/>
-        <rect x="258" y="386" width="4" height="24"/>
-        <rect x="284" y="386" width="4" height="24"/>
-        <rect x="258" y="395" width="30" height="4"/>
-        <rect x="258" y="406" width="30" height="4"/>
-      </g>
-    </svg>
-    无我笔记
-  </a>
-  <div class="nav-links">
-    <a href="#features">功能</a>
-    <a href="#download">下载</a>
-    <a href="https://github.com/stophemo/Woo" target="_blank" rel="noopener">GitHub</a>
-  </div>
-</nav>
-
-<!-- ========== Hero ========== -->
-<header class="hero">
-  <div class="hero-content">
-    <svg class="hero-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#3d4278"/>
-          <stop offset="100%" stop-color="#1f2140"/>
-        </linearGradient>
-        <filter id="heroShadow">
-          <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
-        </filter>
-      </defs>
-      <rect width="512" height="512" rx="108" fill="url(#bgGrad)"/>
-      <g filter="url(#heroShadow)">
-        <path d="M140 92 H342 L416 166 V418 C416 434 403 448 386 448 H140 C123 448 110 434 110 418 V122 C110 106 123 92 140 92 Z" fill="#faf6ea"/>
-        <path d="M342 92 L416 166 H362 C351 166 342 157 342 146 Z" fill="#c9be9b"/>
-      </g>
-      <path d="M150 196 C152 188,164 186,170 196 L208 316 C214 334,230 336,238 318 L272 216 C278 200,290 200,296 216 L330 318 C338 336,354 334,360 316 L398 196 C404 186,416 188,418 196" fill="none" stroke="#1a1a2e" stroke-width="18" stroke-linecap="round"/>
-      <circle cx="152" cy="196" r="8" fill="#1a1a2e"/>
-      <circle cx="416" cy="196" r="8" fill="#1a1a2e"/>
-      <rect x="212" y="376" width="88" height="44" rx="6" fill="#c73e3a"/>
-      <g fill="#faf6ea">
-        <rect x="224" y="386" width="22" height="4"/>
-        <rect x="233" y="386" width="4" height="24"/>
-        <rect x="224" y="406" width="22" height="4"/>
-        <rect x="258" y="386" width="30" height="4"/>
-        <rect x="258" y="386" width="4" height="24"/>
-        <rect x="284" y="386" width="4" height="24"/>
-        <rect x="258" y="395" width="30" height="4"/>
-        <rect x="258" y="406" width="30" height="4"/>
-      </g>
-    </svg>
-    <a
-      id="latest-release"
-      class="release-badge"
-      href="https://github.com/stophemo/Woo/releases/latest"
-      target="_blank"
-      rel="noopener"
-      aria-label="查看最新版本 v0.6.5"
-    >
-      <span class="release-dot" aria-hidden="true"></span>
-      <span>最新版本</span>
-      <strong id="latest-version">v0.6.5</strong>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M7 17L17 7"/>
-        <path d="M7 7h10v10"/>
-      </svg>
-    </a>
-    <h1>写你所想，<span>无我</span>无拘</h1>
-    <p class="tagline">
-      跨平台云端同步 Markdown 笔记<br>
-      所见即所得编辑 · 多设备实时同步 · AI 辅助写作<br>
-      随时随地，无缝衔接
-    </p>
-    <div class="hero-actions">
-      <a href="#download" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        免费下载
+  <header class="site-header" data-site-header>
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="无我笔记首页">
+        <img src="/assets/app-icon.svg" width="34" height="34" alt="">
+        <span>无我笔记</span>
       </a>
-      <a href="https://github.com/stophemo/Woo" target="_blank" rel="noopener" class="btn btn-outline">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-        GitHub
+
+      <nav class="primary-nav" id="primary-nav" aria-label="主导航" data-nav>
+        <a href="#workflow">写作流</a>
+        <a href="#features">能力</a>
+        <a href="#platforms">跨端</a>
+        <a href="#download">下载</a>
+        <a href="https://github.com/stophemo/Woo" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+
+      <a class="header-download" href="#download">
+        下载 <span data-version>v0.6.6</span>
       </a>
+
+      <button class="nav-toggle" type="button" aria-label="打开导航" aria-controls="primary-nav" aria-expanded="false" data-nav-toggle>
+        <svg class="icon-menu" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"></path>
+        </svg>
+        <svg class="icon-close" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18"></path>
+        </svg>
+      </button>
     </div>
-  </div>
-</header>
+  </header>
 
-<!-- ========== Features ========== -->
-<section id="features" class="features">
-  <div class="container">
-    <div class="section-head">
-      <h2>为什么选择 Woo</h2>
-      <p>融合现代编辑器体验与本地数据主权，让笔记回归纯粹</p>
+  <main id="main-content">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-rule hero-rule-left" aria-hidden="true"></div>
+      <div class="hero-rule hero-rule-right" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <p class="release-line">
+            <span data-version>v0.6.6</span>
+            <b>macOS · Windows · Android</b>
+          </p>
+          <h1 id="hero-title">无我笔记</h1>
+          <p class="hero-tagline">此刻落笔，随处续写。</p>
+          <p class="hero-support">本地优先的跨平台 Markdown 写作工具。所见即所得地写，断网也不被打断；需要时，再把同一份文字带到其他设备。</p>
+          <div class="hero-actions" aria-label="下载与项目链接">
+            <a class="button button-primary" href="#download">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
+              免费下载
+            </a>
+            <a class="button button-secondary" href="https://github.com/stophemo/Woo" target="_blank" rel="noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 1.8a13.4 13.4 0 0 0-7 0C4.8.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 8 18v4m0-3c-3 .9-3-1.5-4-2"></path></svg>
+              查看源码
+            </a>
+          </div>
+          <p class="hero-meta">MIT 开源 · 本地优先 · 云同步可选</p>
+        </div>
+
+        <div class="hero-scene" role="region" aria-label="无我笔记桌面端界面演示">
+          <section class="desktop-preview" aria-label="桌面端三栏编辑器">
+            <header class="window-bar">
+              <span class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="window-title">无我笔记</span>
+              <span class="sync-state"><i></i> 已保存</span>
+            </header>
+
+            <div class="app-shell">
+              <aside class="demo-navigation" aria-label="演示文件夹">
+                <div class="mini-brand">
+                  <img src="/assets/app-icon.svg" width="24" height="24" alt="">
+                  <strong>Woo</strong>
+                </div>
+                <div class="nav-command"><span>＋</span> 新建文档</div>
+                <div class="nav-command"><span>⌕</span> 搜索</div>
+                <div class="nav-command"><span>□</span> 全部文稿</div>
+                <p class="demo-label">文件夹</p>
+                <div class="folder-row is-current"><i class="folder-dot dot-blue"></i>写作</div>
+                <div class="folder-row"><i class="folder-dot dot-green"></i>工作</div>
+                <div class="folder-row"><i class="folder-dot dot-orange"></i>灵感</div>
+                <div class="folder-row"><i class="folder-dot dot-gray"></i>归档</div>
+                <div class="nav-spacer"></div>
+                <div class="nav-command nav-muted"><span>♙</span> 本地数据库</div>
+              </aside>
+
+              <aside class="demo-notes" aria-label="演示文稿列表">
+                <header class="notes-heading">
+                  <div>
+                    <span>文件夹</span>
+                    <strong>写作</strong>
+                  </div>
+                  <button type="button" title="新建文档" aria-label="新建文档">＋</button>
+                </header>
+                <button class="note-preview is-active" type="button" data-demo-note="quiet" aria-pressed="true">
+                  <strong>让工具退后，让思考向前</strong>
+                  <span>好的写作工具，不应该把注意力放在自己身上……</span>
+                  <small>刚刚</small>
+                </button>
+                <button class="note-preview" type="button" data-demo-note="sync" aria-pressed="false">
+                  <strong>跨端写作的理想节奏</strong>
+                  <span>电脑适合长篇推进，手机适合捕捉瞬间……</span>
+                  <small>10:24</small>
+                </button>
+                <button class="note-preview" type="button" data-demo-note="reading" aria-pressed="false">
+                  <strong>七月阅读手记</strong>
+                  <span>真正留下来的，不是读过多少，而是重新想过什么。</span>
+                  <small>昨天</small>
+                </button>
+              </aside>
+
+              <article class="demo-editor" aria-live="polite">
+                <div class="editor-toolbar" aria-label="编辑器格式工具栏">
+                  <button type="button" title="加粗"><strong>B</strong></button>
+                  <button type="button" title="斜体"><i>I</i></button>
+                  <button type="button" title="一级标题">H1</button>
+                  <span></span>
+                  <button type="button" title="项目列表">≡</button>
+                  <button type="button" title="引用">“</button>
+                  <button type="button" title="插入链接">↗</button>
+                </div>
+                <div class="editor-paper">
+                  <p class="editor-kicker" data-editor-kicker>写作随想 · 7 月 26 日</p>
+                  <h2 data-editor-title>让工具退后，让思考向前</h2>
+                  <p class="editor-lead" data-editor-lead>好的写作工具，不应该把注意力放在自己身上。</p>
+                  <div data-editor-body>
+                    <p>它应该足够快，让念头出现时不必等待；也应该足够安静，让界面在文字开始之后慢慢退场。</p>
+                    <blockquote>写作不是把句子搬进软件，而是为思考留出一块不被打扰的地方。</blockquote>
+                    <h3>保持简单，也保留余地</h3>
+                    <p>本地保存承担确定性，版本历史留住探索过程。同步与 AI 都可以按需加入，但不应成为开始写作的前提。</p>
+                  </div>
+                </div>
+                <footer class="editor-status">
+                  <span data-editor-count>428 字</span>
+                  <span>Markdown</span>
+                  <span class="status-local"><i></i> 已保存到本地</span>
+                </footer>
+              </article>
+            </div>
+          </section>
+
+          <aside class="mobile-peek" aria-label="Android 移动端文稿列表">
+            <div class="phone-status"><span>9:41</span><span>● ◒</span></div>
+            <header><strong>文稿</strong><span>＋</span></header>
+            <div class="mobile-folder-row">
+              <span class="is-selected">全部</span><span>写作</span><span>灵感</span>
+            </div>
+            <div class="mobile-note">
+              <strong>随手记：回家路上的想法</strong>
+              <span>先记下来，晚上再回到电脑继续整理。</span>
+            </div>
+            <div class="mobile-note">
+              <strong>让工具退后，让思考向前</strong>
+              <span>刚刚同步</span>
+            </div>
+            <footer><span class="is-selected">文稿</span><span>搜索</span><span>设置</span></footer>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <div class="workflow-signal" aria-label="无我笔记写作流程">
+      <div>
+        <span>随时捕捉</span><b aria-hidden="true">→</b>
+        <span>本地保存</span><b aria-hidden="true">→</b>
+        <span>按需同步</span><b aria-hidden="true">→</b>
+        <span>继续写作</span>
+      </div>
     </div>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="feature-icon purple">☁️</div>
-        <h3>云端同步</h3>
-        <p>基于 Supabase 的多设备实时同步，增量推拉 + 冲突检测。手机记灵感，电脑继续写，无缝衔接。</p>
+
+    <section class="workflow section" id="workflow" aria-labelledby="workflow-title">
+      <div class="section-inner">
+        <p class="section-kicker">写作不该被工具打断</p>
+        <h2 id="workflow-title">从一个念头，到一篇完整文稿</h2>
+        <div class="workflow-grid">
+          <article class="workflow-step">
+            <span class="step-number">01</span>
+            <p class="step-context">灵感出现 · 任意设备</p>
+            <h3>先写下来，不等网络</h3>
+            <p>打开就是编辑器。新内容先进入本地 SQLite，断网、弱网都不影响落笔，也不需要先注册账号。</p>
+          </article>
+          <article class="workflow-step">
+            <span class="step-number">02</span>
+            <p class="step-context">持续推进 · 自动保存</p>
+            <h3>安心改，过程会留下</h3>
+            <p>所见即所得编辑与 Markdown 输入自然共存。自动保存和版本快照记录重要变化，随时可以回到过去。</p>
+          </article>
+          <article class="workflow-step">
+            <span class="step-number">03</span>
+            <p class="step-context">设备切换 · 可选同步</p>
+            <h3>换个地方，接着写</h3>
+            <p>登录后启用增量云同步。手机捕捉的句子，会在电脑上成为下一段的开始；冲突内容也会保留副本。</p>
+          </article>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon green">📝</div>
-        <h3>所见即所得</h3>
-        <p>基于 Tiptap (ProseMirror) 的富文本编辑器，支持 Markdown 语法输入，实时预览，流畅切换。</p>
+    </section>
+
+    <section class="features section" id="features" aria-labelledby="features-title">
+      <div class="section-inner feature-layout">
+        <div class="feature-heading">
+          <p class="section-kicker">克制，但不简陋</p>
+          <h2 id="features-title">把能力放在需要的地方</h2>
+          <p>Woo 不要求你改变原来的写作习惯。它把编辑、整理、回溯和辅助能力收进同一个安静的工作区。</p>
+        </div>
+
+        <div class="feature-list">
+          <article class="feature-row">
+            <span class="feature-index">A</span>
+            <div>
+              <h3>所见即所得，也懂 Markdown</h3>
+              <p>基于 Tiptap 的富文本编辑器支持标题、列表、引用、代码与表格。粘贴或输入 Markdown，内容会自然进入排版。</p>
+            </div>
+            <span class="feature-tag tag-blue">专注编辑</span>
+          </article>
+          <article class="feature-row">
+            <span class="feature-index">B</span>
+            <div>
+              <h3>自动保存与版本历史</h3>
+              <p>编辑过程自动落盘，重要改动形成版本；也可以手动建立快照。恢复旧版本时，当前内容仍会被保留。</p>
+            </div>
+            <span class="feature-tag tag-orange">可回溯</span>
+          </article>
+          <article class="feature-row">
+            <span class="feature-index">C</span>
+            <div>
+              <h3>AI 是工具，不是前提</h3>
+              <p>按需接入 Gemini 或 DeepSeek，完成续写、摘要、翻译与头脑风暴。API Key 由你自己配置，普通写作不依赖 AI。</p>
+            </div>
+            <span class="feature-tag tag-green">自带密钥</span>
+          </article>
+          <article class="feature-row">
+            <span class="feature-index">D</span>
+            <div>
+              <h3>从大纲到思维导图</h3>
+              <p>文件夹、文稿大纲、版本历史和思维导图彼此衔接；完成后可导出为 Markdown、文本或图片。</p>
+            </div>
+            <span class="feature-tag tag-yellow">完整整理</span>
+          </article>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon orange">🤖</div>
-        <h3>AI 辅助写作</h3>
-        <p>集成 Google Gemini 与 DeepSeek，支持续写、摘要、翻译、头脑风暴。带来你的 API Key 即可使用。</p>
+    </section>
+
+    <section class="platforms section" id="platforms" aria-labelledby="platforms-title">
+      <div class="section-inner">
+        <div class="platform-heading">
+          <div>
+            <p class="section-kicker">同一份文字，不同的合适形态</p>
+            <h2 id="platforms-title">桌面负责沉浸，手机负责随身</h2>
+          </div>
+          <p>桌面端保留完整三栏工作区与富文本能力；Android 针对浏览、搜索、编辑和版本回溯重新组织，不把桌面界面硬塞进小屏。</p>
+        </div>
+
+        <div class="device-showcase">
+          <div class="desktop-detail" aria-label="桌面端编辑体验示意">
+            <div class="detail-sidebar">
+              <span>全部文稿</span><span class="is-active">写作</span><span>项目</span><span>归档</span>
+            </div>
+            <article>
+              <p>编辑器</p>
+              <h3>写作时，只留下文字</h3>
+              <span class="text-line line-long"></span>
+              <span class="text-line"></span>
+              <span class="text-line line-short"></span>
+              <blockquote>界面安静下来，思路才有足够的空间展开。</blockquote>
+              <span class="text-line line-long"></span>
+              <span class="text-line line-short"></span>
+            </article>
+          </div>
+
+          <div class="phone-detail" aria-label="Android 文稿浏览体验示意">
+            <div class="phone-camera" aria-hidden="true"></div>
+            <div class="phone-detail-header"><span>‹</span><strong>写作</strong><span>＋</span></div>
+            <div class="phone-search">搜索文稿</div>
+            <div class="phone-note is-active"><strong>写作时，只留下文字</strong><small>2 分钟前 · 428 字</small></div>
+            <div class="phone-note"><strong>跨端写作的理想节奏</strong><small>今天 10:24 · 736 字</small></div>
+            <div class="phone-note"><strong>七月阅读手记</strong><small>昨天 · 1,204 字</small></div>
+            <div class="phone-bottom"><span>文稿</span><span>草稿</span><span>设置</span></div>
+          </div>
+        </div>
+
+        <div class="platform-table" role="table" aria-label="各平台能力对照">
+          <div class="platform-row platform-head" role="row">
+            <span role="columnheader">场景</span>
+            <strong role="columnheader">桌面端</strong>
+            <strong role="columnheader">Android</strong>
+          </div>
+          <div class="platform-row" role="row">
+            <span role="cell">写作</span>
+            <strong role="cell">富文本、Markdown、表格与大纲</strong>
+            <strong role="cell">Markdown 编辑与快速保存</strong>
+          </div>
+          <div class="platform-row" role="row">
+            <span role="cell">整理</span>
+            <strong role="cell">文件夹、拖拽、导入导出</strong>
+            <strong role="cell">文件夹、搜索、草稿与回收站</strong>
+          </div>
+          <div class="platform-row" role="row">
+            <span role="cell">回溯</span>
+            <strong role="cell">自动快照、手动版本与恢复</strong>
+            <strong role="cell">版本查看、保存与恢复</strong>
+          </div>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon teal">⏱️</div>
-        <h3>版本历史</h3>
-        <p>自动保存 + 手动版本快照，随时回退到任意历史版本。重大编辑自动提交，绝不错过任何灵感。</p>
+    </section>
+
+    <section class="data-section section" aria-labelledby="data-title">
+      <div class="section-inner data-layout">
+        <div class="data-copy">
+          <p class="section-kicker">本地是起点，云端是选项</p>
+          <h2 id="data-title">先把文字稳稳留在设备里</h2>
+          <p>未登录时，Woo 只读写本机 SQLite。启用同步后，后台引擎按增量推拉数据，并用冲突副本、删除墓碑和按用户分库保护写作过程。</p>
+          <a href="https://github.com/stophemo/Woo#数据库" target="_blank" rel="noreferrer">查看数据与同步设计</a>
+        </div>
+
+        <div class="sync-flow" aria-label="本地优先同步流程">
+          <div class="sync-node node-device">
+            <span>01</span>
+            <strong>本机 SQLite</strong>
+            <small>打开即写 · 离线可用</small>
+          </div>
+          <div class="sync-link"><b aria-hidden="true">→</b><small>增量变更</small></div>
+          <div class="sync-node node-engine">
+            <span>02</span>
+            <strong>同步引擎</strong>
+            <small>冲突保护 · 墓碑传播</small>
+          </div>
+          <div class="sync-link"><b aria-hidden="true">→</b><small>登录后启用</small></div>
+          <div class="sync-node node-cloud">
+            <span>03</span>
+            <strong>Supabase</strong>
+            <small>跨设备继续写作</small>
+          </div>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon blue">📶</div>
-        <h3>离线可用</h3>
-        <p>所有数据本地留存，断网也不影响写作。网络恢复后自动同步，你的笔记始终完整。</p>
+    </section>
+
+    <section class="download section" id="download" aria-labelledby="download-title">
+      <div class="section-inner">
+        <div class="download-heading">
+          <div>
+            <p class="section-kicker"><span data-version>v0.6.6</span> · <span data-release-date>2026-07-26</span></p>
+            <h2 id="download-title">选一个设备，开始写</h2>
+          </div>
+          <p>安装包由 GitHub Actions 构建并发布到 GitHub Releases。无需应用商店，下载安装后即可离线使用。</p>
+        </div>
+
+        <div class="download-grid">
+          <article class="download-card download-macos">
+            <div class="download-card-top">
+              <span class="platform-badge">MACOS</span>
+              <span>Apple Silicon</span>
+            </div>
+            <h3>完整桌面写作工作区</h3>
+            <p>适用于 M 系列 Mac，DMG 安装。当前签名与首次启动说明请以对应 Release Notes 为准。</p>
+            <a class="button button-dark" data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
+              下载 DMG
+            </a>
+          </article>
+
+          <article class="download-card download-windows">
+            <div class="download-card-top">
+              <span class="platform-badge">WINDOWS</span>
+              <span>x64 · NSIS</span>
+            </div>
+            <h3>Windows 原生安装包</h3>
+            <p>适用于 64 位 Windows，双击安装。编辑器、版本历史和可选云同步能力完整保留。</p>
+            <a class="button button-dark" data-download="windows" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
+              下载 EXE
+            </a>
+          </article>
+
+          <article class="download-card download-android">
+            <div class="download-card-top">
+              <span class="platform-badge">ANDROID</span>
+              <span>ARM64</span>
+            </div>
+            <h3>随身文稿与快速编辑</h3>
+            <p>适用于 arm64-v8a Android 设备。Release APK 使用项目升级密钥签名，可直接覆盖后续版本。</p>
+            <a class="button button-dark" data-download="android" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
+              下载 APK
+            </a>
+          </article>
+        </div>
+
+        <div class="release-bar">
+          <div>
+            <strong>Linux 与其他构建</strong>
+            <p>Linux 安装包仍在计划中；现在可以从源码构建。所有历史版本、校验摘要和安装说明都保留在 Release 页面。</p>
+          </div>
+          <div class="release-links">
+            <a data-release-link href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noreferrer">发布说明</a>
+            <a href="https://github.com/stophemo/Woo#-下载" target="_blank" rel="noreferrer">安装说明</a>
+            <a href="https://github.com/stophemo/Woo#-开发" target="_blank" rel="noreferrer">从源码构建</a>
+          </div>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon red">🔒</div>
-        <h3>隐私安全</h3>
-        <p>开源透明，密码锁保护。数据经过你的 Supabase 项目传输，基础设施完全由你掌控。</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="/assets/app-icon.svg" width="32" height="32" alt="">
+        <div>
+          <strong>无我笔记</strong>
+          <span>此刻落笔，随处续写。</span>
+        </div>
       </div>
+      <div class="footer-links">
+        <a href="https://github.com/stophemo/Woo" target="_blank" rel="noreferrer">源代码</a>
+        <a href="https://github.com/stophemo/Woo/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a>
+        <a href="https://github.com/stophemo/Woo/issues" target="_blank" rel="noreferrer">反馈问题</a>
+      </div>
+      <p>© <span data-current-year>2026</span> Woo Notes</p>
     </div>
-  </div>
-</section>
-
-<!-- ========== Download ========== -->
-<section id="download">
-  <div class="container">
-    <div class="section-head">
-      <h2>下载 Woo</h2>
-      <p>支持 macOS、Windows、Linux、Android 多平台</p>
-    </div>
-    <div class="download-grid">
-      <div class="download-card">
-        <div class="platform-icon">🍎</div>
-        <h3>macOS</h3>
-        <div class="version">Apple Silicon · DMG</div>
-        <div class="arch">签名信息见 Release Notes</div>
-        <a href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 DMG
-        </a>
-      </div>
-      <div class="download-card">
-        <div class="platform-icon">🪟</div>
-        <h3>Windows</h3>
-        <div class="version">x64 · NSIS 安装包</div>
-        <div class="arch">&nbsp;</div>
-        <a href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 EXE
-        </a>
-      </div>
-      <div class="download-card">
-        <div class="platform-icon">🤖</div>
-        <h3>Android</h3>
-        <div class="version">ARM64 (arm64-v8a)</div>
-        <div class="arch">Release 签名 APK</div>
-        <a href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 APK
-        </a>
-      </div>
-      <div class="download-card">
-        <div class="platform-icon">🐧</div>
-        <h3>Linux</h3>
-        <div class="version">AppImage · 即将推出</div>
-        <div class="arch">或从源码编译</div>
-        <a href="https://github.com/stophemo/Woo#开发与构建" class="btn btn-outline">
-          构建指南
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== Footer ========== -->
-<footer>
-  <div class="footer-links">
-    <a href="https://github.com/stophemo/Woo" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/stophemo/Woo/releases" target="_blank" rel="noopener">Release Notes</a>
-    <a href="https://github.com/stophemo/Woo/issues" target="_blank" rel="noopener">反馈问题</a>
-  </div>
-  <p>© 2025–2026 Woo Notes · MIT License · 用 Rust + Vue 3 构建</p>
-</footer>
-
-<script>
-  const latestRelease = document.querySelector('#latest-release')
-  const latestVersion = document.querySelector('#latest-version')
-
-  fetch('https://api.github.com/repos/stophemo/Woo/releases/latest', {
-    headers: { Accept: 'application/vnd.github+json' },
-  })
-    .then((response) => {
-      if (!response.ok) throw new Error(`GitHub API returned ${response.status}`)
-      return response.json()
-    })
-    .then((release) => {
-      const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
-      if (!/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tag)) return
-
-      const version = tag.startsWith('v') ? tag : `v${tag}`
-      latestVersion.textContent = version
-      latestRelease.setAttribute('aria-label', `查看最新版本 ${version}`)
-      if (typeof release.html_url === 'string') latestRelease.href = release.html_url
-    })
-    .catch(() => {})
-</script>
-
+  </footer>
 </body>
 </html>
