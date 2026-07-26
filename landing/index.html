@@ -55,7 +55,20 @@
       66% { transform: translate(-10px, 10px); }
     }
     .hero-content { position: relative; z-index: 1; max-width: 680px; }
-    .hero-logo { width: 96px; height: 96px; margin: 0 auto 32px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); }
+    .hero-logo { width: 96px; height: 96px; margin: 0 auto 24px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); }
+    .release-badge {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
+      margin-bottom: 18px; padding: 5px 12px; border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.72); font-size: 13px; font-weight: 500;
+      transition: color 0.2s, background 0.2s, border-color 0.2s;
+    }
+    .release-badge:hover {
+      color: #fff; background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.26);
+    }
+    .release-badge strong { color: #fff; font-weight: 700; }
+    .release-badge .release-dot { width: 7px; height: 7px; border-radius: 50%; background: #62c987; }
+    .release-badge svg { width: 14px; height: 14px; }
     .hero h1 {
       font-size: clamp(36px, 6vw, 56px); font-weight: 800; color: #fff;
       letter-spacing: -0.02em; margin-bottom: 16px;
@@ -211,6 +224,22 @@
         <rect x="258" y="406" width="30" height="4"/>
       </g>
     </svg>
+    <a
+      id="latest-release"
+      class="release-badge"
+      href="https://github.com/stophemo/Woo/releases/latest"
+      target="_blank"
+      rel="noopener"
+      aria-label="查看最新版本 v0.6.5"
+    >
+      <span class="release-dot" aria-hidden="true"></span>
+      <span>最新版本</span>
+      <strong id="latest-version">v0.6.5</strong>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M7 17L17 7"/>
+        <path d="M7 7h10v10"/>
+      </svg>
+    </a>
     <h1>写你所想，<span>无我</span>无拘</h1>
     <p class="tagline">
       跨平台云端同步 Markdown 笔记<br>
@@ -332,6 +361,29 @@
   </div>
   <p>© 2025–2026 Woo Notes · MIT License · 用 Rust + Vue 3 构建</p>
 </footer>
+
+<script>
+  const latestRelease = document.querySelector('#latest-release')
+  const latestVersion = document.querySelector('#latest-version')
+
+  fetch('https://api.github.com/repos/stophemo/Woo/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' },
+  })
+    .then((response) => {
+      if (!response.ok) throw new Error(`GitHub API returned ${response.status}`)
+      return response.json()
+    })
+    .then((release) => {
+      const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
+      if (!/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tag)) return
+
+      const version = tag.startsWith('v') ? tag : `v${tag}`
+      latestVersion.textContent = version
+      latestRelease.setAttribute('aria-label', `查看最新版本 ${version}`)
+      if (typeof release.html_url === 'string') latestRelease.href = release.html_url
+    })
+    .catch(() => {})
+</script>
 
 </body>
 </html>
