@@ -115,10 +115,7 @@ fn dispatch_open_files(paths: Vec<String>) {
                 "[OpenFile] 已向运行中的前端派发 {} 个路径",
                 paths.len()
             );
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(&app_handle);
             return;
         }
         log::warn!("[OpenFile] 前端事件派发失败，路径已退回缓冲队列");
@@ -132,6 +129,17 @@ fn dispatch_open_files(paths: Vec<String>) {
             log::info!("[OpenFile] 已重新缓冲 {} 个路径", added);
         }
     }
+}
+
+fn show_main_window(app_handle: &tauri::AppHandle) {
+    let Some(window) = app_handle.get_webview_window("main") else {
+        log::warn!("[Window] main window not found");
+        return;
+    };
+
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
 }
 
 #[cfg(test)]
@@ -310,10 +318,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let paths = collect_open_file_paths(args.into_iter().skip(1), Path::new(&cwd));
             dispatch_open_files(paths);
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }))
         .plugin(tauri_plugin_process::init());
 
@@ -508,6 +513,10 @@ pub fn run() {
         .run(|app_handle, event| {
             #[cfg(target_os = "macos")]
             match event {
+                tauri::RunEvent::Ready => {
+                    // process::relaunch starts the new binary without reliably activating it.
+                    show_main_window(app_handle);
+                }
                 tauri::RunEvent::Opened { urls } => {
                     let paths = collect_open_file_urls(urls);
                     if !paths.is_empty() {
@@ -517,10 +526,7 @@ pub fn run() {
                 }
                 tauri::RunEvent::Reopen { .. } => {
                     // macOS: 点击 Dock 图标时重新显示窗口
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    show_main_window(app_handle);
                 }
                 _ => {}
             }

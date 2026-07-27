@@ -8,7 +8,7 @@
                 'drag-over-above': dragOverState === 'above',
                 'drag-over-below': dragOverState === 'below'
             }"
-            :style="{ paddingLeft: `${depth * 16 + 8}px` }"
+            :style="{ paddingLeft: `${depth * 16 + 10}px` }"
             :draggable="!folder.isLocked"
             @contextmenu.stop="handleContextMenu"
             @click="handleClick"
@@ -23,10 +23,12 @@
             @drop="onDrop"
             @dragend="onDragEnd"
         >
-            <Transition name="icon-swap" mode="out-in">
-                <IconFolderOpen v-if="folder.isExpanded" key="open" />
-                <IconFolderClosed v-else key="closed" />
-            </Transition>
+            <span
+                class="folder-color-dot"
+                :class="{ expanded: folder.isExpanded }"
+                :style="{ '--folder-dot-color': folderDotColor }"
+                aria-hidden="true"
+            ></span>
             <IconLock v-if="folder.isLocked" class="lock-icon" />
             <input
                 v-if="isEditing"
@@ -47,10 +49,11 @@
         <Transition name="folder-children">
             <div v-if="folder.isExpanded && folder.children.length > 0" class="folder-children">
                 <FolderItem
-                    v-for="child in folder.children"
+                    v-for="(child, childIndex) in folder.children"
                     :key="child.id"
                     :folder="child"
                     :depth="depth + 1"
+                    :color-index="colorIndex + childIndex + 1"
                     :selected-folder-id="selectedFolderId"
                     @context-menu="forwardContextMenu"
                     @folder-select="forwardFolderSelect"
@@ -62,9 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
-import IconFolderOpen from '../icons/IconFolderOpen.vue'
-import IconFolderClosed from '../icons/IconFolderClosed.vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import IconLock from '../icons/IconLock.vue'
 import IconGrip from '../icons/IconGrip.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
@@ -73,6 +74,7 @@ import type { FolderNode, ContextMenuPosition } from '../../types/folder'
 interface Props {
     folder: FolderNode
     depth: number
+    colorIndex: number
     selectedFolderId: string | null
 }
 
@@ -86,6 +88,21 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const workspaceStore = useWorkspaceStore()
+
+const FOLDER_DOT_COLORS = [
+    '#4f91a8',
+    '#d47b5e',
+    '#6f9b82',
+    '#c39a4d',
+    '#897fb0',
+    '#748f9f',
+    '#b9788c',
+    '#4f9996'
+]
+
+const folderDotColor = computed(() => (
+    FOLDER_DOT_COLORS[props.colorIndex % FOLDER_DOT_COLORS.length]
+))
 
 const isEditing = ref(false)
 const editName = ref('')
@@ -284,17 +301,17 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
 
 .sidebar-item {
     position: relative;
-    padding: 8px 8px;
+    padding: 0 10px;
     margin: 2px 0;
     cursor: grab;
     border-radius: 6px;
     font-size: 13px;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 10px;
     user-select: none;
-    height: 36px;
+    height: 38px;
     transition:
         background-color 0.25s ease,
         color 0.25s ease,
@@ -376,16 +393,35 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
 .sidebar-item.selected {
     background-color: var(--bg-selected);
     color: var(--text-on-selected);
+    font-weight: 600;
 }
 
 .sidebar-item.selected:hover {
     background-color: var(--bg-selected-hover);
 }
 
+.folder-color-dot {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background-color: var(--folder-dot-color);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.folder-color-dot.expanded {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--folder-dot-color) 11%, transparent);
+}
+
+.sidebar-item.selected .folder-color-dot {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--folder-dot-color) 22%, transparent);
+}
+
 .sidebar-item :deep(svg) {
     width: 16px;
     height: 16px;
     color: var(--text-secondary);
+    stroke-width: 1.7;
     flex-shrink: 0;
 }
 

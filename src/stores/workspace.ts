@@ -869,7 +869,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // 后端创建失败（目录不存在等）自动回退为草稿
   async function createNewDocument() {
     const fid = selectedFolderId.value
-    if (fid && fid !== DRAFT_FOLDER_ID) {
+    if (fid && !fid.startsWith('__')) {
       const doc = await createDocument(fid)
       if (!doc) {
         createDraft()

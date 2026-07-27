@@ -178,7 +178,7 @@ function goBack() {
 </script>
 
 <template>
-  <div class="editor-page">
+  <div class="editor-page" :class="{ 'is-editing': editing }">
     <van-nav-bar
       :title="title"
       left-text="返回"
@@ -186,55 +186,87 @@ function goBack() {
       @click-left="goBack"
     >
       <template #right>
-        <van-icon v-if="!isLocked" name="share-o" class="action-icon" @click="showShare = true" />
-        <van-icon v-if="!isDraft && !isLocked" name="clock-o" class="action-icon" @click="openVersions" />
-        <van-icon name="delete" class="action-icon" @click="confirmDelete" />
+        <button
+          v-if="!isLocked"
+          type="button"
+          class="nav-action-button"
+          title="分享"
+          aria-label="分享"
+          @click="showShare = true"
+        >
+          <van-icon name="share-o" />
+        </button>
+        <button
+          v-if="!isDraft && !isLocked"
+          type="button"
+          class="nav-action-button"
+          title="版本历史"
+          aria-label="版本历史"
+          @click="openVersions"
+        >
+          <van-icon name="clock-o" />
+        </button>
+        <button
+          type="button"
+          class="nav-action-button is-danger"
+          title="删除文稿"
+          aria-label="删除文稿"
+          @click="confirmDelete"
+        >
+          <van-icon name="delete-o" />
+        </button>
       </template>
     </van-nav-bar>
 
-    <van-loading v-if="loading" class="loading" />
+    <van-loading v-if="loading" class="mobile-loading" />
 
     <!-- 加密遮罩 -->
     <template v-else-if="isLocked">
       <div class="locked-box">
-        <van-icon name="lock" size="40" color="#ff976a" />
-        <p class="locked-title">此笔记已加密</p>
+        <span class="locked-icon"><van-icon name="lock" /></span>
+        <h2 class="locked-title">此文稿已加密</h2>
+        <p class="locked-copy">输入密码后可继续阅读和编辑</p>
         <van-field v-model="unlockPwd" type="password" placeholder="输入密码锁密码" class="locked-field" />
-        <van-button type="primary" round :loading="unlocking" @click="doUnlock">解锁查看</van-button>
+        <van-button type="primary" class="unlock-button" :loading="unlocking" @click="doUnlock">解锁查看</van-button>
       </div>
     </template>
 
     <!-- 阅读模式 -->
     <template v-else-if="!editing">
-      <div class="editor-content" v-html="content" />
+      <article class="editor-content" v-html="content" />
       <div v-if="!content" class="empty-hint">暂无内容</div>
-      <van-button
-        type="primary"
-        size="small"
-        plain
-        icon="edit"
+      <button
+        type="button"
         class="edit-btn"
+        title="编辑文稿"
+        aria-label="编辑文稿"
         @click="startEdit"
       >
-        编辑
-      </van-button>
+        <van-icon name="edit" />
+      </button>
     </template>
 
     <!-- 编辑模式（过渡：Markdown/HTML 源码，富文本为子项目 6） -->
     <template v-else>
-      <van-field
-        ref="editField"
-        v-model="editText"
-        type="textarea"
-        autosize
-        placeholder="使用 Markdown 编写，保存时自动转为富文本…"
-        class="edit-textarea"
-      />
-      <div class="edit-actions">
-        <van-button size="small" @click="cancelEdit">取消</van-button>
+      <div class="editor-workbench">
+        <div class="editing-label">
+          <span>Markdown</span>
+          <span>{{ editText.length }} 字符</span>
+        </div>
+        <van-field
+          ref="editField"
+          v-model="editText"
+          type="textarea"
+          autosize
+          placeholder="开始写作…"
+          class="edit-textarea"
+        />
+      </div>
+      <div class="edit-actions safe-area-bottom">
+        <van-button class="cancel-button" @click="cancelEdit">取消</van-button>
         <van-button
           type="primary"
-          size="small"
+          class="save-button"
           :loading="saving"
           @click="saveEdit"
         >
@@ -255,69 +287,248 @@ function goBack() {
 </template>
 
 <style scoped>
-.loading {
-  display: flex;
-  justify-content: center;
-  margin-top: 40px;
+.editor-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--van-background-2);
 }
+
+.editor-page.is-editing {
+  background: var(--van-background);
+}
+
+.nav-action-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--van-text-color-2);
+  vertical-align: middle;
+}
+
+.nav-action-button:active {
+  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
+  color: var(--van-primary-color);
+}
+
+.nav-action-button.is-danger:active {
+  background: color-mix(in srgb, var(--van-danger-color) 9%, transparent);
+  color: var(--van-danger-color);
+}
+
+.nav-action-button .van-icon {
+  font-size: 18px;
+}
+
 .locked-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 32px;
-  gap: 16px;
+  width: min(100%, 420px);
+  margin: 0 auto;
+  padding: 72px 28px 32px;
 }
-.locked-title {
-  color: #646566;
-  margin: 0;
-}
-.locked-field {
-  border: 1px solid #ebedf0;
+
+.locked-icon {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, #d3a32c 28%, var(--van-border-color));
   border-radius: 8px;
+  background: color-mix(in srgb, #d3a32c 10%, var(--van-background-2));
+  color: #d3a32c;
 }
+
+.locked-icon .van-icon {
+  font-size: 24px;
+}
+
+.locked-title {
+  margin: 18px 0 0;
+  color: var(--van-text-color);
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.locked-copy {
+  margin: 6px 0 20px;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+}
+
+.locked-field {
+  width: 100%;
+  border: 1px solid var(--van-border-color);
+  border-radius: 7px;
+  background: var(--van-background-2);
+}
+
+.unlock-button {
+  width: 100%;
+  height: 42px;
+  margin-top: 12px;
+  border-radius: 7px;
+}
+
 .editor-content {
-  padding: 16px;
-  line-height: 1.6;
+  width: min(100%, 680px);
+  min-height: calc(100vh - 55px - env(safe-area-inset-top, 0px));
+  margin: 0 auto;
+  padding: 30px 22px 108px;
+  color: var(--van-text-color);
   font-size: 16px;
-  word-wrap: break-word;
+  line-height: 1.78;
   overflow-wrap: break-word;
 }
-.editor-content :deep(h1) { font-size: 22px; margin: 16px 0 8px; }
-.editor-content :deep(h2) { font-size: 19px; margin: 14px 0 6px; }
-.editor-content :deep(h3) { font-size: 17px; margin: 12px 0 4px; }
-.editor-content :deep(p) { margin: 8px 0; }
-.editor-content :deep(ul), .editor-content :deep(ol) { padding-left: 20px; }
-.editor-content :deep(blockquote) {
-  border-left: 3px solid #1989fa;
-  padding-left: 12px;
-  color: #666;
-  margin: 8px 0;
+
+.editor-content :deep(h1),
+.editor-content :deep(h2),
+.editor-content :deep(h3),
+.editor-content :deep(h4) {
+  color: var(--van-text-color);
+  letter-spacing: 0;
 }
+
+.editor-content :deep(h1) { margin: 0 0 20px; font-size: 28px; line-height: 1.35; }
+.editor-content :deep(h2) { margin: 28px 0 10px; font-size: 21px; line-height: 1.4; }
+.editor-content :deep(h3) { margin: 24px 0 8px; font-size: 18px; line-height: 1.45; }
+.editor-content :deep(h4) { margin: 20px 0 6px; font-size: 16px; line-height: 1.5; }
+.editor-content :deep(p) { margin: 0 0 15px; }
+.editor-content :deep(ul),
+.editor-content :deep(ol) { margin: 12px 0 18px; padding-left: 22px; }
+.editor-content :deep(li) { margin: 5px 0; }
+.editor-content :deep(blockquote) {
+  margin: 20px 0;
+  padding: 11px 14px;
+  border-left: 3px solid var(--van-primary-color);
+  background: color-mix(in srgb, var(--van-primary-color) 7%, var(--van-background));
+  color: var(--van-text-color-2);
+}
+.editor-content :deep(blockquote p:last-child) { margin-bottom: 0; }
+.editor-content :deep(pre) {
+  overflow-x: auto;
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--van-border-color);
+  border-radius: 6px;
+  background: var(--van-background);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.editor-content :deep(code) {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--van-background);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.88em;
+}
+.editor-content :deep(pre code) { padding: 0; background: transparent; }
+.editor-content :deep(a) { color: var(--van-primary-color); }
+.editor-content :deep(img) { max-width: 100%; height: auto; border-radius: 6px; }
+.editor-content :deep(hr) { margin: 28px 0; border: 0; border-top: 1px solid var(--van-border-color); }
+.editor-content :deep(table) { width: 100%; margin: 18px 0; border-collapse: collapse; font-size: 13px; }
+.editor-content :deep(th),
+.editor-content :deep(td) { padding: 8px; border: 1px solid var(--van-border-color); text-align: left; }
+.editor-content :deep(th) { background: var(--van-background); }
+.editor-content :deep(p:last-child) { margin-bottom: 0; }
+
 .empty-hint {
   text-align: center;
-  color: #999;
-  margin-top: 40px;
+  color: var(--van-text-color-2);
+  margin-top: 72px;
+  font-size: 13px;
 }
+
 .edit-btn {
   position: fixed;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  z-index: 2;
-}
-.edit-textarea {
-  min-height: 200px;
-  font-size: 14px;
-  line-height: 1.6;
-  --van-cell-vertical-padding: 12px;
-}
-.edit-actions {
+  right: 18px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
   display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  padding: 12px 16px;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--van-primary-color);
+  box-shadow: 0 9px 24px color-mix(in srgb, var(--van-primary-color) 26%, transparent);
+  color: white;
 }
-.action-icon {
-  font-size: 20px;
-  padding: 4px;
+
+.edit-btn:active {
+  transform: scale(0.96);
+}
+
+.edit-btn .van-icon {
+  font-size: 21px;
+}
+
+.editor-workbench {
+  width: min(100%, 680px);
+  min-height: calc(100vh - 128px - env(safe-area-inset-top, 0px));
+  margin: 0 auto;
+  background: var(--van-background-2);
+}
+
+.editing-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--van-border-color);
+  color: var(--van-text-color-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-textarea {
+  min-height: calc(100vh - 173px - env(safe-area-inset-top, 0px));
+  padding: 20px 18px 32px;
+  background: var(--van-background-2);
+  font-size: 15px;
+  line-height: 1.75;
+  --van-cell-vertical-padding: 0;
+}
+
+.edit-textarea::after {
+  display: none;
+}
+
+.edit-textarea :deep(textarea) {
+  min-height: calc(100vh - 213px - env(safe-area-inset-top, 0px));
+  color: var(--van-text-color);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  caret-color: var(--van-primary-color);
+}
+
+.edit-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.edit-actions .van-button {
+  height: 42px;
+  flex: 1;
+  border-radius: 7px;
+}
+
+.cancel-button {
+  background: var(--van-background-2);
+  color: var(--van-text-color-2);
 }
 </style>

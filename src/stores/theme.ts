@@ -1,7 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 
-export type ThemeMode = 'light' | 'dark' | 'ocean' | 'forest' | 'rose'
+export type ThemeMode =
+  | 'light'
+  | 'paper'
+  | 'ocean'
+  | 'forest'
+  | 'rose'
+  | 'dark'
+  | 'ink'
+  | 'graphite'
+  | 'deepsea'
 
 export interface ThemeOption {
   id: ThemeMode
@@ -13,14 +22,18 @@ export interface ThemeOption {
 
 export const THEME_OPTIONS: ThemeOption[] = [
   { id: 'light', label: '云白', description: '清爽的纸张质感', isDark: false, colors: ['#fbfcfc', '#eaf0f2', '#3d8aa8'] },
-  { id: 'dark', label: '深夜', description: '低亮度深色界面', isDark: true, colors: ['#282a2d', '#202224', '#7ab0e0'] },
+  { id: 'paper', label: '静纸', description: '清透的蓝灰写作界面', isDark: false, colors: ['#fcfdfd', '#edf3f5', '#4597b7'] },
   { id: 'ocean', label: '海岸', description: '冷静的蓝绿色调', isDark: false, colors: ['#f8fcfc', '#e2eff1', '#248ca0'] },
   { id: 'forest', label: '松林', description: '柔和的自然绿色', isDark: false, colors: ['#fbfdfb', '#e5eee5', '#4c9664'] },
   { id: 'rose', label: '暮霞', description: '温暖的珊瑚粉色', isDark: false, colors: ['#fffafa', '#f3e8e6', '#c76b7b'] },
+  { id: 'dark', label: '深夜', description: '低亮度冷灰界面', isDark: true, colors: ['#282a2d', '#202224', '#7ab0e0'] },
+  { id: 'ink', label: '墨夜', description: '墨绿与珊瑚色点缀', isDark: true, colors: ['#23302c', '#19221f', '#df7657'] },
+  { id: 'graphite', label: '石墨', description: '中性黑灰与暖金色', isDark: true, colors: ['#292c2d', '#1e2122', '#d6aa4f'] },
+  { id: 'deepsea', label: '深海', description: '深青底色与海沫绿', isDark: true, colors: ['#203036', '#142125', '#50b99f'] },
 ]
 
 export function isDarkTheme(mode: ThemeMode): boolean {
-  return mode === 'dark'
+  return THEME_OPTIONS.find((option) => option.id === mode)?.isDark ?? false
 }
 
 function getSystemTheme(): ThemeMode {

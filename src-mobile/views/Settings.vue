@@ -159,20 +159,26 @@ async function beforePwdClose(action: string) {
 
 <template>
   <div class="settings-page">
-    <van-nav-bar title="设置" />
+    <header class="mobile-page-header settings-header">
+      <span class="woo-mark" aria-hidden="true">W</span>
+      <div class="mobile-page-header__main">
+        <h1 class="mobile-page-header__title">设置</h1>
+        <p class="mobile-page-header__meta">Woo v{{ appVersion }}</p>
+      </div>
+    </header>
 
     <!-- 账户 -->
     <van-cell-group inset title="账户">
       <template v-if="authStore.isLoggedIn">
-        <van-cell title="账号" :value="authStore.user?.email || authStore.user?.username || '已登录'" />
-        <van-cell title="退出登录" is-link :label="authStore.loading ? '正在退出…' : ''" @click="onLogout" />
+        <van-cell icon="manager-o" title="账号" :value="authStore.user?.email || authStore.user?.username || '已登录'" />
+        <van-cell icon="close" title="退出登录" is-link :label="authStore.loading ? '正在退出…' : ''" @click="onLogout" />
       </template>
-      <van-cell v-else title="登录 / 注册" is-link value="未登录" @click="openLogin" />
+      <van-cell v-else icon="manager-o" title="登录 / 注册" is-link value="未登录" @click="openLogin" />
     </van-cell-group>
 
     <!-- 云同步 -->
     <van-cell-group inset title="云同步">
-      <van-cell title="同步状态">
+      <van-cell icon="exchange" title="同步状态">
         <template #value>
           <span>{{ syncStore.lastSyncLabel }}</span>
           <van-tag v-if="syncStore.pendingChanges > 0" type="warning" class="pending-tag">
@@ -181,6 +187,7 @@ async function beforePwdClose(action: string) {
         </template>
       </van-cell>
       <van-cell
+        icon="replay"
         title="立即同步"
         is-link
         :label="!authStore.isLoggedIn ? '登录后可用' : ''"
@@ -200,6 +207,7 @@ async function beforePwdClose(action: string) {
     <!-- 安全 -->
     <van-cell-group inset title="安全">
       <van-cell
+        icon="lock"
         :title="lockStore.hasPassword ? '修改密码锁' : '设置密码锁'"
         is-link
         :label="lockStore.hasPassword ? '已启用，可在笔记列表滑动加锁' : '设置后可对笔记加锁隐藏'"
@@ -223,20 +231,21 @@ async function beforePwdClose(action: string) {
           <span class="mobile-theme-swatch" aria-hidden="true">
             <span v-for="color in option.colors" :key="color" :style="{ backgroundColor: color }"></span>
           </span>
-          <span>{{ option.label }}</span>
+          <span class="mobile-theme-name">{{ option.label }}</span>
+          <van-icon v-if="themeStore.theme === option.id" name="success" class="theme-check" aria-hidden="true" />
         </button>
       </div>
     </van-cell-group>
 
     <!-- 关于 -->
     <van-cell-group inset title="关于">
-      <van-cell title="版本" :value="`v${appVersion}`" />
-      <van-cell title="检查更新" is-link label="发现新版本时会在右下角轻量提示" @click="onCheckUpdate" />
-      <van-cell title="项目主页" value="GitHub" is-link @click="showToast('打开链接')" />
+      <van-cell icon="info-o" title="版本" :value="`v${appVersion}`" />
+      <van-cell icon="upgrade" title="检查更新" is-link @click="onCheckUpdate" />
+      <van-cell icon="link-o" title="项目主页" value="GitHub" is-link @click="showToast('打开链接')" />
     </van-cell-group>
 
     <!-- 登录 / 注册 弹层 -->
-    <van-popup v-model:show="showLogin" position="bottom" round :style="{ paddingBottom: '24px' }">
+    <van-popup v-model:show="showLogin" position="bottom" :style="{ paddingBottom: '24px' }">
       <div class="login-sheet">
         <van-tabs v-model:active="loginMode" @change="(m: string) => switchMode(m as 'login' | 'signup')">
           <van-tab title="登录" name="login" />
@@ -291,8 +300,8 @@ async function beforePwdClose(action: string) {
           <div class="login-actions">
             <van-button
               block
-              round
               type="primary"
+              class="login-submit"
               native-type="submit"
               :loading="authStore.loading"
             >
@@ -319,57 +328,133 @@ async function beforePwdClose(action: string) {
 </template>
 
 <style scoped>
+.settings-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: 24px;
+  background: var(--van-background);
+}
+
+.settings-header {
+  align-items: center;
+}
+
+.woo-mark {
+  display: flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: #25304f;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.settings-page :deep(.van-cell__left-icon) {
+  margin-right: 12px;
+  color: var(--van-primary-color);
+  font-size: 18px;
+}
+
+.settings-page :deep(.van-cell__title) {
+  color: var(--van-text-color);
+  font-size: 14px;
+}
+
+.settings-page :deep(.van-cell__value) {
+  max-width: 52%;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+}
+
 .pending-tag {
   margin-left: 8px;
 }
+
 .mobile-theme-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px 16px 16px;
+  gap: 9px;
+  padding: 13px;
 }
+
 .mobile-theme-option {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 9px;
+  min-height: 54px;
+  padding: 8px 10px;
   border: 1px solid var(--van-border-color);
-  border-radius: 6px;
-  background: var(--van-background-2);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--van-background) 58%, var(--van-background-2));
   color: var(--van-text-color);
-  font-size: 13px;
+  font-size: 12px;
+  text-align: left;
 }
+
 .mobile-theme-option.selected {
   border-color: var(--van-primary-color);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--van-primary-color) 18%, transparent);
+  background: color-mix(in srgb, var(--van-primary-color) 7%, var(--van-background-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--van-primary-color) 12%, transparent);
 }
+
 .mobile-theme-swatch {
   display: flex;
-  width: 32px;
-  height: 28px;
+  width: 36px;
+  height: 34px;
   flex-shrink: 0;
   overflow: hidden;
   border: 1px solid var(--van-border-color);
-  border-radius: 4px;
+  border-radius: 5px;
 }
+
 .mobile-theme-swatch span {
   flex: 1;
 }
+
+.mobile-theme-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-check {
+  margin-left: auto;
+  color: var(--van-primary-color);
+  font-size: 14px;
+}
+
 .login-sheet {
   padding: 8px 0 0;
 }
+
 .login-form {
   padding: 12px 0;
 }
+
 .login-error {
-  color: #ee0a24;
+  color: var(--van-danger-color);
   font-size: 13px;
   padding: 8px 16px 0;
 }
+
 .login-actions {
   padding: 16px;
 }
+
+.login-submit {
+  height: 44px;
+  border-radius: 7px;
+}
+
 .pwd-fields {
   padding: 8px 0;
 }

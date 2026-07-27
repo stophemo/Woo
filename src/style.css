@@ -81,6 +81,59 @@
   --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
+/* 静纸主题 - 对应方案 A 的清透蓝灰工作台 */
+:root[data-theme="paper"] {
+  --bg-primary: #f2f6f7;
+  --bg-secondary: #edf3f5;
+  --bg-tertiary: #f2f6f7;
+  --bg-surface: #fcfdfd;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e3ecef;
+  --bg-active: #d7e5e9;
+  --bg-selected: #d9eaf0;
+  --bg-selected-hover: #cce2e9;
+  --bg-toolbar: #f5f8f8;
+  --border-primary: #cdd9dd;
+  --border-secondary: #dce6e9;
+  --text-primary: #203139;
+  --text-secondary: #526a74;
+  --text-muted: #879ba3;
+  --text-disabled: #b0bec3;
+  --text-on-selected: #2c7794;
+  --accent: #4597b7;
+  --accent-rgb: 69, 151, 183;
+  --accent-hover: #347f9c;
+  --accent-light: rgba(69, 151, 183, 0.14);
+  --editor-bg: #fcfdfd;
+  --editor-text: #2d434c;
+  --editor-text-secondary: #526a74;
+  --editor-text-heading: #203139;
+  --editor-text-heading2: #314a54;
+  --editor-border: #dce6e9;
+  --editor-code-bg: #edf4f6;
+  --editor-code-text: #a6505a;
+  --editor-pre-bg: #f2f6f7;
+  --editor-pre-border: #d7e3e6;
+  --editor-blockquote-border: #8fc1d4;
+  --editor-blockquote-text: #687f88;
+  --editor-highlight-bg: #fff1c7;
+  --editor-highlight-text: #765a17;
+  --editor-link: #2c7794;
+  --editor-selection: #c8e5ef;
+  --editor-placeholder: #9daeb4;
+  --editor-mark-bg: #e8f0f2;
+  --editor-caret: #203139;
+  --close-hover-bg: #e81123;
+  --close-hover-color: #ffffff;
+  --scrollbar-track: #edf3f5;
+  --scrollbar-thumb: #c4d2d7;
+  --scrollbar-thumb-hover: #a9bcc3;
+  --shadow-dropdown: 0 4px 14px rgba(32, 49, 57, 0.12);
+  --shadow-card: 0 2px 6px rgba(44, 83, 98, 0.07);
+  --shadow-card-hover: 0 3px 12px rgba(69, 151, 183, 0.16);
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
 /* 夜间主题 - 冷灰基调，清晰层次 */
 :root[data-theme="dark"] {
   /* 背景色 */
@@ -148,6 +201,165 @@
   --shadow-card-hover: 0 2px 8px rgba(122, 176, 224, 0.18);
 
   /* 过渡 */
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 墨夜主题 - 墨绿色背景与珊瑚色强调 */
+:root[data-theme="ink"] {
+  --bg-primary: #151b19;
+  --bg-secondary: #19221f;
+  --bg-tertiary: #1e2925;
+  --bg-surface: #23302c;
+  --bg-elevated: #293831;
+  --bg-hover: #31423b;
+  --bg-active: #394b43;
+  --bg-selected: #44352f;
+  --bg-selected-hover: #513d35;
+  --bg-toolbar: #19221f;
+  --border-primary: #3a4a44;
+  --border-secondary: #2d3b36;
+  --text-primary: #e6ece7;
+  --text-secondary: #abb9b1;
+  --text-muted: #788980;
+  --text-disabled: #516159;
+  --text-on-selected: #f0a087;
+  --accent: #df7657;
+  --accent-rgb: 223, 118, 87;
+  --accent-hover: #ee8d70;
+  --accent-light: rgba(223, 118, 87, 0.14);
+  --editor-bg: #23302c;
+  --editor-text: #e6ece7;
+  --editor-text-secondary: #b9c5be;
+  --editor-text-heading: #f3f5f1;
+  --editor-text-heading2: #e5ebe6;
+  --editor-border: #3a4a44;
+  --editor-code-bg: #2a3833;
+  --editor-code-text: #f09a81;
+  --editor-pre-bg: #19221f;
+  --editor-pre-border: #394a43;
+  --editor-blockquote-border: #6b7d74;
+  --editor-blockquote-text: #abb9b1;
+  --editor-highlight-bg: #57492f;
+  --editor-highlight-text: #efd183;
+  --editor-link: #f09a81;
+  --editor-selection: #594239;
+  --editor-placeholder: #65766d;
+  --editor-mark-bg: #314039;
+  --editor-caret: #f3f5f1;
+  --close-hover-bg: #c42b1c;
+  --close-hover-color: #ffffff;
+  --scrollbar-track: #151b19;
+  --scrollbar-thumb: #3a4a44;
+  --scrollbar-thumb-hover: #4b5e56;
+  --shadow-dropdown: 0 4px 14px rgba(0, 0, 0, 0.42);
+  --shadow-card: 0 2px 5px rgba(0, 0, 0, 0.26);
+  --shadow-card-hover: 0 3px 12px rgba(223, 118, 87, 0.18);
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 石墨主题 - 中性黑灰与暖金色强调 */
+:root[data-theme="graphite"] {
+  --bg-primary: #17191a;
+  --bg-secondary: #1e2122;
+  --bg-tertiary: #232627;
+  --bg-surface: #292c2d;
+  --bg-elevated: #303435;
+  --bg-hover: #383c3d;
+  --bg-active: #414647;
+  --bg-selected: #423b29;
+  --bg-selected-hover: #50472e;
+  --bg-toolbar: #1e2122;
+  --border-primary: #414647;
+  --border-secondary: #343839;
+  --text-primary: #e7e5df;
+  --text-secondary: #b5b1a7;
+  --text-muted: #858279;
+  --text-disabled: #5f5d58;
+  --text-on-selected: #e5c373;
+  --accent: #d6aa4f;
+  --accent-rgb: 214, 170, 79;
+  --accent-hover: #e5bb63;
+  --accent-light: rgba(214, 170, 79, 0.14);
+  --editor-bg: #292c2d;
+  --editor-text: #e7e5df;
+  --editor-text-secondary: #c1bdb3;
+  --editor-text-heading: #f2f0ea;
+  --editor-text-heading2: #e6e2d9;
+  --editor-border: #414647;
+  --editor-code-bg: #323637;
+  --editor-code-text: #e39487;
+  --editor-pre-bg: #202324;
+  --editor-pre-border: #414647;
+  --editor-blockquote-border: #66645d;
+  --editor-blockquote-text: #b5b1a7;
+  --editor-highlight-bg: #51462e;
+  --editor-highlight-text: #efd98e;
+  --editor-link: #dfbd70;
+  --editor-selection: #51472f;
+  --editor-placeholder: #6c6a64;
+  --editor-mark-bg: #393c3c;
+  --editor-caret: #f2f0ea;
+  --close-hover-bg: #c42b1c;
+  --close-hover-color: #ffffff;
+  --scrollbar-track: #17191a;
+  --scrollbar-thumb: #414647;
+  --scrollbar-thumb-hover: #54595a;
+  --shadow-dropdown: 0 4px 14px rgba(0, 0, 0, 0.44);
+  --shadow-card: 0 2px 5px rgba(0, 0, 0, 0.27);
+  --shadow-card-hover: 0 3px 12px rgba(214, 170, 79, 0.18);
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 深海主题 - 深青背景与海沫绿强调 */
+:root[data-theme="deepsea"] {
+  --bg-primary: #0f181b;
+  --bg-secondary: #142125;
+  --bg-tertiary: #192a2e;
+  --bg-surface: #203036;
+  --bg-elevated: #263940;
+  --bg-hover: #2d444a;
+  --bg-active: #365057;
+  --bg-selected: #23473f;
+  --bg-selected-hover: #2c574c;
+  --bg-toolbar: #142125;
+  --border-primary: #375058;
+  --border-secondary: #293f45;
+  --text-primary: #e2ecec;
+  --text-secondary: #a6b9b9;
+  --text-muted: #71898a;
+  --text-disabled: #4c6264;
+  --text-on-selected: #75d8be;
+  --accent: #50b99f;
+  --accent-rgb: 80, 185, 159;
+  --accent-hover: #67cdb4;
+  --accent-light: rgba(80, 185, 159, 0.14);
+  --editor-bg: #203036;
+  --editor-text: #e2ecec;
+  --editor-text-secondary: #b1c2c2;
+  --editor-text-heading: #edf4f3;
+  --editor-text-heading2: #dce9e7;
+  --editor-border: #375058;
+  --editor-code-bg: #283b41;
+  --editor-code-text: #ef9387;
+  --editor-pre-bg: #142125;
+  --editor-pre-border: #375058;
+  --editor-blockquote-border: #52706f;
+  --editor-blockquote-text: #a6b9b9;
+  --editor-highlight-bg: #4b4930;
+  --editor-highlight-text: #e7d783;
+  --editor-link: #6bcdb5;
+  --editor-selection: #275249;
+  --editor-placeholder: #607779;
+  --editor-mark-bg: #2c4045;
+  --editor-caret: #edf4f3;
+  --close-hover-bg: #c42b1c;
+  --close-hover-color: #ffffff;
+  --scrollbar-track: #0f181b;
+  --scrollbar-thumb: #375058;
+  --scrollbar-thumb-hover: #49666e;
+  --shadow-dropdown: 0 4px 14px rgba(0, 0, 0, 0.46);
+  --shadow-card: 0 2px 5px rgba(0, 0, 0, 0.29);
+  --shadow-card-hover: 0 3px 12px rgba(80, 185, 159, 0.2);
   --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 

@@ -31,6 +31,7 @@ const currentFolderName = computed(() => {
   const f = activeTab.value >= 1 ? topFolders.value[activeTab.value - 1] : null
   return f ? f.name : ''
 })
+const currentViewName = computed(() => currentFolderName.value || '全部文稿')
 
 const folderActions = computed(() => {
   const acts: { name: string; key: string; color?: string }[] = [
@@ -200,48 +201,83 @@ function formatTime(ts: string) {
   }
   return d.toLocaleDateString('zh-CN')
 }
+
+const FOLDER_DOT_COLORS = ['#4597b7', '#3da57a', '#ec7047', '#d3a32c', '#9b78c6', '#6f8fa4']
+
+function documentDotColor(folderId: string) {
+  let hash = 0
+  for (const char of folderId) {
+    hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0
+  }
+  return FOLDER_DOT_COLORS[Math.abs(hash) % FOLDER_DOT_COLORS.length]
+}
 </script>
 
 <template>
   <div class="home-page">
-    <van-nav-bar title="笔记">
-      <template #right>
-        <van-icon name="search" class="nav-icon" @click="router.push('/search')" />
-        <van-icon name="more-o" class="nav-icon" @click="showFolderSheet = true" />
-      </template>
-    </van-nav-bar>
+    <header class="mobile-page-header">
+      <div class="mobile-page-header__main">
+        <h1 class="mobile-page-header__title">文稿</h1>
+        <p class="mobile-page-header__meta">{{ currentViewName }} · {{ documents.length }} 篇</p>
+      </div>
+      <div class="mobile-page-header__actions">
+        <button
+          type="button"
+          class="mobile-icon-button"
+          title="搜索"
+          aria-label="搜索"
+          @click="router.push('/search')"
+        >
+          <van-icon name="search" />
+        </button>
+        <button
+          v-if="currentRealFolderId"
+          type="button"
+          class="mobile-icon-button is-primary"
+          title="新建文稿"
+          aria-label="新建文稿"
+          @click="showCreateDoc = true"
+        >
+          <van-icon name="plus" />
+        </button>
+        <button
+          type="button"
+          class="mobile-icon-button"
+          title="管理文件夹"
+          aria-label="管理文件夹"
+          @click="showFolderSheet = true"
+        >
+          <van-icon name="more-o" />
+        </button>
+      </div>
+    </header>
 
     <!-- 文件夹横向 tab -->
-    <van-tabs v-model:active="activeTab" sticky @change="onTabChange">
-      <van-tab title="全部" />
-      <van-tab v-for="f in topFolders" :key="f.id" :title="f.name" />
-    </van-tabs>
-
-    <!-- 真实目录内可新建笔记 -->
-    <van-button
-      v-if="currentRealFolderId"
-      type="primary"
-      size="small"
-      plain
-      icon="plus"
-      class="new-btn"
-      @click="showCreateDoc = true"
-    >
-      新建笔记
-    </van-button>
+    <div class="folder-strip">
+      <van-tabs v-model:active="activeTab" shrink @change="onTabChange">
+        <van-tab title="全部" />
+        <van-tab v-for="f in topFolders" :key="f.id" :title="f.name" />
+      </van-tabs>
+    </div>
 
     <!-- 文档列表（滑动删除） -->
     <div class="doc-list">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <van-swipe-cell v-for="d in documents" :key="d.id">
-          <van-cell @click="openNote(d.id)">
+        <van-swipe-cell v-for="d in documents" :key="d.id" class="doc-swipe-cell">
+          <van-cell class="doc-cell" clickable @click="openNote(d.id)">
             <template #title>
-              <van-icon v-if="d.isLocked" name="lock" class="lock-ic" />
-              <span class="doc-title">{{ d.title || '无标题' }}</span>
+              <div class="doc-heading">
+                <span class="doc-dot" :style="{ backgroundColor: documentDotColor(d.folderId) }" aria-hidden="true"></span>
+                <span class="doc-title">{{ d.isLocked ? '已锁定' : (d.title || '无标题') }}</span>
+                <van-icon v-if="d.isLocked" name="lock" class="lock-ic" />
+              </div>
             </template>
             <template #label>
-              <span class="doc-preview">{{ store.getDocumentPreview(d) }}</span>
-              <span class="doc-time">{{ formatTime(d.updatedAt) }}</span>
+              <span v-if="!d.isLocked" class="doc-preview">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
+              <span class="doc-meta">
+                <span v-if="d.folderName" class="doc-folder">{{ d.folderName }}</span>
+                <time class="doc-time">{{ formatTime(d.updatedAt) }}</time>
+              </span>
             </template>
           </van-cell>
           <template #right>
@@ -254,9 +290,9 @@ function formatTime(ts: string) {
           <van-empty description="暂无笔记">
             <van-button
               v-if="!topFolders.length"
-              round
               type="primary"
               icon="plus"
+              class="empty-create-button"
               @click="onFolderAction({ key: 'newRoot' })"
             >
               新建文件夹
@@ -309,40 +345,138 @@ function formatTime(ts: string) {
 </template>
 
 <style scoped>
-.nav-icon {
-  font-size: 20px;
-  margin-left: 16px;
+.home-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--van-background);
 }
-.new-btn {
-  margin: 8px 16px;
-}
-.doc-list {
-  padding-bottom: 50px;
-}
-.doc-title {
-  font-weight: 500;
-}
-.doc-preview {
-  color: #999;
-  font-size: 12px;
-  display: block;
+
+.folder-strip {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   overflow: hidden;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.folder-strip :deep(.van-tabs__nav) {
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.folder-strip :deep(.van-tab) {
+  min-width: auto;
+  padding: 0 11px;
+}
+
+.doc-list {
+  padding: 10px 12px 20px;
+}
+
+.doc-swipe-cell {
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid var(--van-border-color);
+  border-radius: 7px;
+  background: var(--van-background-2);
+}
+
+.doc-swipe-cell :deep(.van-swipe-cell__wrapper) {
+  min-height: 108px;
+}
+
+.doc-cell {
+  min-height: 108px;
+  padding: 14px 15px 13px;
+}
+
+.doc-cell::after {
+  display: none;
+}
+
+.doc-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.doc-title {
+  overflow: hidden;
+  color: var(--van-text-color);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.doc-time {
-  color: #ccc;
-  font-size: 11px;
+
+.doc-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 7px 0 0 15px;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
+
+.doc-meta {
+  display: flex;
+  min-height: 17px;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0 0 15px;
+}
+
+.doc-folder {
+  overflow: hidden;
+  max-width: 54%;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
+  color: var(--van-primary-color);
+  font-size: 10px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-time {
+  margin-left: auto;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .swipe-del {
   height: 100%;
 }
+
 .swipe-lock {
   height: 100%;
 }
+
 .lock-ic {
-  color: #ff976a;
-  margin-right: 4px;
-  vertical-align: middle;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #d3a32c;
+  font-size: 14px;
+}
+
+.empty-create-button {
+  border-radius: 7px;
 }
 </style>

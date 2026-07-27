@@ -105,19 +105,18 @@ onBeforeUnmount(() => {
 <style scoped>
 .mobile-update-notice {
   position: fixed;
-  right: 8px;
-  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  right: 12px;
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
   z-index: 101;
   display: flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 32px;
   overflow: hidden;
   border: 1px solid var(--van-border-color);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--van-background-2) 92%, transparent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  opacity: 0.9;
-  backdrop-filter: blur(8px);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
+  box-shadow: 0 6px 18px rgba(18, 37, 45, 0.1);
+  backdrop-filter: blur(14px);
 }
 
 .mobile-update-link,
@@ -131,21 +130,21 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  min-height: 28px;
-  padding: 0 8px 0 9px;
+  min-height: 32px;
+  padding: 0 9px 0 10px;
   font-size: 11px;
 }
 
 .mobile-update-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--van-primary-color);
 }
 
 .mobile-update-ignore {
-  width: 26px;
-  min-height: 28px;
+  width: 28px;
+  min-height: 32px;
   padding: 0;
   color: var(--van-text-color-3, var(--van-text-color-2));
   font-size: 15px;

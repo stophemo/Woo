@@ -1,0 +1,321 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+.van-config-provider {
+  min-height: 100%;
+}
+
+html {
+  background: #f4f7f8;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  padding: 0;
+  background: #f4f7f8;
+  color: #24353d;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-app {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--van-background);
+  color: var(--van-text-color);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.page-content {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.page-content.has-tabbar {
+  padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-page-header {
+  display: flex;
+  min-height: calc(72px + env(safe-area-inset-top, 0px));
+  align-items: flex-end;
+  gap: 12px;
+  padding: calc(15px + env(safe-area-inset-top, 0px)) 18px 14px;
+  border-bottom: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background-2) 94%, transparent);
+}
+
+.mobile-page-header__main {
+  min-width: 0;
+  flex: 1;
+}
+
+.mobile-page-header__title {
+  overflow: hidden;
+  margin: 0;
+  color: var(--van-text-color);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-page-header__meta {
+  margin: 5px 0 0;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mobile-page-header__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.mobile-icon-button {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--van-border-color);
+  border-radius: 7px;
+  background: var(--van-background-2);
+  color: var(--van-text-color-2);
+}
+
+.mobile-icon-button:active {
+  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
+  color: var(--van-primary-color);
+}
+
+.mobile-icon-button .van-icon {
+  font-size: 21px;
+}
+
+.mobile-icon-button.is-primary {
+  border-color: color-mix(in srgb, var(--van-primary-color) 25%, var(--van-border-color));
+  background: color-mix(in srgb, var(--van-primary-color) 12%, var(--van-background-2));
+  color: var(--van-primary-color);
+}
+
+.mobile-loading {
+  display: flex;
+  justify-content: center;
+  padding: 56px 0;
+}
+
+.mobile-empty-copy {
+  color: var(--van-text-color-2);
+  font-size: 13px;
+}
+
+/* Vant is kept as the interaction layer; these rules make it read as one app. */
+.van-nav-bar {
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
+}
+
+.van-nav-bar::after {
+  display: none;
+}
+
+.van-nav-bar__content {
+  height: 54px;
+}
+
+.van-nav-bar__title {
+  max-width: 48%;
+  color: var(--van-text-color);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.van-nav-bar__text,
+.van-nav-bar .van-icon {
+  color: var(--van-text-color-2);
+}
+
+.van-tabs__nav {
+  background: transparent;
+}
+
+.van-tabs__wrap {
+  height: 48px;
+}
+
+.van-tabs__line {
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--van-primary-color);
+}
+
+.van-tab {
+  color: var(--van-text-color-2);
+  font-size: 13px;
+}
+
+.van-tab--active {
+  color: var(--van-text-color);
+  font-weight: 650;
+}
+
+.mobile-tabbar.van-tabbar {
+  box-sizing: border-box;
+  height: calc(62px + env(safe-area-inset-bottom, 0px));
+  padding: 5px max(22px, env(safe-area-inset-left, 0px)) env(safe-area-inset-bottom, 0px) max(22px, env(safe-area-inset-right, 0px));
+  border-top: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
+  box-shadow: 0 -8px 24px rgba(18, 37, 45, 0.04);
+  backdrop-filter: blur(18px);
+}
+
+.mobile-tabbar.van-tabbar::after {
+  display: none;
+}
+
+.mobile-tabbar .van-tabbar-item {
+  min-width: 0;
+  flex: 1 1 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--van-text-color-2);
+  font-size: 11px;
+}
+
+.mobile-tabbar .van-tabbar-item--active {
+  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
+  color: var(--van-primary-color);
+}
+
+.mobile-tabbar .van-tabbar-item__icon {
+  margin-bottom: 3px;
+  font-size: 21px;
+}
+
+.van-cell-group--inset {
+  margin: 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--van-border-color);
+  border-radius: 8px;
+  background: var(--van-background-2);
+  box-shadow: 0 4px 18px rgba(18, 37, 45, 0.035);
+}
+
+.van-cell-group__title {
+  padding: 22px 18px 8px;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.van-cell {
+  background: var(--van-background-2);
+}
+
+.van-cell::after {
+  border-color: var(--van-border-color);
+}
+
+.van-dialog,
+.van-popup,
+.van-action-sheet {
+  background: var(--van-background-2);
+}
+
+.van-dialog {
+  width: min(88vw, 360px);
+  border-radius: 8px;
+}
+
+.van-action-sheet {
+  border-radius: 8px 8px 0 0;
+}
+
+.van-field,
+.van-search,
+.van-search__content {
+  background: var(--van-background-2);
+}
+
+.van-toast {
+  border-radius: 7px;
+}
+
+.van-empty {
+  padding-top: 56px;
+}
+
+html[data-theme='dark'],
+html[data-theme='ink'],
+html[data-theme='graphite'],
+html[data-theme='deepsea'] {
+  color-scheme: dark;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] body { background: #1b1c1e; }
+html[data-theme='paper'],
+html[data-theme='paper'] body { background: #f2f6f7; }
+html[data-theme='ocean'],
+html[data-theme='ocean'] body { background: #edf6f7; }
+html[data-theme='forest'],
+html[data-theme='forest'] body { background: #f1f6f1; }
+html[data-theme='rose'],
+html[data-theme='rose'] body { background: #faf3f2; }
+html[data-theme='ink'],
+html[data-theme='ink'] body { background: #151b19; }
+html[data-theme='graphite'],
+html[data-theme='graphite'] body { background: #17191a; }
+html[data-theme='deepsea'],
+html[data-theme='deepsea'] body { background: #0f181b; }
+
+@media (min-width: 720px) {
+  .mobile-app {
+    width: min(100%, 720px);
+    margin: 0 auto;
+    border-inline: 1px solid var(--van-border-color);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

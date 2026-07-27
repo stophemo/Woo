@@ -40,46 +40,131 @@ function formatTime(ts: string) {
 
 <template>
   <div class="drafts-page">
-    <van-nav-bar title="草稿">
-      <template #right>
-        <van-icon name="plus" class="nav-plus" @click="newDraft" />
-      </template>
-    </van-nav-bar>
-    <van-cell-group title="草稿箱">
+    <header class="mobile-page-header">
+      <div class="mobile-page-header__main">
+        <h1 class="mobile-page-header__title">草稿箱</h1>
+        <p class="mobile-page-header__meta">{{ loading ? '正在读取…' : `${drafts.length} 篇未归档文稿` }}</p>
+      </div>
+      <div class="mobile-page-header__actions">
+        <button
+          type="button"
+          class="mobile-icon-button is-primary"
+          title="新建草稿"
+          aria-label="新建草稿"
+          @click="newDraft"
+        >
+          <van-icon name="plus" />
+        </button>
+      </div>
+    </header>
+
+    <van-loading v-if="loading" class="mobile-loading" />
+
+    <div v-else-if="drafts.length" class="draft-list">
       <van-cell
         v-for="d in drafts"
         :key="d.id"
-        :title="d.title || '无标题'"
-        is-link
+        class="draft-cell"
+        clickable
         @click="openNote(d.id)"
       >
+        <template #title>
+          <div class="draft-heading">
+            <span class="draft-dot" aria-hidden="true"></span>
+            <span class="draft-title">{{ d.title || '无标题' }}</span>
+          </div>
+        </template>
         <template #label>
-          <span class="draft-source">{{ d.folderName || '草稿箱' }}</span>
-          <span class="draft-time">{{ formatTime(d.updatedAt) }}</span>
+          <span class="draft-preview">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
+          <span class="draft-meta">
+            <span class="draft-source">{{ d.folderName || '草稿箱' }}</span>
+            <time class="draft-time">{{ formatTime(d.updatedAt) }}</time>
+          </span>
         </template>
       </van-cell>
-      <van-empty v-if="!drafts.length && !loading" description="暂无草稿" />
-    </van-cell-group>
-    <van-loading v-if="loading" class="loading" />
+    </div>
+
+    <van-empty v-else description="暂无草稿" />
   </div>
 </template>
 
 <style scoped>
-.loading {
+.drafts-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--van-background);
+}
+
+.draft-list {
+  padding: 12px;
+}
+
+.draft-cell {
+  margin-bottom: 8px;
+  padding: 14px 15px;
+  overflow: hidden;
+  border: 1px solid var(--van-border-color);
+  border-radius: 7px;
+}
+
+.draft-cell::after {
+  display: none;
+}
+
+.draft-heading {
   display: flex;
-  justify-content: center;
-  margin-top: 40px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
-.nav-plus {
-  font-size: 20px;
+
+.draft-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #ec7047;
 }
+
+.draft-title {
+  overflow: hidden;
+  color: var(--van-text-color);
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-preview {
+  display: block;
+  overflow: hidden;
+  margin: 7px 0 0 15px;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0 0 15px;
+}
+
 .draft-source {
-  color: #1989fa;
-  font-size: 11px;
-  margin-right: 8px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, #ec7047 11%, transparent);
+  color: #d5613f;
+  font-size: 10px;
 }
+
 .draft-time {
-  color: #ccc;
-  font-size: 11px;
+  margin-left: auto;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 </style>

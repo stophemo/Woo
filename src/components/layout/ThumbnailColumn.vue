@@ -2,71 +2,94 @@
   <section class="thumbnail-column" :class="{ 'collapsed': !isOpen, 'flipped': flipped }">
     <!-- 正面：文稿缩略图列表 -->
     <div class="face face-front">
-      <div v-if="store.selectedFolderLocked" class="empty-state">
-        <p class="empty-hint">当前目录已加锁，无法查看文稿</p>
-      </div>
-      <template v-else-if="store.currentFolderDocuments.length > 0">
-        <TransitionGroup name="note-item" tag="div" class="doc-list-wrap">
-          <div
-            v-for="doc in store.currentFolderDocuments"
-            :key="doc.id"
-            class="note-item"
-            :class="{
-              'active': store.selectedDocumentId === doc.id,
-              'dragging': isDraggingDoc && _dragDocId === doc.id,
-              'drag-over-above': dragOverDocId === doc.id && dragOverPos === 'above',
-              'drag-over-below': dragOverDocId === doc.id && dragOverPos === 'below'
-            }"
-            :draggable="!doc.isLocked"
-            @click="handleSelectDocument(doc.id)"
-            @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
-            @touchstart.passive="handleDocTouchStart($event, doc.id)"
-            @touchend.passive="handleDocTouchEnd"
-            @touchmove.passive="handleDocTouchMove"
-            @touchcancel.passive="handleDocTouchEnd"
-            @dragstart="onDocDragStart($event, doc.id)"
-            @dragover="onDocDragOver($event, doc.id)"
-            @dragleave="onDocDragLeave"
-            @drop="onDocDrop($event, doc.id)"
-            @dragend="onDocDragEnd"
-          >
-            <span class="grip-area">
-              <IconGrip />
-            </span>
-            <h4>
-              <template v-if="doc.isLocked">
-                <IconLock class="doc-lock-icon" />
-                <span class="locked-label">已锁定</span>
-              </template>
-              <template v-else>
-                {{ firstLineOf(doc.content) || '新文稿' }}
-              </template>
-            </h4>
-            <p class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</p>
-            <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' || doc.folderName === '未分类' }">{{ doc.folderName }}</span>
-            <span v-if="isTrashView && isDraftId(doc.id)" class="source-badge is-draft">草稿箱</span>
-            <button
-              v-if="!doc.isLocked"
-              class="flip-btn"
-              title="查看详情"
-              @click.stop="handleFlip(doc.id)"
+      <header class="thumbnail-header">
+        <div class="thumbnail-title">
+          <h3 :title="currentViewTitle">{{ currentViewTitle }}</h3>
+        </div>
+        <button
+          v-if="canCreateDocument"
+          class="new-document-btn"
+          type="button"
+          title="新建文稿"
+          aria-label="新建文稿"
+          @click="handleCreateDocument"
+        >
+          <IconNewDocument />
+        </button>
+      </header>
+
+      <div class="thumbnail-body">
+        <div v-if="store.selectedFolderLocked" class="empty-state">
+          <p class="empty-hint">当前目录已加锁，无法查看文稿</p>
+        </div>
+        <template v-else-if="store.currentFolderDocuments.length > 0">
+          <TransitionGroup name="note-item" tag="div" class="doc-list-wrap">
+            <div
+              v-for="doc in store.currentFolderDocuments"
+              :key="doc.id"
+              class="note-item"
+              :class="{
+                'active': store.selectedDocumentId === doc.id,
+                'dragging': isDraggingDoc && _dragDocId === doc.id,
+                'drag-over-above': dragOverDocId === doc.id && dragOverPos === 'above',
+                'drag-over-below': dragOverDocId === doc.id && dragOverPos === 'below'
+              }"
+              :draggable="!doc.isLocked"
+              @click="handleSelectDocument(doc.id)"
+              @contextmenu.prevent="handleDocContextMenu($event, doc.id)"
+              @touchstart.passive="handleDocTouchStart($event, doc.id)"
+              @touchend.passive="handleDocTouchEnd"
+              @touchmove.passive="handleDocTouchMove"
+              @touchcancel.passive="handleDocTouchEnd"
+              @dragstart="onDocDragStart($event, doc.id)"
+              @dragover="onDocDragOver($event, doc.id)"
+              @dragleave="onDocDragLeave"
+              @drop="onDocDrop($event, doc.id)"
+              @dragend="onDocDragEnd"
             >
-              <IconDetail />
-            </button>
-            <div v-if="isTrashView" class="trash-actions">
-              <button class="action-btn" title="恢复文稿" @click.stop="handleRestoreDocument(doc.id)">恢复</button>
-              <button class="action-btn danger" title="彻底删除文稿" @click.stop="handleHardDeleteDocument(doc.id)">删除</button>
+              <span class="grip-area">
+                <IconGrip />
+              </span>
+              <h4>
+                <template v-if="doc.isLocked">
+                  <IconLock class="doc-lock-icon" />
+                  <span class="locked-label">已锁定</span>
+                </template>
+                <template v-else>
+                  {{ documentPresentationOf(doc.id).title || '新文稿' }}
+                </template>
+              </h4>
+              <p v-if="!doc.isLocked && documentPresentationOf(doc.id).preview" class="note-preview">
+                {{ documentPresentationOf(doc.id).preview }}
+              </p>
+              <div class="note-footer">
+                <span v-if="isAllView && doc.folderName" class="source-badge" :class="{ 'is-draft': doc.folderName === '草稿箱' || doc.folderName === '未分类' }">{{ doc.folderName }}</span>
+                <span v-if="isTrashView && isDraftId(doc.id)" class="source-badge is-draft">草稿箱</span>
+                <time class="note-meta">{{ formatUpdatedAt(doc.updatedAt) }}</time>
+              </div>
+              <button
+                v-if="!doc.isLocked"
+                class="flip-btn"
+                title="查看详情"
+                @click.stop="handleFlip(doc.id)"
+              >
+                <IconDetail />
+              </button>
+              <div v-if="isTrashView" class="trash-actions">
+                <button class="action-btn" title="恢复文稿" @click.stop="handleRestoreDocument(doc.id)">恢复</button>
+                <button class="action-btn danger" title="彻底删除文稿" @click.stop="handleHardDeleteDocument(doc.id)">删除</button>
+              </div>
             </div>
-          </div>
-        </TransitionGroup>
-      </template>
+          </TransitionGroup>
+        </template>
 
-      <div v-else-if="store.selectedFolderId" class="empty-state">
-        <p class="empty-hint">{{ emptyHint }}</p>
-      </div>
+        <div v-else-if="store.selectedFolderId" class="empty-state">
+          <p class="empty-hint">{{ emptyHint }}</p>
+        </div>
 
-      <div v-else class="empty-state">
-        <p class="empty-hint">请在左侧选择一个目录</p>
+        <div v-else class="empty-state">
+          <p class="empty-hint">请在左侧选择一个目录</p>
+        </div>
       </div>
     </div>
 
@@ -183,10 +206,12 @@ import IconChevron from '../icons/IconChevron.vue'
 import { log } from '../../services/logger'
 import IconLock from '../icons/IconLock.vue'
 import IconGrip from '../icons/IconGrip.vue'
+import IconNewDocument from '../icons/IconNewDocument.vue'
 import ContextMenu from '../ui/ContextMenu.vue'
 import { useEditorNavigation, scrollToHeading as navScrollToHeading } from '../../config/editorNavigation'
 import LockPasswordDialog from './LockPasswordDialog.vue'
 import { exportDocumentInteractive } from '../../services/exportDocument'
+import { confirm as confirmDialog, message as messageDialog } from '@tauri-apps/plugin-dialog'
 
 interface Props {
   isOpen: boolean
@@ -276,6 +301,43 @@ const outline = computed(() => {
 const isTrashView = computed(() => store.selectedFolderId === TRASH_FOLDER_ID)
 const isSearchView = computed(() => store.selectedFolderId === SEARCH_FOLDER_ID)
 const isAllView = computed(() => store.selectedFolderId === ALL_FOLDER_ID)
+const isDraftView = computed(() => store.selectedFolderId === DRAFT_FOLDER_ID)
+
+const currentViewTitle = computed(() => {
+  if (isTrashView.value) return '废纸篓'
+  if (isSearchView.value) return '搜索结果'
+  if (isAllView.value) return '全部文稿'
+  if (isDraftView.value) return '草稿箱'
+  if (!store.selectedFolderId) return '未选择文件夹'
+  return store.findFolderById(store.folders, store.selectedFolderId)?.name || '文稿'
+})
+
+const canCreateDocument = computed(() => (
+  !store.selectedFolderLocked && !isTrashView.value && !isSearchView.value
+))
+
+interface DocumentPresentation {
+  title: string
+  preview: string
+}
+
+const EMPTY_DOCUMENT_PRESENTATION: DocumentPresentation = { title: '', preview: '' }
+
+const documentPresentations = computed(() => {
+  const presentations = new Map<string, DocumentPresentation>()
+  for (const doc of store.currentFolderDocuments) {
+    presentations.set(doc.id, doc.isLocked ? EMPTY_DOCUMENT_PRESENTATION : parseDocumentPresentation(doc.content))
+  }
+  return presentations
+})
+
+function documentPresentationOf(docId: string): DocumentPresentation {
+  return documentPresentations.value.get(docId) || EMPTY_DOCUMENT_PRESENTATION
+}
+
+function handleCreateDocument() {
+  void store.createNewDocument()
+}
 
 const emptyHint = computed(() => {
   if (isTrashView.value) return '废纸篓为空'
@@ -407,13 +469,22 @@ function handleUnflip() {
 async function handleRestore(versionNo: number) {
   const id = activeDocId.value
   if (!id) return
-  if (!window.confirm(`确定回滚到 v${versionNo}？当前内容会作为新的 restore 版本保留。`)) return
+  const confirmed = await requestConfirmation(
+    `确定回滚到 v${versionNo}？当前内容会作为新的 restore 版本保留。`,
+    '恢复历史版本',
+    '恢复'
+  )
+  if (!confirmed) return
   try {
     await versionApi.restoreVersion(id, versionNo)
     await store.selectDocument(id)
     await loadVersions(id)
   } catch (e: any) {
-    window.alert(e?.message || '回滚失败')
+    try {
+      await messageDialog(e?.message || '回滚失败', { title: '回滚失败', kind: 'error' })
+    } catch (dialogError) {
+      log.app.error('Unable to show restore error dialog:', dialogError)
+    }
   }
 }
 
@@ -422,8 +493,28 @@ async function handleRestoreDocument(docId: string) {
 }
 
 async function handleHardDeleteDocument(docId: string) {
-  if (!window.confirm('确认彻底删除该文稿？该操作不可恢复。')) return
+  const confirmed = await requestConfirmation(
+    '确认彻底删除该文稿？该操作不可恢复。',
+    '彻底删除文稿',
+    '彻底删除'
+  )
+  if (!confirmed) return
   await store.hardDeleteDocument(docId)
+}
+
+async function requestConfirmation(message: string, title: string, okLabel: string): Promise<boolean> {
+  try {
+    return await confirmDialog(message, {
+      title,
+      kind: 'warning',
+      okLabel,
+      cancelLabel: '取消'
+    })
+  } catch (e: any) {
+    log.app.error('Unable to show confirmation dialog:', e)
+    store.error = e?.message || '无法打开确认窗口'
+    return false
+  }
 }
 
 async function handleExportDoc(docId: string) {
@@ -475,7 +566,12 @@ async function handleMenuSelect(action: string) {
     return
   }
   if (action === 'emptyTrash') {
-    if (!window.confirm('确认清空废纸篓？该操作不可恢复。')) {
+    const confirmed = await requestConfirmation(
+      '确认清空废纸篓？该操作不可恢复。',
+      '清空废纸篓',
+      '清空'
+    )
+    if (!confirmed) {
       closeContextMenu()
       return
     }
@@ -595,14 +691,20 @@ const handleSelectDocument = (docId: string) => {
   void store.selectDocument(docId)
 }
 
-function firstLineOf(content: string | null | undefined): string {
-  if (!content) return ''
+function parseDocumentPresentation(content: string | null | undefined): DocumentPresentation {
+  if (!content) return EMPTY_DOCUMENT_PRESENTATION
   const tmp = document.createElement('div')
   tmp.innerHTML = content
   const block = tmp.querySelector('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre')
   let text = (block?.textContent || tmp.textContent || '').replace(/\u00A0/g, ' ')
   text = text.split(/\r?\n/).map(s => s.trim()).find(Boolean) || ''
-  return text.length > 40 ? text.slice(0, 40) + '…' : text
+  const title = text.length > 40 ? text.slice(0, 40) + '…' : text
+  const blocks = Array.from(tmp.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote'))
+    .map(node => (node.textContent || '').replace(/\u00A0/g, ' ').trim())
+    .filter(Boolean)
+  const previewText = blocks.slice(1).join(' ')
+  const preview = previewText.length > 72 ? previewText.slice(0, 72) + '…' : previewText
+  return { title, preview }
 }
 
 function formatUpdatedAt(value: string | null | undefined): string {
@@ -627,7 +729,7 @@ function changeTypeLabel(t: string): string {
 <style scoped>
 .thumbnail-column {
   position: relative;
-  width: 250px;
+  width: 276px;
   background-color: var(--bg-tertiary);
   border-right: 1px solid var(--border-primary);
   overflow: hidden;
@@ -650,7 +752,9 @@ function changeTypeLabel(t: string): string {
 }
 
 .face-front {
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   transform: translateX(0);
   opacity: 1;
 }
@@ -677,14 +781,76 @@ function changeTypeLabel(t: string): string {
 }
 
 /* ========== 正面：缩略图 ========== */
+.thumbnail-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 58px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-secondary);
+  background-color: var(--bg-tertiary);
+}
+
+.thumbnail-title {
+  min-width: 0;
+}
+
+.thumbnail-title h3 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-document-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.new-document-btn:hover {
+  background-color: var(--accent-light);
+  color: var(--accent-hover);
+}
+
+.new-document-btn:active {
+  transform: scale(0.94);
+}
+
+.new-document-btn :deep(svg) {
+  width: 19px;
+  height: 19px;
+}
+
+.thumbnail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 11px;
+}
+
 .note-item {
   position: relative;
-  padding: 12px;
-  margin-bottom: 12px;
-  background-color: var(--bg-elevated);
-  border-radius: 6px;
+  padding: 14px;
+  margin-bottom: 10px;
+  background-color: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg-tertiary));
+  border-radius: 7px;
   cursor: grab;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   transition:
     transform 0.3s cubic-bezier(0.42, 0, 0.28, 1),
     border-color 0.3s ease,
@@ -700,11 +866,11 @@ function changeTypeLabel(t: string): string {
 .note-item:hover {
   border-color: var(--border-primary);
   box-shadow: var(--shadow-card);
-  transform: translateY(-1px);
 }
 
 .note-item.active {
   border-color: var(--accent);
+  background-color: var(--bg-elevated);
   box-shadow: var(--shadow-card-hover);
 }
 
@@ -769,7 +935,7 @@ function changeTypeLabel(t: string): string {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 8px 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -790,15 +956,32 @@ function changeTypeLabel(t: string): string {
   font-style: italic;
 }
 
-.note-item p {
+.note-preview {
   font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  line-height: 1.55;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.note-footer {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-right: 22px;
+}
+
+.note-meta {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .flip-btn {
@@ -858,7 +1041,7 @@ function changeTypeLabel(t: string): string {
   display: inline-block;
   font-size: 10px;
   padding: 1px 6px;
-  margin-top: 6px;
+  margin-top: 0;
   border-radius: 3px;
   background-color: var(--bg-tertiary);
   color: var(--text-muted);

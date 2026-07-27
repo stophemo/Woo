@@ -279,4 +279,3 @@ jobs:
           files: |
             app-desktop/release/*.exe
             app-desktop/release/*.dmg
-            app-desktop/release/*.zip

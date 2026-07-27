@@ -5,9 +5,13 @@ import App from './App.vue'
 import { setupTauriBridge } from './setup'
 
 // Surface uncaught errors to the DOM so we can see them when the app fails to mount.
+let appMounted = false
+
 function showError(label: string, err: unknown) {
   // eslint-disable-next-line no-console
   console.error(label, err)
+  // 运行期间的操作异常交给组件和日志处理，不能覆盖已挂载的整个应用界面。
+  if (appMounted) return
   const root = document.getElementById('app')
   if (root && !root.dataset.errorRendered) {
     root.dataset.errorRendered = '1'
@@ -35,6 +39,7 @@ try {
   app.config.errorHandler = (err, _instance, info) => showError(`Vue error (${info})`, err)
   app.use(createPinia())
   app.mount('#app')
+  appMounted = true
 } catch (err) {
   showError('app.mount failed', err)
 }

@@ -2,10 +2,11 @@
     <div class="folder-tree">
         <TransitionGroup name="folder-item" tag="div">
             <FolderItem
-                v-for="folder in folders"
+                v-for="(folder, index) in folders"
                 :key="folder.id"
                 :folder="folder"
                 :depth="0"
+                :color-index="index"
                 :selected-folder-id="selectedFolderId"
                 @context-menu="forwardContextMenu"
                 @folder-select="forwardFolderSelect"

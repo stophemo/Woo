@@ -88,7 +88,7 @@
         <span class="word-count">{{ wordCount }} words</span>
         <span>{{ lineCount }} lines</span>
         <span>{{ zoomPercent }}%</span>
-        <span class="app-version" title="当前应用版本">Woo v{{ appVersion }}</span>
+        <span class="app-version" title="当前应用版本">v{{ appVersion }}</span>
       </div>
     </div>
 
@@ -1087,9 +1087,9 @@ const menuActionHandler = (e: Event) => {
 .sheet-grid td.left-header { background: color-mix(in srgb, var(--bg-toolbar) 40%, transparent); }
 .editor-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
 /* 滚动定位按钮组 */
-.scroll-nav { position: absolute; right: 8px; bottom: 36px; display: flex; flex-direction: column; gap: 4px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10; }
+.scroll-nav { position: absolute; right: 10px; bottom: 36px; display: flex; flex-direction: column; gap: 5px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10; }
 .scroll-nav.visible { opacity: 1; pointer-events: auto; }
-.scroll-nav-btn { width: 28px; height: 28px; border-radius: 6px; border: none; background: color-mix(in srgb, var(--bg-toolbar, #2a2a2a) 92%, transparent); color: var(--text-secondary, #999); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s ease, color 0.15s ease; }
+.scroll-nav-btn { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-secondary); background: color-mix(in srgb, var(--editor-bg) 88%, var(--bg-toolbar)); color: var(--text-secondary, #999); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-card); transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
 .scroll-nav-btn:hover { background: color-mix(in srgb, var(--accent, #409eff) 20%, var(--bg-toolbar, #2a2a2a)); color: var(--accent, #409eff); }
 .scroll-nav-btn:active { transform: scale(0.95); }
 .editor-scale-wrap { flex: 1; min-height: 0; }
@@ -1098,10 +1098,10 @@ const menuActionHandler = (e: Event) => {
 
 .locked-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
 .locked-placeholder-icon { width: 32px; height: 32px; color: var(--accent, #409eff); opacity: 0.6; }
-.editor-statusbar { height: 28px; background-color: var(--bg-toolbar); border-top: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 12px; color: var(--text-muted); flex-shrink: 0; overflow: hidden; transition: var(--theme-transition), height 0.25s ease, padding 0.25s ease, border-top-color 0.25s ease, opacity 0.2s ease, transform 0.25s ease; transform-origin: bottom; }
+.editor-statusbar { height: 26px; background-color: var(--bg-toolbar); border-top: 1px solid var(--border-secondary); display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 11px; color: var(--text-muted); flex-shrink: 0; overflow: hidden; transition: var(--theme-transition), height 0.25s ease, padding 0.25s ease, border-top-color 0.25s ease, opacity 0.2s ease, transform 0.25s ease; transform-origin: bottom; }
 .editor-statusbar.collapsed { height: 0; padding-top: 0; padding-bottom: 0; border-top-color: transparent; transform: translateY(100%); opacity: 0; pointer-events: none; }
-.statusbar-left, .statusbar-right { display: flex; gap: 12px; align-items: center; }
-.app-version { padding-left: 12px; border-left: 1px solid var(--border-secondary); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.statusbar-left, .statusbar-right { display: flex; gap: 14px; align-items: center; }
+.app-version { padding-left: 14px; border-left: 1px solid var(--border-secondary); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .current-block { color: var(--text-secondary); padding: 1px 6px; background-color: var(--editor-mark-bg); border-radius: 3px; font-size: 11px; }
 .editor-body::-webkit-scrollbar { width: 6px; }
 .editor-body::-webkit-scrollbar-track { background: var(--editor-bg); }
@@ -1124,25 +1124,26 @@ const menuActionHandler = (e: Event) => {
 
 <style>
 .wysiwyg-editor {
-  padding: 32px;
-  max-width: 800px;
+  padding: 48px 36px 120px;
+  max-width: 720px;
   margin: 0 auto;
   min-height: 100%;
   outline: none;
   color: var(--editor-text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 15px;
-  line-height: 1.8;
+  line-height: 1.88;
   caret-color: var(--editor-caret);
+  text-rendering: optimizeLegibility;
 }
 .wysiwyg-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; color: var(--editor-placeholder); pointer-events: none; height: 0; }
-.wysiwyg-editor h1 { font-size: 28px; font-weight: 700; margin: 24px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--editor-border); color: var(--editor-text-heading); line-height: 1.4; }
-.wysiwyg-editor h2 { font-size: 24px; font-weight: 600; margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border-secondary); color: var(--editor-text-heading2); line-height: 1.4; }
-.wysiwyg-editor h3 { font-size: 20px; font-weight: 600; margin: 16px 0 10px; color: var(--editor-text); line-height: 1.4; }
-.wysiwyg-editor h4, .wysiwyg-editor h5, .wysiwyg-editor h6 { font-size: 16px; font-weight: 600; margin: 12px 0 8px; color: var(--editor-text-secondary); line-height: 1.4; }
-.wysiwyg-editor p { margin: 12px 0; color: var(--editor-text-secondary); }
-.wysiwyg-editor ul, .wysiwyg-editor ol { margin: 12px 0; padding-left: 24px; }
-.wysiwyg-editor li { margin: 4px 0; color: var(--editor-text-secondary); }
+.wysiwyg-editor h1 { font-size: 32px; font-weight: 720; margin: 8px 0 30px; color: var(--editor-text-heading); line-height: 1.28; }
+.wysiwyg-editor h2 { font-size: 20px; font-weight: 680; margin: 34px 0 12px; color: var(--editor-text-heading2); line-height: 1.4; }
+.wysiwyg-editor h3 { font-size: 17px; font-weight: 650; margin: 26px 0 10px; color: var(--editor-text); line-height: 1.45; }
+.wysiwyg-editor h4, .wysiwyg-editor h5, .wysiwyg-editor h6 { font-size: 15px; font-weight: 650; margin: 22px 0 8px; color: var(--editor-text-secondary); line-height: 1.5; }
+.wysiwyg-editor p { margin: 0 0 16px; color: var(--editor-text-secondary); }
+.wysiwyg-editor ul, .wysiwyg-editor ol { margin: 14px 0 18px; padding-left: 24px; }
+.wysiwyg-editor li { margin: 5px 0; color: var(--editor-text-secondary); }
 .wysiwyg-editor li p { margin: 0; }
 .wysiwyg-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
 .wysiwyg-editor ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
@@ -1155,12 +1156,12 @@ const menuActionHandler = (e: Event) => {
 .wysiwyg-editor td { color: var(--editor-text-secondary); }
 .wysiwyg-editor th p, .wysiwyg-editor td p { margin: 0; }
 .wysiwyg-editor code { background-color: var(--editor-code-bg); padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; color: var(--editor-code-text); }
-.wysiwyg-editor pre { background-color: var(--editor-pre-bg); padding: 16px; border-radius: 6px; overflow-x: auto; margin: 12px 0; border: 1px solid var(--editor-pre-border); }
+.wysiwyg-editor pre { background-color: var(--editor-pre-bg); padding: 16px; border-radius: 6px; overflow-x: auto; margin: 20px 0; border: 1px solid var(--editor-pre-border); }
 .wysiwyg-editor pre code { background: none; padding: 0; color: var(--editor-text); font-size: 14px; line-height: 1.6; }
-.wysiwyg-editor blockquote { border-left: 4px solid var(--editor-blockquote-border); padding-left: 16px; margin: 12px 0; color: var(--editor-blockquote-text); font-style: italic; }
-.wysiwyg-editor blockquote p { color: var(--editor-blockquote-text); }
-.wysiwyg-editor hr { border: none; border-top: 1px solid var(--editor-border); margin: 20px 0; }
-.wysiwyg-editor strong { color: var(--editor-text-heading); font-weight: 700; }
+.wysiwyg-editor blockquote { border-left: 3px solid var(--editor-blockquote-border); padding: 14px 16px; margin: 24px 0; background: color-mix(in srgb, var(--editor-code-bg) 72%, transparent); color: var(--editor-blockquote-text); }
+.wysiwyg-editor blockquote p { margin: 0; color: var(--editor-blockquote-text); }
+.wysiwyg-editor hr { border: none; border-top: 1px solid var(--editor-border); margin: 32px 0; }
+.wysiwyg-editor strong { color: inherit; font-weight: 650; }
 .wysiwyg-editor em { color: var(--editor-text-secondary); font-style: italic; }
 .wysiwyg-editor s { color: var(--text-muted); }
 .wysiwyg-editor u { text-decoration-color: var(--text-muted); }

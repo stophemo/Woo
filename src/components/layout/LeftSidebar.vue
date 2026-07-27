@@ -2,11 +2,11 @@
   <div class="left-sidebar-wrapper" :class="{ 'is-mobile': isMobile }">
     <aside class="left-sidebar" :class="{ 'collapsed': !isOpen }" @contextmenu="handleContextMenu">
         <div class="sidebar-section" @contextmenu.stop.prevent>
-            <div class="sidebar-item" @click="handleNewDocument">
+            <div class="sidebar-item sidebar-primary-action" @click="handleNewDocument">
                 <IconNewDocument />
                 <span>新建文档</span>
             </div>
-            <div class="sidebar-item" v-if="!isSearchMode" @click="enableSearch">
+            <div class="sidebar-item" :class="{ selected: store.selectedFolderId === SEARCH_FOLDER_ID }" v-if="!isSearchMode" @click="enableSearch">
                 <IconSearch />
                 <span>搜索</span>
             </div>
@@ -23,20 +23,25 @@
                     @keyup.escape="disableSearch"
                 />
             </div>
-            <div class="sidebar-item" @click="handleOpenAll">
+            <div class="sidebar-item" :class="{ selected: store.selectedFolderId === ALL_FOLDER_ID }" @click="handleOpenAll">
                 <IconFile />
                 <span>全部</span>
             </div>
-            <div class="sidebar-item" @click="handleOpenDraftBox">
+            <div class="sidebar-item" :class="{ selected: store.selectedFolderId === DRAFT_FOLDER_ID }" @click="handleOpenDraftBox">
                 <IconDraft />
                 <span>草稿箱</span>
             </div>
-            <div class="sidebar-item" @click="handleOpenTrashBox">
+            <div class="sidebar-item" :class="{ selected: store.selectedFolderId === TRASH_FOLDER_ID }" @click="handleOpenTrashBox">
                 <IconTrash />
                 <span>废纸篓</span>
             </div>
         </div>
         <div class="divider"></div>
+        <div class="folder-section-header" @contextmenu.stop.prevent>
+            <button type="button" title="新建文件夹" aria-label="新建文件夹" @click.stop="handleCreateRootFolder">
+                <IconNewDocument />
+            </button>
+        </div>
         <div class="sidebar-section folder-tree-section">
             <FolderTree 
                 :folders="store.folders" 
@@ -102,6 +107,10 @@ const emit = defineEmits<{
 
 const store = useWorkspaceStore()
 const lockStore = useLockStore()
+const SEARCH_FOLDER_ID = '__search__'
+const ALL_FOLDER_ID = '__all__'
+const DRAFT_FOLDER_ID = '__drafts__'
+const TRASH_FOLDER_ID = '__trash__'
 
 // 加锁弹窗状态
 const showLockDialog = ref(false)
@@ -333,6 +342,10 @@ const handleNewDocument = () => {
     }
 }
 
+const handleCreateRootFolder = () => {
+    void store.createRootFolder()
+}
+
 // 打开全部文稿视图
 const handleOpenAll = () => {
     void store.openAllDocuments()
@@ -401,10 +414,10 @@ const handleOpenTrashBox = () => {
 }
 
 .left-sidebar {
-    width: 220px;
+    width: 224px;
     background-color: var(--bg-secondary);
     border-right: 1px solid var(--border-primary);
-    padding: 12px 8px;
+    padding: 16px 12px 12px;
     overflow-y: auto;
     overflow-x: hidden;
     transition: width 0.3s, padding 0.3s, opacity 0.3s, transform 0.3s ease, var(--theme-transition);
@@ -437,17 +450,17 @@ const handleOpenTrashBox = () => {
 }
 
 .sidebar-item {
-    padding: 8px 8px;
+    padding: 0 10px;
     margin: 2px 0;
     cursor: pointer;
     border-radius: 6px;
     font-size: 13px;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 10px;
     transition: all 0.2s;
-    height: 36px;
+    height: 38px;
 }
 
 .sidebar-item:hover {
@@ -458,10 +471,28 @@ const handleOpenTrashBox = () => {
     background-color: var(--bg-active);
 }
 
+.sidebar-item.selected {
+    background-color: var(--bg-selected);
+    color: var(--text-on-selected);
+    font-weight: 600;
+}
+
+.sidebar-primary-action {
+    margin-bottom: 6px;
+    background-color: var(--accent-light);
+    color: var(--text-on-selected);
+    font-weight: 600;
+}
+
+.sidebar-primary-action:hover {
+    background-color: var(--bg-selected-hover);
+}
+
 .sidebar-item :deep(svg) {
     width: 16px;
     height: 16px;
-    color: var(--text-secondary);
+    color: currentColor;
+    stroke-width: 1.7;
     flex-shrink: 0;
 }
 
@@ -511,9 +542,41 @@ const handleOpenTrashBox = () => {
 }
 
 .divider {
-    height: 1px;
-    background-color: var(--border-primary);
-    margin: 8px 0;
+    display: none;
+}
+
+.folder-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    height: 24px;
+    margin: 10px 8px 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.folder-section-header button {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.folder-section-header button:hover {
+    background-color: var(--bg-hover);
+    color: var(--accent);
+}
+
+.folder-section-header button :deep(svg) {
+    width: 15px;
+    height: 15px;
+    stroke-width: 1.7;
 }
 
 </style>

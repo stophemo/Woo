@@ -342,8 +342,8 @@ const handleMenuAction = (action: string) => {
   padding: 0 16px;
   padding-top: var(--safe-area-top);
   height: var(--top-menu-height);
-  background-color: var(--bg-toolbar);
-  border-bottom: 1px solid var(--border-primary);
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-secondary);
   transition: var(--theme-transition), height 0.25s ease, transform 0.25s ease, padding 0.25s ease, border-bottom-color 0.25s ease, opacity 0.2s ease;
   transform-origin: top;
 }
@@ -361,24 +361,27 @@ const handleMenuAction = (action: string) => {
 
 .menu-left {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
 .menu-item {
-  padding: 6px 12px;
+  padding: 6px 10px;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 14px;
-  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 520;
+  color: var(--text-secondary);
 }
 
 .menu-item:hover {
   background-color: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .menu-right {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
 }
 
 .mobile-menu-right {
@@ -411,8 +414,10 @@ const handleMenuAction = (action: string) => {
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -436,8 +441,8 @@ const handleMenuAction = (action: string) => {
 }
 
 .window-control-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .menu-divider {

@@ -38,7 +38,9 @@ declare module 'turndown' {
 }
 
 declare module 'turndown-plugin-gfm' {
+  const gfm: any
   const tables: any
   const strikethrough: any
-  export { tables, strikethrough }
+  const taskListItems: any
+  export { gfm, tables, strikethrough, taskListItems }
 }

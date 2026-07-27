@@ -136,7 +136,6 @@ function handleMenuAction(action: string) {
     case 'toggle-thumbnail':
       toggleThumbnailSidebar()
       break
-    case 'appearance':
     case 'theme':
       openSettings('file')
       break

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false
+  },
+  "include": [
+    "src-mobile/**/*.ts",
+    "src-mobile/**/*.vue",
+    "src-mobile/**/*.d.ts",
+    "src/types/**/*.d.ts",
+    "src/tauri-env.d.ts"
+  ],
+  "references": []
+}
