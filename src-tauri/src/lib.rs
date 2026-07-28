@@ -138,6 +138,7 @@ fn show_main_window(app_handle: &tauri::AppHandle) {
     };
 
     let _ = window.show();
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let _ = window.unminimize();
     let _ = window.set_focus();
 }
