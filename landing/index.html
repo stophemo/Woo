@@ -65,15 +65,25 @@
           <h1 id="hero-title">无我笔记</h1>
           <p class="hero-tagline">此刻落笔，随处续写。</p>
           <p class="hero-support">一款本地优先的 Markdown 笔记应用。无需登录即可在本机写作；需要跨设备时，再把文稿同步到 macOS、Windows 与 Android。</p>
-          <div class="hero-actions" aria-label="各平台下载">
-            <a class="button button-primary" data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
-              下载 macOS
-            </a>
-            <a class="button button-secondary" data-download="windows" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe">
-              下载 Windows
-            </a>
-            <a class="button button-secondary" data-download="android" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk">
-              下载 Android
+          <div class="hero-actions" aria-label="客户端下载安装">
+            <details class="download-menu" data-download-menu>
+              <summary class="button button-primary">
+                下载桌面端
+                <svg class="download-menu-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>
+              </summary>
+              <div class="download-menu-panel" role="group" aria-label="选择桌面系统">
+                <a data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
+                  <span>下载 macOS</span>
+                  <small>DMG</small>
+                </a>
+                <a data-download="windows" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe">
+                  <span>下载 Windows</span>
+                  <small>EXE</small>
+                </a>
+              </div>
+            </details>
+            <a class="button button-secondary" data-download="android" aria-label="下载 Android 移动端" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk">
+              下载移动端
             </a>
           </div>
           <p class="hero-meta">免费使用 · MIT 开源 · 无需账号即可开始</p>

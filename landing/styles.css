@@ -318,14 +318,76 @@ strong {
 .hero-actions {
   display: grid;
   width: min(100%, 470px);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .hero-actions .button {
+  width: 100%;
   min-width: 0;
   padding: 0 10px;
   white-space: nowrap;
+}
+
+.download-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.download-menu summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.download-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.download-menu-caret {
+  transition: transform 160ms ease;
+}
+
+.download-menu[open] .download-menu-caret {
+  transform: rotate(180deg);
+}
+
+.download-menu-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #5b625d;
+  border-radius: 6px;
+  background: #252a27;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+}
+
+.download-menu-panel a {
+  display: flex;
+  min-height: 39px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 4px;
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 680;
+  transition: background-color 160ms ease;
+}
+
+.download-menu-panel a:hover {
+  background: #333a36;
+}
+
+.download-menu-panel small {
+  color: #929b94;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.05em;
 }
 
 .button {

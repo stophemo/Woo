@@ -69,6 +69,7 @@ noteButtons.forEach((button) => {
 
 const nav = document.querySelector("[data-nav]");
 const navToggle = document.querySelector("[data-nav-toggle]");
+const downloadMenu = document.querySelector("[data-download-menu]");
 
 function setNavOpen(open) {
   if (!nav || !navToggle) return;
@@ -86,12 +87,19 @@ nav?.querySelectorAll("a").forEach((link) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") setNavOpen(false);
+  if (event.key !== "Escape") return;
+  setNavOpen(false);
+  downloadMenu?.removeAttribute("open");
 });
 
 document.addEventListener("click", (event) => {
-  if (!nav || !navToggle || event.target instanceof Node === false) return;
-  if (!nav.contains(event.target) && !navToggle.contains(event.target)) setNavOpen(false);
+  if (event.target instanceof Node === false) return;
+  if (nav && navToggle && !nav.contains(event.target) && !navToggle.contains(event.target)) {
+    setNavOpen(false);
+  }
+  if (downloadMenu && !downloadMenu.contains(event.target)) {
+    downloadMenu.removeAttribute("open");
+  }
 });
 
 document.querySelectorAll("[data-current-year]").forEach((element) => {
