@@ -5,7 +5,7 @@
  */
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { open } from '@tauri-apps/plugin-shell'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from './services/api'
 
@@ -22,7 +22,7 @@ export function setupTauriBridge() {
     setFullscreen: (fullscreen: boolean) => appWindow.setFullscreen(fullscreen),
 
     // External links
-    openExternalLink: (url: string) => open(url),
+    openExternalLink: (url: string) => openUrl(url),
 
     // App version
     getAppVersion: () => invoke<string>('app:getVersion'),

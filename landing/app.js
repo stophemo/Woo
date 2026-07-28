@@ -2,7 +2,7 @@ const RELEASE_API = "https://api.github.com/repos/stophemo/Woo/releases/latest";
 
 const demoNotes = {
   quiet: {
-    kicker: "写作随想 · 7 月 26 日",
+    kicker: "写作随想 · 7 月 28 日",
     title: "让工具退后，让思考向前",
     lead: "好的写作工具，不应该把注意力放在自己身上。",
     body: `
@@ -11,7 +11,7 @@ const demoNotes = {
       <h3>保持简单，也保留余地</h3>
       <p>本地保存承担确定性，版本历史留住探索过程。同步与 AI 都可以按需加入，但不应成为开始写作的前提。</p>
     `,
-    count: "428 字",
+    count: "428 words",
   },
   sync: {
     kicker: "产品笔记 · 跨端体验",
@@ -23,7 +23,7 @@ const demoNotes = {
       <h3>先本地，后同步</h3>
       <p>每台设备都先独立完成保存，再把增量变化交给同步引擎。网络不再是写作的前置条件。</p>
     `,
-    count: "736 字",
+    count: "736 words",
   },
   reading: {
     kicker: "阅读手记 · 2026 年 7 月",
@@ -35,7 +35,7 @@ const demoNotes = {
       <h3>把摘录变成自己的语言</h3>
       <p>沿着大纲整理主题，用版本记录观点如何变化。文字被重新组织之后，阅读才真正进入自己的经验。</p>
     `,
-    count: "1,204 字",
+    count: "1,204 words",
   },
 };
 

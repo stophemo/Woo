@@ -1,4 +1,4 @@
-import { open } from '@tauri-apps/plugin-shell'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from './api'
 
 export interface MobileUpdateInfo {
@@ -14,5 +14,5 @@ export function checkForMobileAppUpdate(): Promise<MobileUpdateInfo | null> {
 }
 
 export function openMobileUpdateDownload(downloadUrl: string): Promise<void> {
-  return open(downloadUrl)
+  return openUrl(downloadUrl)
 }

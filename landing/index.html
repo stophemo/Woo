@@ -38,7 +38,7 @@
       </nav>
 
       <a class="header-download" href="#download">
-        下载 <span data-version>v0.6.8</span>
+        下载 <span data-version>v0.6.9</span>
       </a>
 
       <button class="nav-toggle" type="button" aria-label="打开导航" aria-controls="primary-nav" aria-expanded="false" data-nav-toggle>
@@ -59,7 +59,7 @@
       <div class="hero-inner">
         <div class="hero-copy">
           <p class="release-line">
-            <span data-version>v0.6.8</span>
+            <span data-version>v0.6.9</span>
             <b>macOS · Windows · Android</b>
           </p>
           <h1 id="hero-title">无我笔记</h1>
@@ -82,65 +82,79 @@
           <section class="desktop-preview" aria-label="桌面端三栏编辑器">
             <header class="window-bar">
               <span class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="window-title">无我笔记</span>
-              <span class="sync-state"><i></i> 已保存</span>
+              <nav class="demo-menu-links" aria-label="应用菜单">
+                <span>文件</span><span>编辑</span><span>标记</span><span>查看</span><span>帮助</span>
+              </nav>
+              <div class="demo-window-actions" aria-hidden="true">
+                <span class="theme-symbol">☼</span>
+                <span class="layout-symbol top"></span>
+                <span class="layout-symbol bottom"></span>
+                <span class="layout-symbol left"></span>
+                <span class="layout-symbol split"></span>
+                <span class="sync-symbol">↻</span>
+                <span class="account-symbol"></span>
+              </div>
             </header>
 
             <div class="app-shell">
               <aside class="demo-navigation" aria-label="演示文件夹">
-                <div class="mini-brand">
-                  <img src="/assets/app-icon.svg" width="24" height="24" alt="">
-                  <strong>Woo</strong>
+                <div class="nav-command is-primary">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+                  新建文档
                 </div>
-                <div class="nav-command"><span>＋</span> 新建文档</div>
-                <div class="nav-command"><span>⌕</span> 搜索</div>
-                <div class="nav-command"><span>□</span> 全部文稿</div>
-                <p class="demo-label">文件夹</p>
+                <div class="nav-command">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                  搜索
+                </div>
+                <div class="nav-command">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg>
+                  全部
+                </div>
+                <div class="nav-command">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h8"></path></svg>
+                  草稿箱
+                </div>
+                <div class="nav-command">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"></path></svg>
+                  废纸篓
+                </div>
+                <div class="nav-divider"></div>
+                <div class="folder-create" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+                </div>
                 <div class="folder-row is-current"><i class="folder-dot dot-blue"></i>写作</div>
-                <div class="folder-row"><i class="folder-dot dot-green"></i>工作</div>
-                <div class="folder-row"><i class="folder-dot dot-orange"></i>灵感</div>
-                <div class="folder-row"><i class="folder-dot dot-gray"></i>归档</div>
-                <div class="nav-spacer"></div>
-                <div class="nav-command nav-muted"><span>♙</span> 本地数据库</div>
+                <div class="folder-row"><i class="folder-dot dot-orange"></i>项目</div>
+                <div class="folder-row"><i class="folder-dot dot-green"></i>阅读</div>
+                <div class="folder-row"><i class="folder-dot dot-violet"></i>归档</div>
               </aside>
 
               <aside class="demo-notes" aria-label="演示文稿列表">
                 <header class="notes-heading">
-                  <div>
-                    <span>文件夹</span>
-                    <strong>写作</strong>
-                  </div>
-                  <button type="button" title="新建文档" aria-label="新建文档">＋</button>
+                  <strong>写作</strong>
+                  <button type="button" title="新建文稿" aria-label="新建文稿">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+                  </button>
                 </header>
                 <button class="note-preview is-active" type="button" data-demo-note="quiet" aria-pressed="true">
                   <strong>让工具退后，让思考向前</strong>
                   <span>好的写作工具，不应该把注意力放在自己身上……</span>
-                  <small>刚刚</small>
+                  <small><b>写作</b><time>刚刚</time></small>
                 </button>
                 <button class="note-preview" type="button" data-demo-note="sync" aria-pressed="false">
                   <strong>跨端写作的理想节奏</strong>
                   <span>电脑适合长篇推进，手机适合捕捉瞬间……</span>
-                  <small>10:24</small>
+                  <small><b>写作</b><time>10:24</time></small>
                 </button>
                 <button class="note-preview" type="button" data-demo-note="reading" aria-pressed="false">
                   <strong>七月阅读手记</strong>
                   <span>真正留下来的，不是读过多少，而是重新想过什么。</span>
-                  <small>昨天</small>
+                  <small><b>写作</b><time>昨天</time></small>
                 </button>
               </aside>
 
               <article class="demo-editor" aria-live="polite">
-                <div class="editor-toolbar" aria-label="编辑器格式工具栏">
-                  <button type="button" title="加粗"><strong>B</strong></button>
-                  <button type="button" title="斜体"><i>I</i></button>
-                  <button type="button" title="一级标题">H1</button>
-                  <span></span>
-                  <button type="button" title="项目列表">≡</button>
-                  <button type="button" title="引用">“</button>
-                  <button type="button" title="插入链接">↗</button>
-                </div>
                 <div class="editor-paper">
-                  <p class="editor-kicker" data-editor-kicker>写作随想 · 7 月 26 日</p>
+                  <p class="editor-kicker" data-editor-kicker>写作随想 · 7 月 28 日</p>
                   <h2 data-editor-title>让工具退后，让思考向前</h2>
                   <p class="editor-lead" data-editor-lead>好的写作工具，不应该把注意力放在自己身上。</p>
                   <div data-editor-body>
@@ -151,9 +165,8 @@
                   </div>
                 </div>
                 <footer class="editor-status">
-                  <span data-editor-count>428 字</span>
                   <span>Markdown</span>
-                  <span class="status-local"><i></i> 已保存到本地</span>
+                  <span class="status-local"><span data-editor-count>428 words</span><span>12 lines</span><span>100%</span><span class="demo-version">v0.6.9</span></span>
                 </footer>
               </article>
             </div>
@@ -161,19 +174,24 @@
 
           <aside class="mobile-peek" aria-label="Android 移动端文稿列表">
             <div class="phone-status"><span>9:41</span><span>● ◒</span></div>
-            <header><strong>文稿</strong><span>＋</span></header>
+            <header>
+              <div><strong>文稿</strong><small>全部 · 3 篇</small></div>
+              <span class="mobile-head-actions" aria-hidden="true"><i>⌕</i><i>＋</i><i>•••</i></span>
+            </header>
             <div class="mobile-folder-row">
               <span class="is-selected">全部</span><span>写作</span><span>灵感</span>
             </div>
             <div class="mobile-note">
-              <strong>随手记：回家路上的想法</strong>
+              <strong><i class="mobile-dot dot-orange"></i>随手记：回家路上的想法</strong>
               <span>先记下来，晚上再回到电脑继续整理。</span>
+              <small><b>灵感</b><time>10:42</time></small>
             </div>
             <div class="mobile-note">
-              <strong>让工具退后，让思考向前</strong>
-              <span>刚刚同步</span>
+              <strong><i class="mobile-dot dot-blue"></i>让工具退后，让思考向前</strong>
+              <span>好的写作工具，不应该把注意力放在自己身上。</span>
+              <small><b>写作</b><time>刚刚</time></small>
             </div>
-            <footer><span class="is-selected">文稿</span><span>搜索</span><span>设置</span></footer>
+            <footer><span class="is-selected"><b>▤</b>文稿</span><span><b>□</b>草稿</span><span><b>⚙</b>设置</span></footer>
           </aside>
         </div>
       </div>
@@ -272,28 +290,42 @@
 
         <div class="device-showcase">
           <div class="desktop-detail" aria-label="桌面端编辑体验示意">
-            <div class="detail-sidebar">
-              <span>全部文稿</span><span class="is-active">写作</span><span>项目</span><span>归档</span>
+            <div class="detail-topbar">
+              <span>文件</span><span>编辑</span><span>标记</span><span>查看</span><span>帮助</span>
+              <b>☼　▣　▥　↻</b>
             </div>
-            <article>
-              <p>编辑器</p>
-              <h3>写作时，只留下文字</h3>
-              <span class="text-line line-long"></span>
-              <span class="text-line"></span>
-              <span class="text-line line-short"></span>
-              <blockquote>界面安静下来，思路才有足够的空间展开。</blockquote>
-              <span class="text-line line-long"></span>
-              <span class="text-line line-short"></span>
-            </article>
+            <div class="detail-body">
+              <div class="detail-sidebar">
+                <span class="is-primary">＋　新建文档</span><span>⌕　搜索</span><span>□　全部</span><span>▤　草稿箱</span><span>♲　废纸篓</span>
+                <i></i>
+                <span class="is-active"><b class="dot-blue"></b>写作</span><span><b class="dot-orange"></b>项目</span><span><b class="dot-green"></b>阅读</span>
+              </div>
+              <div class="detail-note-list">
+                <header><strong>写作</strong><span>＋</span></header>
+                <div class="is-active"><strong>写作时，只留下文字</strong><small>界面安静下来，思路才有足够空间展开。</small><time>刚刚</time></div>
+                <div><strong>跨端写作的理想节奏</strong><small>电脑适合长篇推进，手机适合捕捉瞬间。</small><time>10:24</time></div>
+              </div>
+              <article>
+                <p>写作随想 · 7 月 28 日</p>
+                <h3>写作时，只留下文字</h3>
+                <span class="text-line line-long"></span>
+                <span class="text-line"></span>
+                <span class="text-line line-short"></span>
+                <blockquote>界面安静下来，思路才有足够的空间展开。</blockquote>
+                <span class="text-line line-long"></span>
+                <span class="text-line line-short"></span>
+                <footer><span>Markdown</span><span>428 words　12 lines　100%　v0.6.9</span></footer>
+              </article>
+            </div>
           </div>
 
           <div class="phone-detail" aria-label="Android 文稿浏览体验示意">
             <div class="phone-camera" aria-hidden="true"></div>
-            <div class="phone-detail-header"><span>‹</span><strong>写作</strong><span>＋</span></div>
-            <div class="phone-search">搜索文稿</div>
-            <div class="phone-note is-active"><strong>写作时，只留下文字</strong><small>2 分钟前 · 428 字</small></div>
-            <div class="phone-note"><strong>跨端写作的理想节奏</strong><small>今天 10:24 · 736 字</small></div>
-            <div class="phone-note"><strong>七月阅读手记</strong><small>昨天 · 1,204 字</small></div>
+            <div class="phone-detail-header"><div><strong>文稿</strong><small>全部 · 3 篇</small></div><span>⌕　＋　•••</span></div>
+            <div class="phone-tabs"><span class="is-active">全部</span><span>写作</span><span>灵感</span></div>
+            <div class="phone-note is-active"><strong><i class="dot-blue"></i>写作时，只留下文字</strong><small>界面安静下来，思路才有足够的空间展开。</small><time><b>写作</b>刚刚</time></div>
+            <div class="phone-note"><strong><i class="dot-orange"></i>跨端写作的理想节奏</strong><small>电脑适合长篇推进，手机适合捕捉瞬间。</small><time><b>项目</b>10:24</time></div>
+            <div class="phone-note"><strong><i class="dot-green"></i>七月阅读手记</strong><small>真正留下来的，是重新想过什么。</small><time><b>阅读</b>昨天</time></div>
             <div class="phone-bottom"><span>文稿</span><span>草稿</span><span>设置</span></div>
           </div>
         </div>
@@ -358,7 +390,7 @@
       <div class="section-inner">
         <div class="download-heading">
           <div>
-            <p class="section-kicker"><span data-version>v0.6.8</span> · <span data-release-date>2026-07-28</span></p>
+            <p class="section-kicker"><span data-version>v0.6.9</span> · <span data-release-date>2026-07-28</span></p>
             <h2 id="download-title">选一个设备，开始写</h2>
           </div>
           <p>安装包由 GitHub Actions 构建并发布到 GitHub Releases。无需应用商店，下载安装后即可离线使用。</p>

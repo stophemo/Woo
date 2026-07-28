@@ -1,6 +1,6 @@
 [package]
 name = "woo-tauri"
-version = "0.6.8"
+version = "0.6.9"
 description = "Woo Notes - Tauri v2"
 authors = ["stophemo"]
 edition = "2021"
@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
