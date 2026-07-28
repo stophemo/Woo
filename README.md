@@ -5,14 +5,14 @@
 <h1 align="center">无我笔记 Woo</h1>
 
 <p align="center">
-  <strong>跨平台云同步 · Markdown 笔记应用</strong>
+  <strong>本地优先 · 跨平台 Markdown 笔记应用</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/github/v/release/nonegonotes/woo?color=%235a9acf" alt="Release"></a>
+  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/github/v/release/stophemo/Woo?color=%235a9acf" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
-  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Android-blue" alt="Platform"></a>
-  <a href="https://github.com/stophemo/Woo/stargazers"><img src="https://img.shields.io/github/stars/nonegonotes/woo?style=social" alt="Stars"></a>
+  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Android-blue" alt="Platform"></a>
+  <a href="https://github.com/stophemo/Woo/stargazers"><img src="https://img.shields.io/github/stars/stophemo/Woo?style=social" alt="Stars"></a>
 </p>
 
 <p align="center">
@@ -26,18 +26,18 @@
 
 ## ✨ 为什么选择 Woo
 
-Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在手机、电脑、平板上无缝切换，写作体验始终如一。
+Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注册即可在本机离线写作；需要跨设备时，再登录并同步到 macOS、Windows 与 Android。
 
 | | |
 |---|---|
-| ☁️ **云端同步** | 基于 Supabase 的多设备实时同步，增量推拉 + 冲突检测 |
-| 📝 **所见即所得** | Tiptap 富文本编辑器，Markdown 语法实时转换 |
-| 🤖 **AI 辅助** | 集成 Gemini + DeepSeek，续写、摘要、翻译、头脑风暴 |
-| ⏱️ **版本历史** | 自动保存 + 手动快照，随时回退到任意历史版本 |
-| 📶 **离线可用** | 所有数据本地留存，断网也能写作，恢复后自动同步 |
-| 🔒 **隐私安全** | 开源透明，密码锁保护，数据经过你的 Supabase 项目传输 |
+| 💾 **本地优先** | 正式文稿写入本机 SQLite，草稿保存在应用本地；断网也能浏览和编辑 |
+| ☁️ **可选同步** | 注册并登录后通过 Supabase 增量同步，采用最后写入胜出与冲突副本保护 |
+| 📝 **桌面编辑** | Tiptap 所见即所得编辑器，支持 Markdown 输入与粘贴、表格、大纲和思维导图 |
+| 📱 **移动编辑** | Android 针对小屏提供 Markdown 编辑、搜索、分享、回收站与版本回溯 |
+| ⏱️ **版本历史** | 桌面端自动记录、Android 保存时记录，也可手动建立和恢复正式文稿版本 |
+| 📤 **文件与导出** | 桌面端可读写 Markdown / TXT 文件，并将文稿导出为 Markdown、纯文本或 PNG |
+| 🔒 **应用内访问锁** | 可锁定文件夹或文稿；用于限制应用内查看，不等同于磁盘加密 |
 | 🎨 **极简设计** | 温暖柔和的日间主题 + 护眼暗色主题 |
-| 🌍 **跨平台** | macOS · Windows · Linux · Android，同一套代码 |
 
 ---
 
@@ -45,12 +45,11 @@ Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在�
 
 | 平台 | 下载 | 说明 |
 |------|------|------|
-| 🍎 macOS | [DMG (Apple Silicon)](https://github.com/stophemo/Woo/releases/latest) | 正式包使用 Developer ID 签名并完成 Apple 公证 |
+| 🍎 macOS | [DMG (Apple Silicon)](https://github.com/stophemo/Woo/releases/latest) | 适用于 M 系列 Mac；签名与公证状态以对应 Release 说明为准 |
 | 🪟 Windows | [NSIS 安装包 (x64)](https://github.com/stophemo/Woo/releases/latest) | 双击安装 |
 | 🤖 Android | [已签名 APK (ARM64)](https://github.com/stophemo/Woo/releases/latest) | 支持 `arm64-v8a`，安装时允许来自此来源的应用 |
-| 🐧 Linux | 即将推出 | 或从源码编译（见下方） |
 
-> 💡 **macOS 用户**：正式发布包使用 Apple Developer ID 签名并完成公证，无需安装任何额外证书。临时测试 DMG 不等同于正式公证包；若 Release 明确标注为临时未签名测试包，请在 Finder 中右键应用并选择“打开”，或前往“系统设置 → 隐私与安全”选择“仍要打开”。切勿导入第三方信任根；若曾按旧版说明导入 Woo 自签信任根，请立即从“钥匙串访问”中删除。
+> **macOS 用户**：安装前请阅读对应 Release 说明。若版本未完成 Apple 公证，首次启动请在 Finder 中右键 Woo.app 并选择“打开”，或前往“系统设置 → 隐私与安全”选择“仍要打开”。无需、也不要安装任何第三方根证书。
 
 ---
 
@@ -58,9 +57,8 @@ Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在�
 
 1. 前往 [Releases](https://github.com/stophemo/Woo/releases/latest) 下载对应平台安装包
 2. 安装并启动
-3. 开始写作——你的笔记自动保存在本地
-4. （可选）登录 Supabase 账号启用云同步
-5. （可选）在设置中配置 AI API Key
+3. 开始写作，文稿会优先保存在当前设备
+4. （可选）注册或登录 Woo 账号，启用跨设备云同步
 
 ---
 
@@ -75,7 +73,7 @@ Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在�
 | 编辑器 | Tiptap (ProseMirror) |
 | 数据库 | SQLite (rusqlite, bundled) |
 | 云服务 | Supabase (Auth + REST API) |
-| 移动端 | Tauri Mobile (Android / iOS) |
+| 移动端 | Tauri Mobile (Android；iOS 计划中) |
 
 ### 项目结构
 
@@ -83,7 +81,7 @@ Woo（无我笔记）是一款支持云端同步的 Markdown 笔记应用。在�
 Woo/
 ├── src/                    # 桌面端前端 (Vue 3, ESM)
 │   ├── stores/             # Pinia 状态管理 (workspace, auth, sync, lock…)
-│   ├── services/           # IPC 客户端 + AI 服务 (api.ts, gemini, deepseek…)
+│   ├── services/           # IPC 客户端、更新、Markdown 转换与导出
 │   ├── components/         # 桌面端 UI 组件 (layout/, settings/)
 │   └── types/              # TypeScript 类型定义
 ├── src-mobile/             # 移动端前端 (Vue 3 + Vant UI)
@@ -136,7 +134,7 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 数据库
 
-未登录 → `woo.db`，登录后 → `woo-{username}.db`（首次登录自动迁移）。
+未登录 → `woo.db`，登录后 → `woo-{username}.db`（首次登录自动迁移）。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与云同步和版本历史。
 
 | 表 | 说明 |
 |---|---|
@@ -149,21 +147,21 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 同步引擎
 
-60 秒间隔运行，流程：拉墓碑 → 拉远端 → 推本地 → 清理 → 墓碑 GC。采用最后写入胜出 + 增量同步 + 冲突副本保护策略。
+登录后，同步引擎以 60 秒间隔在后台运行，也支持手动触发。流程：拉墓碑 → 拉远端 → 推本地 → 清理 → 墓碑 GC。采用最后写入胜出 + 增量同步 + 冲突副本保护策略。
 
 ---
 
 ## 🗺️ 路线图
 
-- [ ] 完成云同步 (Supabase Auth + Sync Engine)
+- [x] 云同步 (Supabase Auth + Sync Engine)
 - [ ] macOS 原生菜单 + 完整快捷键
 - [ ] Homebrew Cask 分发
 - [ ] iOS 支持 (Tauri Mobile)
-- [ ] Windows / Linux 代码签名
+- [ ] Windows 代码签名
 - [x] 跨平台基础框架 (macOS + Windows + Android)
 - [ ] 完成 macOS Developer ID 签名与 Apple 公证
 - [x] 移动端响应式 UI 适配
-- [x] AI Agent 框架 (8 个内置工具)
+- [ ] AI 辅助写作与 Agent 框架
 
 ---
 

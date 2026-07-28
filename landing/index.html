@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>无我笔记 Woo | 此刻落笔，随处续写</title>
-  <meta name="description" content="无我笔记 Woo 是一款本地优先的跨平台 Markdown 笔记应用。所见即所得编辑、自动版本历史、可选云同步与 AI 辅助写作，让文字在桌面与手机之间自然流动。">
+  <title>无我笔记 Woo | 本地优先的跨平台 Markdown 笔记应用</title>
+  <meta name="description" content="无我笔记 Woo 是一款本地优先的跨平台 Markdown 笔记应用。无需登录即可离线写作，支持桌面端所见即所得编辑、版本历史、Markdown 文件读写与可选云同步。">
   <meta name="author" content="Woo Notes">
   <meta name="theme-color" content="#171a19">
   <meta name="color-scheme" content="light">
@@ -12,8 +12,8 @@
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:url" content="https://woo-notes.vercel.app/">
-  <meta property="og:title" content="无我笔记 Woo | 此刻落笔，随处续写">
-  <meta property="og:description" content="本地优先的跨平台 Markdown 写作工具。断网照常写，联网后按需同步。">
+  <meta property="og:title" content="无我笔记 Woo | 本地优先的跨平台 Markdown 笔记应用">
+  <meta property="og:description" content="无需登录即可离线写作；需要跨设备时，再启用云同步。支持 macOS、Windows 与 Android。">
   <meta name="twitter:card" content="summary">
   <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -64,7 +64,7 @@
           </p>
           <h1 id="hero-title">无我笔记</h1>
           <p class="hero-tagline">此刻落笔，随处续写。</p>
-          <p class="hero-support">本地优先的跨平台 Markdown 写作工具。所见即所得地写，断网也不被打断；需要时，再把同一份文字带到其他设备。</p>
+          <p class="hero-support">一款本地优先的 Markdown 笔记应用。无需登录即可在本机写作；需要跨设备时，再把文稿同步到 macOS、Windows 与 Android。</p>
           <div class="hero-actions" aria-label="下载与项目链接">
             <a class="button button-primary" href="#download">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
@@ -75,7 +75,7 @@
               查看源码
             </a>
           </div>
-          <p class="hero-meta">MIT 开源 · 本地优先 · 云同步可选</p>
+          <p class="hero-meta">免费使用 · MIT 开源 · 无需账号即可开始</p>
         </div>
 
         <div class="hero-scene" role="region" aria-label="无我笔记桌面端界面演示">
@@ -161,7 +161,7 @@
                     <p>它应该足够快，让念头出现时不必等待；也应该足够安静，让界面在文字开始之后慢慢退场。</p>
                     <blockquote>写作不是把句子搬进软件，而是为思考留出一块不被打扰的地方。</blockquote>
                     <h3>保持简单，也保留余地</h3>
-                    <p>本地保存承担确定性，版本历史留住探索过程。同步与 AI 都可以按需加入，但不应成为开始写作的前提。</p>
+                    <p>本地保存承担确定性，版本历史留住探索过程。云同步可以按需启用，但不应成为开始写作的前提。</p>
                   </div>
                 </div>
                 <footer class="editor-status">
@@ -213,21 +213,21 @@
         <div class="workflow-grid">
           <article class="workflow-step">
             <span class="step-number">01</span>
-            <p class="step-context">灵感出现 · 任意设备</p>
+            <p class="step-context">开始写作 · 无需登录</p>
             <h3>先写下来，不等网络</h3>
-            <p>打开就是编辑器。新内容先进入本地 SQLite，断网、弱网都不影响落笔，也不需要先注册账号。</p>
+            <p>文稿优先保存在当前设备。正式文稿写入 SQLite，未归档草稿留在应用本地；没有网络，也能继续浏览和编辑。</p>
           </article>
           <article class="workflow-step">
             <span class="step-number">02</span>
             <p class="step-context">持续推进 · 自动保存</p>
             <h3>安心改，过程会留下</h3>
-            <p>所见即所得编辑与 Markdown 输入自然共存。自动保存和版本快照记录重要变化，随时可以回到过去。</p>
+            <p>桌面端所见即所得编辑并自动保存，Android 端直接编辑 Markdown、确认后保存。正式文稿在保存过程中还会留下可恢复的版本记录。</p>
           </article>
           <article class="workflow-step">
             <span class="step-number">03</span>
             <p class="step-context">设备切换 · 可选同步</p>
             <h3>换个地方，接着写</h3>
-            <p>登录后启用增量云同步。手机捕捉的句子，会在电脑上成为下一段的开始；冲突内容也会保留副本。</p>
+            <p>注册并登录后，正式文稿、文件夹与版本历史会增量同步。遇到跨设备内容冲突时，本地内容会尽量保留为副本。</p>
           </article>
         </div>
       </div>
@@ -238,15 +238,15 @@
         <div class="feature-heading">
           <p class="section-kicker">克制，但不简陋</p>
           <h2 id="features-title">把能力放在需要的地方</h2>
-          <p>Woo 不要求你改变原来的写作习惯。它把编辑、整理、回溯和辅助能力收进同一个安静的工作区。</p>
+          <p>Woo 不要求你先迁移工作流。编辑、整理、搜索、回溯和导出，都收在同一个安静的工作区里。</p>
         </div>
 
         <div class="feature-list">
           <article class="feature-row">
             <span class="feature-index">A</span>
             <div>
-              <h3>所见即所得，也懂 Markdown</h3>
-              <p>基于 Tiptap 的富文本编辑器支持标题、列表、引用、代码与表格。粘贴或输入 Markdown，内容会自然进入排版。</p>
+              <h3>桌面所见即所得，也懂 Markdown</h3>
+              <p>桌面编辑器支持标题、列表、引用、代码与表格；输入或粘贴 Markdown 后直接进入排版，不必在源码与预览间来回切换。</p>
             </div>
             <span class="feature-tag tag-blue">专注编辑</span>
           </article>
@@ -254,25 +254,25 @@
             <span class="feature-index">B</span>
             <div>
               <h3>自动保存与版本历史</h3>
-              <p>编辑过程自动落盘，重要改动形成版本；也可以手动建立快照。恢复旧版本时，当前内容仍会被保留。</p>
+              <p>桌面端自动保存正文，并在空闲或切换文稿时记录版本；Android 保存正式文稿时也会记录版本。恢复旧版本前，当前内容仍会保留。</p>
             </div>
             <span class="feature-tag tag-orange">可回溯</span>
           </article>
           <article class="feature-row">
             <span class="feature-index">C</span>
             <div>
-              <h3>AI 是工具，不是前提</h3>
-              <p>按需接入 Gemini 或 DeepSeek，完成续写、摘要、翻译与头脑风暴。API Key 由你自己配置，普通写作不依赖 AI。</p>
+              <h3>内容进得来，也带得走</h3>
+              <p>桌面端可以打开 Markdown 与纯文本文件，并将修改写回原文件；文稿还可导出为 Markdown、纯文本或 PNG 图片。</p>
             </div>
-            <span class="feature-tag tag-green">自带密钥</span>
+            <span class="feature-tag tag-green">格式自由</span>
           </article>
           <article class="feature-row">
             <span class="feature-index">D</span>
             <div>
-              <h3>从大纲到思维导图</h3>
-              <p>文件夹、文稿大纲、版本历史和思维导图彼此衔接；完成后可导出为 Markdown、文本或图片。</p>
+              <h3>从文件夹到内容结构</h3>
+              <p>用多级文件夹和全文搜索整理文稿，用大纲快速定位标题；桌面端还可将层级列表预览并导出为思维导图。</p>
             </div>
-            <span class="feature-tag tag-yellow">完整整理</span>
+            <span class="feature-tag tag-yellow">结构清晰</span>
           </article>
         </div>
       </div>
@@ -285,7 +285,7 @@
             <p class="section-kicker">同一份文字，不同的合适形态</p>
             <h2 id="platforms-title">桌面负责沉浸，手机负责随身</h2>
           </div>
-          <p>桌面端保留完整三栏工作区与富文本能力；Android 针对浏览、搜索、编辑和版本回溯重新组织，不把桌面界面硬塞进小屏。</p>
+          <p>桌面端提供三栏工作区与所见即所得编辑；Android 则围绕浏览、搜索、Markdown 编辑和版本回溯重新组织，更适合小屏操作。</p>
         </div>
 
         <div class="device-showcase">
@@ -338,12 +338,12 @@
           </div>
           <div class="platform-row" role="row">
             <span role="cell">写作</span>
-            <strong role="cell">富文本、Markdown、表格与大纲</strong>
-            <strong role="cell">Markdown 编辑与快速保存</strong>
+            <strong role="cell">所见即所得、Markdown 输入、表格与大纲</strong>
+            <strong role="cell">Markdown 编辑、预览与分享</strong>
           </div>
           <div class="platform-row" role="row">
             <span role="cell">整理</span>
-            <strong role="cell">文件夹、拖拽、导入导出</strong>
+            <strong role="cell">文件夹、全文搜索、打开与导出</strong>
             <strong role="cell">文件夹、搜索、草稿与回收站</strong>
           </div>
           <div class="platform-row" role="row">
@@ -360,15 +360,15 @@
         <div class="data-copy">
           <p class="section-kicker">本地是起点，云端是选项</p>
           <h2 id="data-title">先把文字稳稳留在设备里</h2>
-          <p>未登录时，Woo 只读写本机 SQLite。启用同步后，后台引擎按增量推拉数据，并用冲突副本、删除墓碑和按用户分库保护写作过程。</p>
+          <p>无需登录时，文稿数据只保存在当前设备：正式文稿进入 SQLite，草稿保存在应用本地。登录后，正式文稿、文件夹与版本历史可经 Supabase 增量同步；冲突副本和删除墓碑用于降低内容被覆盖或误恢复的风险。</p>
           <a href="https://github.com/stophemo/Woo#数据库" target="_blank" rel="noreferrer">查看数据与同步设计</a>
         </div>
 
         <div class="sync-flow" aria-label="本地优先同步流程">
           <div class="sync-node node-device">
             <span>01</span>
-            <strong>本机 SQLite</strong>
-            <small>打开即写 · 离线可用</small>
+            <strong>设备本地</strong>
+            <small>SQLite · 本地草稿</small>
           </div>
           <div class="sync-link"><b aria-hidden="true">→</b><small>增量变更</small></div>
           <div class="sync-node node-engine">
@@ -380,7 +380,7 @@
           <div class="sync-node node-cloud">
             <span>03</span>
             <strong>Supabase</strong>
-            <small>跨设备继续写作</small>
+            <small>登录后跨设备同步</small>
           </div>
         </div>
       </div>
@@ -403,7 +403,7 @@
               <span>Apple Silicon</span>
             </div>
             <h3>完整桌面写作工作区</h3>
-            <p>适用于 M 系列 Mac，DMG 安装。当前签名与首次启动说明请以对应 Release Notes 为准。</p>
+            <p>适用于 M 系列 Mac，DMG 安装。若对应 Release 未完成 Apple 公证，首次启动需在 Finder 中右键应用并选择“打开”。</p>
             <a class="button button-dark" data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
               下载 DMG
@@ -429,7 +429,7 @@
               <span>ARM64</span>
             </div>
             <h3>随身文稿与快速编辑</h3>
-            <p>适用于 arm64-v8a Android 设备。Release APK 使用项目升级密钥签名，可直接覆盖后续版本。</p>
+            <p>适用于 arm64-v8a Android 设备。APK 已签名；首次安装时，需要允许浏览器或文件管理器安装未知来源应用。</p>
             <a class="button button-dark" data-download="android" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
               下载 APK
@@ -439,8 +439,8 @@
 
         <div class="release-bar">
           <div>
-            <strong>Linux 与其他构建</strong>
-            <p>Linux 安装包仍在计划中；现在可以从源码构建。所有历史版本、校验摘要和安装说明都保留在 Release 页面。</p>
+            <strong>版本与源码</strong>
+            <p>所有历史版本、校验摘要和安装说明都保留在 Release 页面；开发者也可以查看源码与构建说明。</p>
           </div>
           <div class="release-links">
             <a data-release-link href="https://github.com/stophemo/Woo/releases/latest" target="_blank" rel="noreferrer">发布说明</a>
