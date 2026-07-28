@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://127.0.0.1:5174",
+      "localStorage": [
+        {
+          "name": "non-ego-notes-theme",
+          "value": "paper"
+        }
+      ]
+    }
+  ]
+}
