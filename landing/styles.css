@@ -2315,6 +2315,10 @@ strong {
     gap: 7px;
   }
 
+  .demo-menu-links {
+    display: none;
+  }
+
   .header-download {
     justify-self: end;
   }
