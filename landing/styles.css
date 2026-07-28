@@ -45,6 +45,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+h1,
+h2,
+h3 {
+  font-family: "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+.heading-fragment {
+  display: inline-block;
+}
+
 button,
 input,
 a {
@@ -257,8 +272,8 @@ strong {
   z-index: 5;
   top: 50%;
   left: 0;
-  width: 39%;
-  max-width: 470px;
+  width: 40%;
+  max-width: 490px;
   transform: translateY(-50%);
 }
 
@@ -270,6 +285,9 @@ strong {
   font-size: 12px;
   font-weight: 760;
   line-height: 1.4;
+}
+
+.demo-label {
   text-transform: uppercase;
 }
 
@@ -302,13 +320,13 @@ strong {
 .hero-tagline {
   margin-bottom: 22px;
   color: var(--yellow);
-  font-size: 31px;
+  font-size: 29px;
   font-weight: 720;
   line-height: 1.3;
 }
 
 .hero-support {
-  max-width: 400px;
+  max-width: 430px;
   margin-bottom: 28px;
   color: #c5cbc6;
   font-size: 16px;
@@ -317,7 +335,7 @@ strong {
 
 .hero-actions {
   display: grid;
-  width: min(100%, 470px);
+  width: min(100%, 310px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
@@ -344,6 +362,9 @@ strong {
 }
 
 .download-menu-caret {
+  flex: 0 0 auto;
+  transform-box: fill-box;
+  transform-origin: center;
   transition: transform 160ms ease;
 }
 
@@ -358,6 +379,7 @@ strong {
   left: 0;
   display: grid;
   width: 100%;
+  min-width: 180px;
   padding: 6px;
   border: 1px solid #5b625d;
   border-radius: 6px;
@@ -440,14 +462,14 @@ strong {
 
 .hero-meta {
   margin: 16px 0 0;
-  color: #858d87;
+  color: #969e98;
   font-size: 12px;
 }
 
 .hero-scene {
   position: absolute;
   z-index: 2;
-  inset: 0 -6px 0 27%;
+  inset: 0 -6px 0 44%;
 }
 
 .desktop-preview {
@@ -455,7 +477,7 @@ strong {
   top: 7%;
   right: 0;
   bottom: 7%;
-  width: min(770px, calc(100% - 98px));
+  width: 100%;
   min-height: 455px;
   overflow: hidden;
   border: 1px solid #49514d;
@@ -858,171 +880,6 @@ strong {
   margin-left: auto;
 }
 
-.mobile-peek {
-  position: absolute;
-  z-index: 4;
-  bottom: 3.5%;
-  left: 168px;
-  width: 208px;
-  height: 280px;
-  overflow: hidden;
-  border: 1px solid #c9d5d8;
-  border-radius: 8px;
-  background: #fbfcfc;
-  color: #24353d;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-}
-
-.phone-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 24px;
-  padding: 0 13px;
-  color: #71868d;
-  font-size: 7px;
-}
-
-.mobile-peek header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 35px;
-  padding: 0 13px;
-}
-
-.mobile-peek header strong {
-  display: block;
-  font-size: 15px;
-}
-
-.mobile-peek header small {
-  display: block;
-  margin-top: -2px;
-  color: #84969b;
-  font-size: 6px;
-  font-weight: 550;
-}
-
-.mobile-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--blue-dark);
-}
-
-.mobile-head-actions i {
-  display: grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  background: #e8eff1;
-  font-size: 9px;
-  font-style: normal;
-}
-
-.mobile-folder-row {
-  display: flex;
-  gap: 6px;
-  padding: 7px 12px;
-  border-top: 1px solid #e4ebed;
-  border-bottom: 1px solid #e4ebed;
-  background: #f2f6f7;
-}
-
-.mobile-folder-row span {
-  padding: 3px 7px;
-  border: 1px solid #d2dfe2;
-  border-radius: 4px;
-  color: #6e858d;
-  font-size: 7px;
-}
-
-.mobile-folder-row .is-selected {
-  border-color: var(--blue);
-  background: var(--blue);
-  color: var(--white);
-}
-
-.mobile-note {
-  padding: 11px 13px;
-  border-bottom: 1px solid #e3eaec;
-}
-
-.mobile-note strong,
-.mobile-note span {
-  display: block;
-}
-
-.mobile-note strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-  font-size: 9px;
-}
-
-.mobile-note span {
-  overflow: hidden;
-  color: #788b91;
-  font-size: 7px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-note small {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 5px;
-  color: #9aa8ac;
-  font-size: 6px;
-}
-
-.mobile-note small b {
-  color: #5c8797;
-  font-weight: 650;
-}
-
-.mobile-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-}
-
-.mobile-peek footer {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  height: 36px;
-  border-top: 1px solid #dce6e8;
-  background: #f4f7f8;
-  color: #8b9b9f;
-  font-size: 7px;
-}
-
-.mobile-peek footer .is-selected {
-  color: var(--blue-dark);
-  font-weight: 700;
-}
-
-.mobile-peek footer span {
-  display: grid;
-  justify-items: center;
-  gap: 1px;
-}
-
-.mobile-peek footer b {
-  font-size: 9px;
-  line-height: 1;
-}
-
 .workflow-signal {
   display: flex;
   align-items: center;
@@ -1078,7 +935,7 @@ strong {
 }
 
 .workflow-step {
-  min-height: 330px;
+  min-height: 310px;
   padding: 31px 30px 0 0;
   border-right: 1px solid var(--line);
 }
@@ -1093,7 +950,7 @@ strong {
 
 .step-number {
   display: block;
-  margin-bottom: 57px;
+  margin-bottom: 46px;
   color: var(--orange);
   font-size: 13px;
   font-weight: 800;
@@ -1115,8 +972,8 @@ strong {
 .workflow-step p:last-child {
   max-width: 315px;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 .features {
@@ -1179,8 +1036,8 @@ strong {
   max-width: 560px;
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .feature-tag {
@@ -1663,6 +1520,15 @@ strong {
   font-size: 14px;
 }
 
+.data-copy .data-note {
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid #426252;
+  color: #91ac9e;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
 .sync-flow {
   display: grid;
   grid-template-columns: 1fr auto 1fr auto 1fr;
@@ -1763,7 +1629,7 @@ strong {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 66px;
+  margin-bottom: 54px;
   color: var(--muted);
   font-size: 11px;
 }
@@ -1794,7 +1660,7 @@ strong {
   min-height: 76px;
   margin-bottom: 24px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -1894,6 +1760,17 @@ strong {
   font-size: 12px;
 }
 
+@media (max-width: 1200px) {
+  .hero-scene {
+    left: 42%;
+  }
+
+  .desktop-preview {
+    width: 100%;
+  }
+
+}
+
 @media (max-width: 1100px) {
   .hero-copy {
     width: 41%;
@@ -1913,15 +1790,11 @@ strong {
   }
 
   .hero-scene {
-    left: 29%;
+    left: 42%;
   }
 
   .desktop-preview {
     width: calc(100% - 30px);
-  }
-
-  .mobile-peek {
-    display: none;
   }
 
   .feature-layout,
@@ -1964,6 +1837,19 @@ strong {
     gap: 9px;
   }
 
+  .brand {
+    grid-column: 1;
+  }
+
+  .header-download {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .nav-toggle {
+    grid-column: 4;
+  }
+
   .primary-nav {
     position: absolute;
     z-index: 110;
@@ -1989,6 +1875,14 @@ strong {
 
   .primary-nav a:hover {
     background: #2b312e;
+  }
+
+  .download-menu-panel {
+    top: calc(100% + 6px);
+    width: 310px;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 3px;
   }
 
   .nav-toggle {
@@ -2030,7 +1924,7 @@ strong {
   .hero-support {
     max-width: 600px;
     margin-bottom: 15px;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.65;
   }
 
@@ -2046,14 +1940,6 @@ strong {
     inset: 0 0 0 auto;
     width: 100%;
     min-height: 0;
-  }
-
-  .mobile-peek {
-    right: 12px;
-    bottom: -2px;
-    left: auto;
-    width: 180px;
-    height: 240px;
   }
 
   .app-shell {
@@ -2175,13 +2061,21 @@ strong {
   .hero-support {
     max-width: 520px;
     margin-bottom: 13px;
-    font-size: 12px;
+    font-size: 13px;
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .download-menu-panel {
+    width: min(calc(200% + 8px), calc(100vw - 32px));
   }
 
   .button {
     min-height: 41px;
     padding: 0 13px;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .hero-actions .button {
@@ -2191,10 +2085,6 @@ strong {
   .hero-scene {
     top: 282px;
     bottom: 13px;
-  }
-
-  .mobile-peek {
-    display: none;
   }
 
   .app-shell {
@@ -2319,15 +2209,47 @@ strong {
   }
 
   .platform-row {
-    grid-template-columns: 0.46fr 1fr 1fr;
-    gap: 12px;
-    min-height: 85px;
+    min-height: 0;
   }
 
-  .platform-row span,
-  .platform-row strong {
-    font-size: 11px;
-    line-height: 1.45;
+  .platform-head {
+    display: none;
+  }
+
+  .platform-row:not(.platform-head) {
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 12px 16px;
+    align-items: start;
+    padding: 19px 0;
+  }
+
+  .platform-row:not(.platform-head) > span {
+    grid-row: 1 / span 2;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 720;
+  }
+
+  .platform-row:not(.platform-head) > strong {
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.55;
+  }
+
+  .platform-row:not(.platform-head) > strong::before {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 760;
+  }
+
+  .platform-row:not(.platform-head) > strong:nth-child(2)::before {
+    content: "桌面端";
+  }
+
+  .platform-row:not(.platform-head) > strong:nth-child(3)::before {
+    content: "Android";
   }
 
   .sync-flow {
@@ -2414,7 +2336,7 @@ strong {
 
   .hero-actions .button {
     padding: 0 5px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .hero-scene {
@@ -2447,7 +2369,7 @@ strong {
 
   .workflow-signal > div {
     gap: 4px;
-    font-size: 8px;
+    font-size: 10px;
   }
 
   .desktop-detail {
@@ -2471,14 +2393,6 @@ strong {
     width: 155px;
   }
 
-  .platform-row {
-    gap: 8px;
-  }
-
-  .platform-row span,
-  .platform-row strong {
-    font-size: 10px;
-  }
 }
 
 @media (max-height: 650px) {
@@ -2516,9 +2430,6 @@ strong {
     min-height: 0;
   }
 
-  .mobile-peek {
-    display: none;
-  }
 }
 
 @media (max-height: 650px) and (max-width: 900px) {
@@ -2548,12 +2459,13 @@ strong {
   .hero-support {
     max-width: 540px;
     margin-bottom: 8px;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
   }
 
   .button {
     min-height: 36px;
+    font-size: 13px;
   }
 
   .hero-scene {
@@ -2566,6 +2478,7 @@ strong {
   }
 
   .editor-paper h3,
+  .editor-paper blockquote,
   .editor-paper p:nth-last-child(-n + 2) {
     display: none;
   }
