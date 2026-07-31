@@ -159,14 +159,27 @@
             <div v-if="outline.length === 0" class="panel-empty">当前文稿没有标题，无法生成目录</div>
             <ul v-else class="outline-list">
               <li
-                v-for="(o, idx) in outline"
-                :key="idx"
+                v-for="o in outline"
+                v-show="!o.hidden"
+                :key="o.headingIndex"
                 class="outline-item"
                 :class="{ 'outline-item-active': activeHeadingIndex === o.headingIndex }"
                 :style="{ paddingLeft: (o.level - 1) * 12 + 4 + 'px' }"
                 :title="o.text"
                 @click="handleOutlineClick(o.headingIndex)"
               >
+                <button
+                  v-if="o.hasChildren"
+                  class="outline-branch-toggle"
+                  type="button"
+                  :title="isOutlineBranchCollapsed(o.headingIndex) ? `展开「${o.text}」子目录` : `收起「${o.text}」子目录`"
+                  :aria-label="isOutlineBranchCollapsed(o.headingIndex) ? `展开「${o.text}」子目录` : `收起「${o.text}」子目录`"
+                  :aria-expanded="!isOutlineBranchCollapsed(o.headingIndex)"
+                  @click.stop="toggleOutlineBranch(o.headingIndex)"
+                >
+                  <IconChevron :direction="isOutlineBranchCollapsed(o.headingIndex) ? 'right' : 'down'" />
+                </button>
+                <span v-else class="outline-branch-spacer" aria-hidden="true"></span>
                 <span class="outline-level">H{{ o.level }}</span>
                 <span class="outline-text">{{ o.text }}</span>
               </li>
@@ -238,6 +251,7 @@ const versionsError = ref('')
 // 两个面板的折叠状态
 const versionsCollapsed = ref(false)
 const outlineCollapsed = ref(false)
+const collapsedOutlineHeadings = ref<Set<number>>(new Set())
 const showContextMenu = ref(false)
 const contextMenuPosition = ref<ContextMenuPosition>({ x: 0, y: 0 })
 const contextMenuItems = ref<ContextMenuItem[]>([])
@@ -289,13 +303,48 @@ function handleOutlineClick(headingIndex: number) {
   navScrollToHeading(headingIndex)
 }
 
-// 当前文档大纲：从 EditArea 的 headings 获取（唯一数据源）
+function isOutlineBranchCollapsed(headingIndex: number): boolean {
+  return collapsedOutlineHeadings.value.has(headingIndex)
+}
+
+function toggleOutlineBranch(headingIndex: number) {
+  const next = new Set(collapsedOutlineHeadings.value)
+  if (next.has(headingIndex)) {
+    next.delete(headingIndex)
+  } else {
+    next.add(headingIndex)
+  }
+  collapsedOutlineHeadings.value = next
+}
+
+// 当前文档大纲：根据标题级别识别父子分支，并隐藏已折叠标题的后代。
 const outline = computed(() => {
-  return headings.value.map(h => ({
+  const items = headings.value.map(h => ({
     level: h.level,
     text: h.text,
-    headingIndex: h.pos
+    headingIndex: h.pos,
+    hasChildren: false,
+    hidden: false
   }))
+  const collapsedAncestorLevels: number[] = []
+
+  return items.map((item, index) => {
+    while (
+      collapsedAncestorLevels.length > 0
+      && collapsedAncestorLevels[collapsedAncestorLevels.length - 1] >= item.level
+    ) {
+      collapsedAncestorLevels.pop()
+    }
+
+    item.hasChildren = index < items.length - 1 && items[index + 1].level > item.level
+    item.hidden = collapsedAncestorLevels.length > 0
+
+    if (item.hasChildren && collapsedOutlineHeadings.value.has(item.headingIndex)) {
+      collapsedAncestorLevels.push(item.level)
+    }
+
+    return item
+  })
 })
 
 const isTrashView = computed(() => store.selectedFolderId === TRASH_FOLDER_ID)
@@ -454,6 +503,9 @@ async function refreshVersions(docId: string) {
 
 async function handleFlip(docId: string) {
   if (isTrashView.value) return
+  if (activeDocId.value !== docId) {
+    collapsedOutlineHeadings.value = new Set()
+  }
   activeDocId.value = docId
   if (store.selectedDocumentId !== docId) {
     await store.selectDocument(docId)
@@ -1381,8 +1433,8 @@ function changeTypeLabel(t: string): string {
 
 .outline-item {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   padding: 4px 6px;
   font-size: 12px;
   color: var(--text-primary);
@@ -1407,6 +1459,45 @@ function changeTypeLabel(t: string): string {
 
 .outline-item-active {
   background-color: var(--bg-active);
+}
+
+.outline-branch-toggle,
+.outline-branch-spacer {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.outline-branch-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.outline-branch-toggle:hover {
+  background-color: var(--bg-hover);
+  color: var(--accent);
+}
+
+.outline-branch-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.outline-branch-toggle :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
+
+.outline-branch-spacer {
+  display: inline-block;
 }
 
 .outline-level {
