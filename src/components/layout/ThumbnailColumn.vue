@@ -634,11 +634,15 @@ async function handleMenuSelect(action: string) {
   if (action === 'toggleLock') {
     const doc = store.currentFolderDocuments.find(d => d.id === docId)
     if (doc) {
-      if (lockStore.sessionVerified) {
+      if (doc.isLocked) {
+        pendingDocAction.value = { type: 'toggleLock', docId, doc }
+        lockDialogMode.value = 'verify'
+        showLockDialog.value = true
+      } else if (lockStore.hasPassword) {
         await performDocToggleLock(doc)
       } else {
         pendingDocAction.value = { type: 'toggleLock', docId, doc }
-        lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+        lockDialogMode.value = 'set'
         showLockDialog.value = true
       }
     }
@@ -660,7 +664,9 @@ async function handleLockConfirm(_password: string) {
   pendingDocAction.value = null
   if (!action) return
   if (action.type === 'select') {
+    await lockStore.unlockDocument(action.docId)
     await store.selectDocument(action.docId)
+    await store.syncRefresh()
   } else if (action.type === 'toggleLock' && action.doc) {
     await performDocToggleLock(action.doc)
   }
@@ -675,6 +681,9 @@ async function performDocToggleLock(doc: Document) {
   try {
     if (doc.isLocked) {
       await lockStore.unlockDocument(doc.id)
+      if (store.selectedDocumentId === doc.id) {
+        await store.selectDocument(doc.id)
+      }
     } else {
       await lockStore.lockDocument(doc.id)
     }
@@ -734,9 +743,9 @@ watch(() => props.activeHeading, (idx) => {
 
 const handleSelectDocument = (docId: string) => {
   const doc = store.currentFolderDocuments.find(d => d.id === docId)
-  if (doc?.isLocked && !lockStore.sessionVerified) {
+  if (doc?.isLocked) {
     pendingDocAction.value = { type: 'select', docId }
-    lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+    lockDialogMode.value = 'verify'
     showLockDialog.value = true
     return
   }

@@ -322,8 +322,8 @@ const handleMenuAction = (action: string) => {
     if (format) exportDocumentAs(workspaceStore.currentDocument, format)
     return
   }
-  // 编辑器命令（如 'link'）通过自定义事件传递给 EditArea
-  if (['link', 'image', 'table', 'hr'].includes(action)) {
+  // 编辑器命令通过自定义事件传递给 EditArea。
+  if (['link', 'image', 'table', 'hr', 'zoom-in', 'zoom-out', 'zoom-reset'].includes(action)) {
     window.dispatchEvent(new CustomEvent('woo-editor-command', { detail: { command: action } }))
     return
   }

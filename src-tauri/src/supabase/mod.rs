@@ -51,8 +51,7 @@ static HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
 // Session persistence (matches supabase-auth.json from JS SDK)
 // ============================================================
 
-pub static CURRENT_SESSION: Lazy<Mutex<Option<SupabaseSession>>> =
-    Lazy::new(|| Mutex::new(None));
+pub static CURRENT_SESSION: Lazy<Mutex<Option<SupabaseSession>>> = Lazy::new(|| Mutex::new(None));
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +59,10 @@ pub struct SupabaseUserMetadata {
     pub username: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub woo_lock_password_hash: Option<String>,
+    #[serde(default)]
+    pub woo_lock_password_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -129,13 +132,11 @@ pub fn clear_persisted_session() {
     std::fs::write(&path, content).ok();
 }
 
-pub fn get_username_from_session(session: &SupabaseSession) -> Option<&str> {
-    session
-        .user
-        .user_metadata
+pub fn get_username_from_user(user: &SupabaseUser) -> Option<&str> {
+    user.user_metadata
         .username
         .as_deref()
-        .or_else(|| session.user.user_metadata.display_name.as_deref())
+        .or_else(|| user.user_metadata.display_name.as_deref())
 }
 
 // ============================================================
@@ -260,12 +261,59 @@ pub async fn get_user(access_token: &str) -> Result<Option<SupabaseUser>, String
     let text = resp.text().await.unwrap_or_default();
 
     if status.is_success() {
-        let user: SupabaseUser = serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))?;
+        let user: SupabaseUser =
+            serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))?;
         Ok(Some(user))
     } else if status == reqwest::StatusCode::UNAUTHORIZED {
         Ok(None)
     } else {
         Err(extract_auth_error(&text))
+    }
+}
+
+/// Update the current user's lock settings in auth metadata.
+/// Only the bcrypt hash is uploaded; the plaintext password never leaves the device.
+pub async fn update_lock_settings(
+    access_token: &str,
+    password_hash: &str,
+    mode: &str,
+) -> Result<SupabaseUser, String> {
+    let url = format!("{}/auth/v1/user", supabase_url());
+    let body = serde_json::json!({
+        "data": {
+            "woo_lock_password_hash": password_hash,
+            "woo_lock_password_mode": mode,
+        }
+    });
+
+    let resp = HTTP
+        .put(&url)
+        .header("apikey", supabase_anon_key())
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("网络错误: {}", e))?;
+
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if status.is_success() {
+        serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))
+    } else {
+        Err(format!("同步锁设置失败: {}", extract_auth_error(&text)))
+    }
+}
+
+/// Keep the persisted and in-memory session aligned after fetching/updating user metadata.
+pub fn cache_current_user(user: SupabaseUser) {
+    let updated_session = CURRENT_SESSION.lock().ok().and_then(|mut current| {
+        let session = current.as_mut()?;
+        session.user = user;
+        Some(session.clone())
+    });
+    if let Some(session) = updated_session {
+        persist_session(&session);
     }
 }
 

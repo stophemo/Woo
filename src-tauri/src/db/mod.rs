@@ -7,7 +7,7 @@ use std::sync::Mutex;
 //
 // Filename strategy:
 // - Not logged in → userData/woo.db (local only)
-// - Logged in     → userData/woo-{username}.db (per-user)
+// - Logged in     → userData/woo-{stable user id}.db (per-user)
 // ============================================================
 
 pub struct Database {
@@ -26,7 +26,7 @@ pub fn set_data_dir(path: PathBuf) {
     }
 }
 
-/// Switch to a specific user's database.
+/// Switch to a specific user's database using an immutable account key.
 /// `None` = local mode (woo.db).
 pub fn set_current_user(username: Option<&str>) {
     let mut user = CURRENT_USER.lock().unwrap();
@@ -42,31 +42,83 @@ pub fn set_current_user(username: Option<&str>) {
     log::info!("[DB] Switched to user database: {:?}", username);
 }
 
-/// On first login, copy woo.db → woo-{username}.db (matches syncEngine.cjs first-login logic)
-pub fn copy_local_to_user_db_on_first_login(username: &str) -> Result<(), String> {
-    let dir = DATA_DIR.lock().unwrap().clone().unwrap_or_else(|| PathBuf::from("."));
-    let local_db = dir.join("woo.db");
-    let safe = username.to_lowercase().replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
-    let user_db = dir.join(format!("woo-{}.db", safe));
+fn safe_user_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
+}
 
-    if local_db.exists() && !user_db.exists() {
-        log::info!("[DB] First login — copying woo.db to woo-{}.db", safe);
-        std::fs::copy(&local_db, &user_db).map_err(|e| format!("复制数据库失败: {}", e))?;
-        // Also copy WAL/SHM files if they exist
-        for ext in &["-wal", "-shm"] {
-            let src = dir.join(format!("woo.db{}", ext));
-            let dst = dir.join(format!("woo-{}.db{}", safe, ext));
-            if src.exists() {
-                std::fs::copy(&src, &dst).ok();
-            }
-        }
+fn user_db_path(dir: &std::path::Path, user_key: &str) -> PathBuf {
+    dir.join(format!("woo-{}.db", safe_user_key(user_key)))
+}
+
+fn find_legacy_user_db(
+    dir: &std::path::Path,
+    user_id: &str,
+    legacy_username: Option<&str>,
+) -> Option<PathBuf> {
+    let direct = legacy_username
+        .filter(|username| !username.is_empty() && *username != user_id)
+        .map(|username| user_db_path(dir, username))
+        .filter(|path| path.exists());
+    if direct.is_some() {
+        return direct;
+    }
+
+    // If stale session metadata contains an opaque id instead of the old username,
+    // a single non-UUID user database is still an unambiguous migration source.
+    let candidates: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("db"))
+        .filter(|path| {
+            let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+                return false;
+            };
+            let Some(key) = stem.strip_prefix("woo-") else {
+                return false;
+            };
+            uuid::Uuid::parse_str(key).is_err()
+        })
+        .collect();
+    (candidates.len() == 1).then(|| candidates[0].clone())
+}
+
+/// Prepare the stable user-id database. Existing username-keyed databases are copied once
+/// during upgrade, preserving local changes while preventing mutable profile metadata from
+/// switching the active database later.
+pub fn prepare_user_db_on_first_login(
+    user_id: &str,
+    legacy_username: Option<&str>,
+) -> Result<(), String> {
+    let dir = DATA_DIR
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."));
+    let user_db = user_db_path(&dir, user_id);
+    if user_db.exists() {
+        return Ok(());
+    }
+
+    // Closing the old connection checkpoints its WAL before the database file is copied.
+    close_db();
+    let local_db = dir.join("woo.db");
+    let legacy_db = find_legacy_user_db(&dir, user_id, legacy_username);
+    let source_db = legacy_db.as_ref().unwrap_or(&local_db);
+
+    if source_db.exists() {
+        log::info!(
+            "[DB] Preparing stable user database {:?} from {:?}",
+            user_db,
+            source_db
+        );
+        std::fs::copy(source_db, &user_db).map_err(|e| format!("复制数据库失败: {}", e))?;
         // 清除 last_sync_time，让首次同步不传 update_time 过滤条件，拉取全部远端数据
         if let Ok(conn) = rusqlite::Connection::open(&user_db) {
-            conn.execute(
-                "DELETE FROM sync_meta WHERE key = 'last_sync_time'",
-                [],
-            )
-            .ok();
+            conn.execute("DELETE FROM sync_meta WHERE key = 'last_sync_time'", [])
+                .ok();
         }
     }
     Ok(())
@@ -74,13 +126,14 @@ pub fn copy_local_to_user_db_on_first_login(username: &str) -> Result<(), String
 
 /// Get the database filename for the current user
 fn get_db_path() -> PathBuf {
-    let dir = DATA_DIR.lock().unwrap().clone().unwrap_or_else(|| PathBuf::from("."));
+    let dir = DATA_DIR
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."));
     let user = CURRENT_USER.lock().unwrap();
     match user.as_ref() {
-        Some(name) => {
-            let safe = name.to_lowercase().replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
-            dir.join(format!("woo-{}.db", safe))
-        }
+        Some(name) => user_db_path(&dir, name),
         None => dir.join("woo.db"),
     }
 }
@@ -180,6 +233,53 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(document_id);
 ";
+
+#[cfg(test)]
+mod user_db_tests {
+    use super::*;
+
+    #[test]
+    fn finds_direct_legacy_username_database() {
+        let dir = std::env::temp_dir().join(format!("woo-db-migration-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy = user_db_path(&dir, "huojie");
+        std::fs::write(&legacy, b"").unwrap();
+
+        assert_eq!(
+            find_legacy_user_db(&dir, "c6288975-7818-4c70-b649-d237a779643a", Some("huojie")),
+            Some(legacy)
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn falls_back_only_when_one_named_legacy_database_exists() {
+        let dir = std::env::temp_dir().join(format!("woo-db-migration-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy = user_db_path(&dir, "huojie");
+        std::fs::write(&legacy, b"").unwrap();
+
+        assert_eq!(
+            find_legacy_user_db(
+                &dir,
+                "c6288975-7818-4c70-b649-d237a779643a",
+                Some("f38a0bbc-247f-4f50-bbd3-c0d60d2d6a1b")
+            ),
+            Some(legacy)
+        );
+
+        std::fs::write(user_db_path(&dir, "another-user"), b"").unwrap();
+        assert_eq!(
+            find_legacy_user_db(
+                &dir,
+                "c6288975-7818-4c70-b649-d237a779643a",
+                Some("f38a0bbc-247f-4f50-bbd3-c0d60d2d6a1b")
+            ),
+            None
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
 
 #[cfg(test)]
 mod tests {

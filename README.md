@@ -134,7 +134,7 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 数据库
 
-未登录 → `woo.db`，登录后 → `woo-{username}.db`（首次登录自动迁移）。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与云同步和版本历史。
+未登录 → `woo.db`，登录后 → `woo-{user-id}.db`（首次登录会从旧用户名数据库自动迁移）。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与云同步和版本历史。
 
 | 表 | 说明 |
 |---|---|

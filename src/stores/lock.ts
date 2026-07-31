@@ -6,8 +6,6 @@ export const useLockStore = defineStore('lock', () => {
   const hasPassword = ref(false)
   const passwordMode = ref<string | null>(null)
   const verifying = ref(false)
-  // 当前会话中已验证过的密码缓存（避免每次操作都输密码）
-  const sessionVerified = ref(false)
 
   async function bootstrap() {
     try {
@@ -26,9 +24,8 @@ export const useLockStore = defineStore('lock', () => {
     verifying.value = true
     try {
       const ok = await lockApi.verifyPassword(password)
-      if (ok) {
-        sessionVerified.value = true
-      }
+      // 旧版本没有同步锁设置；一次成功验证可安全确认本机哈希可信并补种云端。
+      if (ok) await lockApi.cloudPushSettings().catch(() => {})
       return ok
     } catch {
       return false
@@ -40,10 +37,9 @@ export const useLockStore = defineStore('lock', () => {
   async function setPassword(password: string): Promise<void> {
     await lockApi.setPassword(password)
     // 已登录用户同步锁密码到云端
-    await lockApi.cloudPushSettings(password).catch(() => {})
+    await lockApi.cloudPushSettings().catch(() => {})
     hasPassword.value = true
     passwordMode.value = 'custom'
-    sessionVerified.value = true
   }
 
   async function lockFolder(folderId: string): Promise<void> {
@@ -66,7 +62,6 @@ export const useLockStore = defineStore('lock', () => {
     hasPassword,
     passwordMode,
     verifying,
-    sessionVerified,
     bootstrap,
     verify,
     setPassword,

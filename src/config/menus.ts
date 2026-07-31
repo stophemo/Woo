@@ -83,6 +83,10 @@ export const viewMenuItems: MenuItem[] = [
   { type: 'item', label: '隐藏左侧菜单栏', action: 'toggle-left' },
   { type: 'item', label: '隐藏文稿缩略图栏', action: 'toggle-thumbnail' },
   { type: 'divider' },
+  { type: 'item', label: '放大', action: 'zoom-in', shortcut: 'Mod++' },
+  { type: 'item', label: '缩小', action: 'zoom-out', shortcut: 'Mod+-' },
+  { type: 'item', label: '重置缩放', action: 'zoom-reset', shortcut: 'Mod+0' },
+  { type: 'divider' },
   { type: 'item', label: '主题', action: 'theme' },
   { type: 'item', label: '语言', action: 'language' }
 ]

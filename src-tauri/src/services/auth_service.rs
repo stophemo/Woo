@@ -31,6 +31,13 @@ fn map_user(sb_user: &supabase::SupabaseUser) -> AuthUser {
     }
 }
 
+fn activate_user_database(user: &supabase::SupabaseUser) -> Result<(), String> {
+    let legacy_username = supabase::get_username_from_user(user);
+    db::prepare_user_db_on_first_login(&user.id, legacy_username)?;
+    db::set_current_user(Some(&user.id));
+    Ok(())
+}
+
 fn map_session(sb_session: &supabase::SupabaseSession) -> AuthSession {
     AuthSession {
         user: Some(map_user(&sb_session.user)),
@@ -55,13 +62,7 @@ pub async fn sign_up(email: &str, password: &str, username: &str) -> Result<Auth
     }
 
     // Switch to user-specific database (matches sign_in behavior)
-    let username = supabase::get_username_from_session(&sb_session)
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    if !username.is_empty() {
-        db::copy_local_to_user_db_on_first_login(&username).ok();
-        db::set_current_user(Some(&username));
-    }
+    activate_user_database(&sb_session.user)?;
 
     Ok(map_session(&sb_session))
 }
@@ -81,14 +82,7 @@ pub async fn sign_in(identifier: &str, password: &str) -> Result<AuthSession, St
     let sb_session = supabase::sign_in(&email, password).await?;
 
     // After login, check if user DB should be created
-    let username = supabase::get_username_from_session(&sb_session)
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-
-    if !username.is_empty() {
-        db::copy_local_to_user_db_on_first_login(&username).ok();
-        db::set_current_user(Some(&username));
-    }
+    activate_user_database(&sb_session.user)?;
 
     // Persist session
     supabase::persist_session(&sb_session);
@@ -172,9 +166,16 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
 
     // Step 2: 向 Supabase 验证 token 是否仍有效
     match supabase::get_user(&session.access_token).await {
-        Ok(Some(_)) => {
-            // Token 有效
-            Ok(Some(map_session(&session)))
+        Ok(Some(user)) => {
+            // Token 有效：使用服务端最新用户资料替换持久化会话中的旧元数据。
+            let mut verified_session = session;
+            verified_session.user = user;
+            activate_user_database(&verified_session.user)?;
+            supabase::persist_session(&verified_session);
+            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                *current = Some(verified_session.clone());
+            }
+            Ok(Some(map_session(&verified_session)))
         }
         Ok(None) => {
             // 服务端返回 401 → token 已被吊销
@@ -197,12 +198,13 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
 /// Called at startup to restore session from supabase-auth.json
 pub fn try_restore_session() -> Option<String> {
     let session = supabase::read_persisted_session()?;
-    let username = supabase::get_username_from_session(&session)?.to_string();
+    let user_id = session.user.id.clone();
+    activate_user_database(&session.user).ok()?;
 
     // Store in global
     if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
         *s = Some(session);
     }
 
-    Some(username)
+    Some(user_id)
 }

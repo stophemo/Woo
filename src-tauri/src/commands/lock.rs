@@ -81,13 +81,17 @@ pub fn lock_is_document_locked(document_id: String) -> CommandResult<bool> {
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "lockCloudPushSettings")]
-pub fn lock_cloud_push_settings(password: String) -> CommandResult<()> {
-    lock_service::cloud_push_settings(&password);
-    CommandResult::success(())
+pub async fn lock_cloud_push_settings() -> CommandResult<()> {
+    match lock_service::cloud_push_settings().await {
+        Ok(_) => CommandResult::success(()),
+        Err(msg) => CommandResult::error(&msg),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "lockCloudPullSettings")]
-pub fn lock_cloud_pull_settings() -> CommandResult<()> {
-    lock_service::cloud_pull_settings();
-    CommandResult::success(())
+pub async fn lock_cloud_pull_settings() -> CommandResult<()> {
+    match lock_service::cloud_pull_settings().await {
+        Ok(_) => CommandResult::success(()),
+        Err(msg) => CommandResult::error(&msg),
+    }
 }

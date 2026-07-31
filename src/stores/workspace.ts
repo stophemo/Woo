@@ -1160,7 +1160,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             || saveErrors.has(editingId)
           )
           const localDoc = currentDocumentData.value
-          if (cloudDoc && localDoc && cloudDoc.content !== localDoc.content && !hasUnsaved) {
+          const lockStateChanged = !!cloudDoc && !!localDoc && cloudDoc.isLocked !== localDoc.isLocked
+          if (cloudDoc && localDoc && (cloudDoc.isLocked || localDoc.isLocked)) {
+            // 锁定文稿在内存中的正文会被主动清空，不能把 '' 与数据库正文的差异
+            // 当作编辑冲突，否则每次同步都会生成一个空的“冲突副本”。
+            if (lockStateChanged && !hasUnsaved) {
+              try {
+                const dto = await documentApi.getById(cloudDoc.id)
+                currentDocumentData.value = mapDocument(dto)
+                if (currentDocumentData.value.isLocked) currentDocumentData.value.content = ''
+              } catch { /* 加载失败时保留当前锁定状态 */ }
+            } else if (cloudDoc.updatedAt !== localDoc.updatedAt) {
+              currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
+            }
+          } else if (cloudDoc && localDoc && cloudDoc.content !== localDoc.content && !hasUnsaved) {
             // 云端内容不同，且编辑器没有未保存的修改 → 真正云端冲突（另一设备修改了同一文稿）
             // 将云端版本载入编辑器，本地版本另存为冲突副本
             try {

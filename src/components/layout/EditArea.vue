@@ -624,7 +624,7 @@ const editor = useEditor({
     Underline,
     TaskList,
     TaskItem.configure({ nested: true }),
-    Table.configure({ resizable: false }),
+    Table.configure({ resizable: false, renderWrapper: true }),
     TableRow,
     TableHeader,
     TableCell,
@@ -1059,16 +1059,29 @@ function toggleLink() {
   }
 }
 
-/** 监听来自 TopMenu 的编辑器命令（如 'link' 动作） */
+/** 监听来自 TopMenu 的编辑器命令。 */
 const menuActionHandler = (e: Event) => {
   const detail = (e as CustomEvent).detail
-  if (detail?.command === 'link') toggleLink()
+  switch (detail?.command) {
+    case 'link':
+      toggleLink()
+      break
+    case 'zoom-in':
+      increaseZoom()
+      break
+    case 'zoom-out':
+      decreaseZoom()
+      break
+    case 'zoom-reset':
+      resetZoom()
+      break
+  }
 }
 
 </script>
 
 <style scoped>
-.edit-area { flex: 1; display: flex; flex-direction: column; background-color: var(--editor-bg); overflow: hidden; position: relative; transition: var(--theme-transition); }
+.edit-area { flex: 1; min-width: 0; display: flex; flex-direction: column; background-color: var(--editor-bg); overflow: hidden; position: relative; transition: var(--theme-transition); }
 .tool-btn { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); border-radius: 4px; height: 24px; padding: 0 8px; cursor: pointer; }
 .sheet-wrap { border-bottom: 1px solid var(--border-primary); background: var(--bg-tertiary); }
 .sheet-tools { display: flex; gap: 6px; padding: 8px; }
@@ -1085,15 +1098,15 @@ const menuActionHandler = (e: Event) => {
 .sheet-grid td.align-right input, .sheet-grid td.align-right .computed { text-align: right; }
 .sheet-grid td.top-header { background: color-mix(in srgb, var(--bg-toolbar) 65%, transparent); }
 .sheet-grid td.left-header { background: color-mix(in srgb, var(--bg-toolbar) 40%, transparent); }
-.editor-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
+.editor-body { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; position: relative; }
 /* 滚动定位按钮组 */
 .scroll-nav { position: absolute; right: 10px; bottom: 36px; display: flex; flex-direction: column; gap: 5px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10; }
 .scroll-nav.visible { opacity: 1; pointer-events: auto; }
 .scroll-nav-btn { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-secondary); background: color-mix(in srgb, var(--editor-bg) 88%, var(--bg-toolbar)); color: var(--text-secondary, #999); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-card); transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
 .scroll-nav-btn:hover { background: color-mix(in srgb, var(--accent, #409eff) 20%, var(--bg-toolbar, #2a2a2a)); color: var(--accent, #409eff); }
 .scroll-nav-btn:active { transform: scale(0.95); }
-.editor-scale-wrap { flex: 1; min-height: 0; }
-.editor-content { height: 100%; }
+.editor-scale-wrap { flex: 1; min-width: 0; min-height: 0; }
+.editor-content { width: 100%; min-width: 0; height: 100%; }
 .empty-editor { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
 
 .locked-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
@@ -1124,6 +1137,9 @@ const menuActionHandler = (e: Event) => {
 
 <style>
 .wysiwyg-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 48px 36px 120px;
   max-width: 720px;
   margin: 0 auto;
@@ -1150,8 +1166,9 @@ const menuActionHandler = (e: Event) => {
 .wysiwyg-editor ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 4px; }
 .wysiwyg-editor ul[data-type="taskList"] li > label input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 16px; height: 16px; }
 .wysiwyg-editor ul[data-type="taskList"] li > div { flex: 1; }
-.wysiwyg-editor table { width: 100%; border-collapse: collapse; table-layout: auto; margin: 14px 0; }
-.wysiwyg-editor th, .wysiwyg-editor td { min-width: 80px; padding: 8px 10px; border: 1px solid var(--border-primary); text-align: left; vertical-align: top; }
+.wysiwyg-editor .tableWrapper { width: 100%; max-width: 100%; margin: 14px 0; overflow-x: auto; overscroll-behavior-x: contain; }
+.wysiwyg-editor table { width: max-content; min-width: 100%; max-width: none; border-collapse: collapse; table-layout: auto; margin: 0; }
+.wysiwyg-editor th, .wysiwyg-editor td { min-width: 80px; max-width: 320px; padding: 8px 10px; border: 1px solid var(--border-primary); text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
 .wysiwyg-editor th { background: var(--bg-hover); color: var(--text-primary); font-weight: 600; }
 .wysiwyg-editor td { color: var(--editor-text-secondary); }
 .wysiwyg-editor th p, .wysiwyg-editor td p { margin: 0; }

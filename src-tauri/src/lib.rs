@@ -351,9 +351,9 @@ pub fn run() {
             log::info!("[App] Data directory: {:?}", db_path);
 
             // Restore session from supabase-auth.json
-            if let Some(username) = services::auth_service::try_restore_session() {
-                log::info!("[App] Restored session for user: {}", username);
-                db::set_current_user(Some(&username));
+            if let Some(user_id) = services::auth_service::try_restore_session() {
+                log::info!("[App] Restored session for user id: {}", user_id);
+                db::set_current_user(Some(&user_id));
             }
 
             // Lazy-init database

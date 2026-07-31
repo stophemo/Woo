@@ -65,12 +65,22 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => user.value !== null && !!user.value.id)
 
+  function normalizeUsername(u: any): string | undefined {
+    const candidate = typeof u?.username === 'string' ? u.username.trim() : ''
+    const userId = typeof u?.id === 'string' ? u.id.trim() : ''
+    const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    if (candidate && candidate !== userId && !looksLikeUuid) return candidate
+    const email = typeof u?.email === 'string' ? u.email.trim() : ''
+    return email ? email.split('@')[0] : undefined
+  }
+
   function mapUser(u: any): AuthUser {
+    const username = normalizeUsername(u)
     return {
       id: u.id,
       email: u.email,
-      username: u.username,
-      nickname: u.username || u.email?.split('@')[0] || '用户',
+      username,
+      nickname: username || '用户',
       avatarUrl: undefined
     }
   }
@@ -101,7 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
     // 路径 B：7 天内缓存降级
     const cached = loadSession()
     if (cached && isSessionValid(cached)) {
-      user.value = { id: cached.userId, email: cached.email, username: cached.username }
+      user.value = mapUser({ id: cached.userId, email: cached.email, username: cached.username })
       initializing.value = false
       return
     }

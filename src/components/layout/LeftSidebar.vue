@@ -286,12 +286,12 @@ function handleLockAction(folder: FolderNode) {
     showLockDialog.value = true
     return
   }
-  // 加锁操作：若当前会话已验证过密码可跳过
-  if (lockStore.sessionVerified) {
+  // 已设置密码时，加锁本身不需要再次验证；下一次解锁仍会要求输入密码。
+  if (lockStore.hasPassword) {
     performToggleLock(folder)
     return
   }
-  lockDialogMode.value = lockStore.hasPassword ? 'verify' : 'set'
+  lockDialogMode.value = 'set'
   pendingLockTarget.value = folder
   showLockDialog.value = true
 }

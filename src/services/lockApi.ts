@@ -45,8 +45,8 @@ export function isDocumentLocked(documentId: string): Promise<boolean> {
   return invoke<boolean>('lock:isDocumentLocked', { documentId })
 }
 
-export function cloudPushSettings(password: string): Promise<void> {
-  return invoke<void>('lock:cloudPushSettings', { password })
+export function cloudPushSettings(): Promise<void> {
+  return invoke<void>('lock:cloudPushSettings')
 }
 
 export function cloudPullSettings(): Promise<void> {
