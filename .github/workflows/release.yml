@@ -722,7 +722,6 @@ jobs:
           MAC_DOWNLOAD_NAME="Woo_macos-arm64.dmg"
           MAC_UPDATER_DOWNLOAD_NAME="Woo_macos-arm64.app.tar.gz"
           ANDROID_DOWNLOAD_NAME="Woo_android-arm64-v8a.apk"
-          WINDOWS_DOWNLOAD_NAME="Woo_windows-x64-setup.exe"
           LATEST_NAME="latest.json"
 
           mapfile -t ALL_FILES < <(find release-assets -type f -print)
@@ -774,27 +773,24 @@ jobs:
             echo "错误: Windows artifact 必须只有一个精确命名的安装包" >&2
             exit 1
           fi
-          WINDOWS_INSTALLER="${WINDOWS_INSTALLERS[0]}"
 
           mapfile -t WINDOWS_SIG_FILES < <(find release-assets -type f -name "$WINDOWS_SIG_NAME" -print)
           if (( ${#WINDOWS_SIG_FILES[@]} != 1 )); then
             echo "错误: Windows 自动更新签名数量不正确" >&2
             exit 1
           fi
-          WINDOWS_SIG="${WINDOWS_SIG_FILES[0]}"
 
           mkdir -p release
           cp "$MAC_DMG" "release/$MAC_DOWNLOAD_NAME"
           cp "$MAC_UPDATER" "release/$MAC_UPDATER_DOWNLOAD_NAME"
           cp "$ANDROID_APK" "release/$ANDROID_DOWNLOAD_NAME"
-          cp "$WINDOWS_INSTALLER" "release/$WINDOWS_DOWNLOAD_NAME"
+          # Windows 暂仅保留 CI 构建验证，预计 0.2.x 再恢复公开发布。
 
           MAC_NAME="$(basename "$MAC_DMG")"
 
           RELEASE_BASE_URL="${SERVER_URL}/${REPOSITORY}/releases/download/${TAG}"
           PUB_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           MAC_SIGNATURE="$(tr -d '\r\n' < "$MAC_UPDATER_SIG")"
-          WINDOWS_SIGNATURE="$(tr -d '\r\n' < "$WINDOWS_SIG")"
           jq -n \
             --arg version "$VERSION" \
             --arg notes "$NOTES" \
@@ -802,16 +798,13 @@ jobs:
             --arg macUrl "$RELEASE_BASE_URL/$MAC_UPDATER_DOWNLOAD_NAME" \
             --arg macSignature "$MAC_SIGNATURE" \
             --arg androidUrl "$RELEASE_BASE_URL/$ANDROID_DOWNLOAD_NAME" \
-            --arg windowsUrl "$RELEASE_BASE_URL/$WINDOWS_DOWNLOAD_NAME" \
-            --arg windowsSignature "$WINDOWS_SIGNATURE" \
             '{
               version: $version,
               notes: $notes,
               pub_date: $pubDate,
               android: { url: $androidUrl },
               platforms: {
-                "darwin-aarch64": { url: $macUrl, signature: $macSignature },
-                "windows-x86_64": { url: $windowsUrl, signature: $windowsSignature }
+                "darwin-aarch64": { url: $macUrl, signature: $macSignature }
               }
             }' > "release/$LATEST_NAME"
           jq empty "release/$LATEST_NAME"
@@ -820,7 +813,6 @@ jobs:
           echo "mac_download_name=$MAC_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
           echo "mac_updater_download_name=$MAC_UPDATER_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
           echo "android_download_name=$ANDROID_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
-          echo "windows_download_name=$WINDOWS_DOWNLOAD_NAME" >> "$GITHUB_OUTPUT"
           echo "latest_name=$LATEST_NAME" >> "$GITHUB_OUTPUT"
           ls -lh release/
 
@@ -835,7 +827,6 @@ jobs:
           MAC_DOWNLOAD_NAME: ${{ steps.assets.outputs.mac_download_name }}
           MAC_UPDATER_DOWNLOAD_NAME: ${{ steps.assets.outputs.mac_updater_download_name }}
           ANDROID_DOWNLOAD_NAME: ${{ steps.assets.outputs.android_download_name }}
-          WINDOWS_DOWNLOAD_NAME: ${{ steps.assets.outputs.windows_download_name }}
           LATEST_NAME: ${{ steps.assets.outputs.latest_name }}
         run: |
           set -euo pipefail
@@ -844,7 +835,6 @@ jobs:
             "release/$MAC_DOWNLOAD_NAME"
             "release/$MAC_UPDATER_DOWNLOAD_NAME"
             "release/$ANDROID_DOWNLOAD_NAME"
-            "release/$WINDOWS_DOWNLOAD_NAME"
             "release/$LATEST_NAME"
           )
           for FILE in "${FILES[@]}"; do
@@ -891,7 +881,6 @@ jobs:
             "$MAC_DOWNLOAD_NAME"
             "$MAC_UPDATER_DOWNLOAD_NAME"
             "$ANDROID_DOWNLOAD_NAME"
-            "$WINDOWS_DOWNLOAD_NAME"
             "$LATEST_NAME"
           )
           REMOTE_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
