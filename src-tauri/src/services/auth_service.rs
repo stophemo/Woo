@@ -1,7 +1,13 @@
 use crate::db;
 use crate::supabase;
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde::Serialize;
+use tokio::sync::Mutex;
+
+// Refresh slightly before expiry so a multi-request sync cannot cross the JWT deadline.
+const TOKEN_REFRESH_SKEW_SECS: i64 = 120;
+static SESSION_REFRESH_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,41 +132,80 @@ pub fn get_current_user() -> Result<Option<AuthUser>, String> {
     }
 }
 
+/// Return the current session with an access token that is valid for the next
+/// refresh window. The periodic sync path uses this instead of reading the
+/// session token directly, because the app can stay open for many hours.
+pub async fn ensure_fresh_session() -> Result<supabase::SupabaseSession, String> {
+    let session = supabase::CURRENT_SESSION
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "未登录，无法同步".to_string())?;
+    let now = Utc::now().timestamp();
+    if session.expires_at > now.saturating_add(TOKEN_REFRESH_SKEW_SECS) {
+        return Ok(session);
+    }
+
+    // Auth bootstrap and the periodic timer can reach this path together. Re-check
+    // after taking the lock so only one request rotates the refresh token.
+    let _refresh_guard = SESSION_REFRESH_LOCK.lock().await;
+    let current = supabase::CURRENT_SESSION
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "未登录，无法同步".to_string())?;
+    let now = Utc::now().timestamp();
+    if current.expires_at > now.saturating_add(TOKEN_REFRESH_SKEW_SECS) {
+        return Ok(current);
+    }
+
+    match supabase::refresh_session(&current.refresh_token).await {
+        Ok(new_session) => {
+            supabase::persist_session(&new_session);
+            if let Ok(mut current_session) = supabase::CURRENT_SESSION.lock() {
+                *current_session = Some(new_session.clone());
+            }
+            log::info!("[Auth] Access token refreshed before sync");
+            Ok(new_session)
+        }
+        Err(error) => {
+            // A temporary network failure should not invalidate a token that is
+            // still usable; the next sync can retry the refresh.
+            if current.expires_at > now {
+                log::warn!(
+                    "[Auth] Token refresh deferred (current token still valid): {}",
+                    error
+                );
+                Ok(current)
+            } else {
+                Err(format!("登录已过期，请重新登录: {}", error))
+            }
+        }
+    }
+}
+
 pub async fn get_session() -> Result<Option<AuthSession>, String> {
     let session = supabase::CURRENT_SESSION
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
 
-    let Some(s) = session else {
+    let Some(_) = session else {
         return Ok(None);
     };
 
-    // Step 1: refresh if expired
-    let session = {
-        let now = Utc::now().timestamp();
-        if now >= s.expires_at {
-            match supabase::refresh_session(&s.refresh_token).await {
-                Ok(new_session) => {
-                    supabase::persist_session(&new_session);
-                    if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                        *current = Some(new_session.clone());
-                    }
-                    new_session
-                }
-                Err(e) => {
-                    log::warn!("[Auth] Token refresh failed: {}", e);
-                    // 刷新失败 → session 已失效（可能被服务端吊销）
-                    supabase::clear_persisted_session();
-                    if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                        *current = None;
-                    }
-                    db::set_current_user(None);
-                    return Ok(None);
-                }
+    // Step 1: refresh before expiry (also used by periodic sync).
+    let session = match ensure_fresh_session().await {
+        Ok(session) => session,
+        Err(error) => {
+            log::warn!("[Auth] Token refresh failed: {}", error);
+            // 刷新失败 → session 已失效（可能被服务端吊销）
+            supabase::clear_persisted_session();
+            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
+                *current = None;
             }
-        } else {
-            s
+            db::set_current_user(None);
+            return Ok(None);
         }
     };
 

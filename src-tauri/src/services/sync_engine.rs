@@ -1,4 +1,5 @@
 use crate::db;
+use crate::services::auth_service;
 use crate::services::utils::now_str;
 use crate::supabase;
 use chrono::{Duration, Utc};
@@ -62,24 +63,6 @@ pub struct SyncResult {
     pub cleanup_count: i32,
     pub tombstone_count: i32,
     pub sync_time: String,
-}
-
-// ===================== Session Helpers =====================
-
-fn get_current_user_id() -> Option<String> {
-    supabase::CURRENT_SESSION
-        .lock()
-        .ok()
-        .and_then(|s| s.clone())
-        .map(|s| s.user.id)
-}
-
-fn get_current_access_token() -> Option<String> {
-    supabase::CURRENT_SESSION
-        .lock()
-        .ok()
-        .and_then(|s| s.clone())
-        .map(|s| s.access_token)
 }
 
 // ===================== Sync Meta Helpers =====================
@@ -646,8 +629,9 @@ fn promote_empty_folders_to_deleted2() {
 
 /// Execute a full sync cycle: tombstone pull → remote pull → local push → cleanup.
 async fn do_sync() -> Result<SyncResult, String> {
-    let user_id = get_current_user_id().ok_or("未登录，无法同步".to_string())?;
-    let access_token = get_current_access_token().ok_or("未登录，无法同步".to_string())?;
+    let session = auth_service::ensure_fresh_session().await?;
+    let user_id = session.user.id.clone();
+    let access_token = session.access_token;
 
     // 在任何网络请求前固定水位。同步过程中产生的变更会在下一轮再次覆盖，避免结束时间跳过数据。
     let sync_time = now_str();
