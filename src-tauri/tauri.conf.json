@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://generativelanguage.googleapis.com https://api.deepseek.com https://api.openai.com http://localhost:* ws://localhost:*; font-src 'self' data:;"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https://*.supabase.co https://generativelanguage.googleapis.com https://api.deepseek.com https://api.openai.com http://localhost:* ws://localhost:*; font-src 'self' data:;"
     }
   },
   "bundle": {

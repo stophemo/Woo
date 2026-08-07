@@ -4,11 +4,11 @@
       <div class="sheet-tools">
         <button class="tool-btn" @click="applyStyle('bold')">B</button>
         <button class="tool-btn" @click="applyStyle('italic')">I</button>
-        <button class="tool-btn" @click="setAlign('left')">Left</button>
-        <button class="tool-btn" @click="setAlign('center')">Center</button>
-        <button class="tool-btn" @click="setAlign('right')">Right</button>
-        <button class="tool-btn" @click="toggleTopHeader">Top Header</button>
-        <button class="tool-btn" @click="toggleLeftHeader">Left Header</button>
+        <button class="tool-btn" @click="setAlign('left')">左对齐</button>
+        <button class="tool-btn" @click="setAlign('center')">居中</button>
+        <button class="tool-btn" @click="setAlign('right')">右对齐</button>
+        <button class="tool-btn" @click="toggleTopHeader">首行表头</button>
+        <button class="tool-btn" @click="toggleLeftHeader">首列表头</button>
       </div>
       <div class="sheet-grid-wrap">
         <table class="sheet-grid">
@@ -53,6 +53,15 @@
             <span>外部文件</span>
             <span class="external-file-path" :title="externalFilePath">{{ externalFilePath }}</span>
           </div>
+          <div v-if="isTableActive" class="table-edit-toolbar" @mousedown.prevent>
+            <button title="在下方添加一行" @click="runTableCommand('addRowAfter')">+ 行</button>
+            <button title="删除当前行" @click="runTableCommand('deleteRow')">- 行</button>
+            <button title="在右侧添加一列" @click="runTableCommand('addColumnAfter')">+ 列</button>
+            <button title="删除当前列" @click="runTableCommand('deleteColumn')">- 列</button>
+            <button title="切换表头行" @click="runTableCommand('toggleHeaderRow')">表头</button>
+            <span class="table-tool-divider"></span>
+            <button class="danger" title="删除表格" @click="runTableCommand('deleteTable')">删除表格</button>
+          </div>
           <EditorContent :editor="editor" class="editor-content" :style="editorScaleStyle" />
         </div>
       </template>
@@ -60,7 +69,7 @@
         <IconLock class="locked-placeholder-icon" />
         <p class="locked-placeholder-text">当前目录已加锁，无法查看文稿</p>
       </div>
-      <div v-else class="empty-editor">Please select a document</div>
+      <div v-else class="empty-editor">请选择一篇文稿</div>
     </div>
 
     <!-- 滚动定位按钮 — 放在 editor-body 外部，避免随内容滚动 -->
@@ -85,8 +94,8 @@
         <span v-if="currentBlock" class="current-block">{{ currentBlock }}</span>
       </div>
       <div class="statusbar-right">
-        <span class="word-count">{{ wordCount }} words</span>
-        <span>{{ lineCount }} lines</span>
+        <span class="word-count">{{ wordCount }} 字</span>
+        <span>{{ lineCount }} 行</span>
         <span>{{ zoomPercent }}%</span>
         <span class="app-version" title="当前应用版本">v{{ appVersion }}</span>
       </div>
@@ -98,6 +107,63 @@
       :data="mindmapDialogData"
       @close="showMindmapDialog = false"
     />
+
+    <ContextMenu
+      v-if="showEditorContextMenu"
+      :position="editorContextMenuPosition"
+      :items="editorContextMenuItems"
+      @select="handleEditorContextMenuAction"
+      @close="closeEditorContextMenu"
+    />
+
+    <Teleport to="body">
+      <div v-if="showImageDialog" class="insert-dialog-overlay" @mousedown.self="closeImageDialog">
+        <form class="insert-dialog" @submit.prevent="confirmImageUrl">
+          <div class="insert-dialog-header">
+            <h3>插入图片</h3>
+            <button type="button" class="insert-dialog-close" title="关闭" @click="closeImageDialog">
+              <IconClose />
+            </button>
+          </div>
+          <label class="insert-dialog-field">
+            <span>图片地址或资源路径</span>
+            <input v-model="imageSourceInput" type="text" placeholder="https://example.com/image.png" autofocus />
+          </label>
+          <div class="insert-dialog-actions">
+            <button type="button" class="secondary" @click="chooseLocalImage">选择本地图片</button>
+            <span class="insert-dialog-spacer"></span>
+            <button type="button" class="secondary" @click="closeImageDialog">取消</button>
+            <button type="submit" class="primary" :disabled="!imageSourceInput.trim()">插入</button>
+          </div>
+        </form>
+      </div>
+
+      <div v-if="showTableDialog" class="insert-dialog-overlay" @mousedown.self="closeTableDialog">
+        <form class="insert-dialog compact" @submit.prevent="confirmInsertTable">
+          <div class="insert-dialog-header">
+            <h3>插入表格</h3>
+            <button type="button" class="insert-dialog-close" title="关闭" @click="closeTableDialog">
+              <IconClose />
+            </button>
+          </div>
+          <div class="table-size-fields">
+            <label class="insert-dialog-field">
+              <span>行数</span>
+              <input v-model.number="tableRowsInput" type="number" min="1" max="20" />
+            </label>
+            <label class="insert-dialog-field">
+              <span>列数</span>
+              <input v-model.number="tableColsInput" type="number" min="1" max="12" />
+            </label>
+          </div>
+          <div class="insert-dialog-actions">
+            <span class="insert-dialog-spacer"></span>
+            <button type="button" class="secondary" @click="closeTableDialog">取消</button>
+            <button type="submit" class="primary">插入</button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
 
   </section>
 </template>
@@ -114,6 +180,7 @@ import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table
 import Highlight from '@tiptap/extension-highlight'
 import Typography from '@tiptap/extension-typography'
 import { Extension } from '@tiptap/vue-3'
+import { Node as TiptapNode, mergeAttributes } from '@tiptap/core'
 import BulletList from '@tiptap/extension-bullet-list'
 import Link from '@tiptap/extension-link'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
@@ -124,9 +191,46 @@ import { useWorkspaceStore } from '../../stores/workspace'
 import { registerScrollHandler, useEditorNavigation } from '../../config/editorNavigation'
 import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
+import IconClose from '../icons/IconClose.vue'
 import MindmapDialog from './MindmapDialog.vue'
+import ContextMenu from '../ui/ContextMenu.vue'
 import { log } from '../../services/logger'
 import { markdownToEditorHtml } from '../../services/markdown'
+import { buildAssetUrl } from '../../services/assetLink'
+import { invoke } from '../../services/api'
+import type { ContextMenuItem, ContextMenuPosition } from '../../types/folder'
+import {
+  DEFAULT_EDITOR_SHORTCUTS,
+  EDITOR_SHORTCUT_LABELS,
+  getEditorShortcut,
+  matchesShortcut,
+  shortcutForDisplay,
+  type EditorShortcutAction,
+} from '../../config/editorShortcuts'
+import { isMac } from '../../config/shortcutUtils'
+
+// 内置图片节点：避免把图片降级成不可编辑的原始 HTML，Markdown 转换器也能稳定识别 img。
+const WooImage = TiptapNode.create({
+  name: 'image',
+  inline: true,
+  group: 'inline',
+  draggable: true,
+  selectable: true,
+  atom: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      title: { default: null },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'img[src]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['img', mergeAttributes(HTMLAttributes)]
+  },
+})
 /** HTML → Markdown 转换器（复制剪贴板，输出 GFM 风格 Markdown） */
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -178,6 +282,7 @@ const emit = defineEmits<{
 
 
 const zoomPercent = ref(100)
+const editorStateVersion = ref(0)
 const showScrollToTop = ref(false)
 const showScrollToBottom = ref(false)
 const showSheet = ref(false)
@@ -188,6 +293,16 @@ const topHeader = ref(true)
 const leftHeader = ref(true)
 const cells = ref<string[][]>(Array.from({ length: rows }, () => Array.from({ length: cols }, () => '')))
 const styles = ref<Record<string, { bold?: boolean; italic?: boolean; align?: 'left' | 'center' | 'right' }>>({})
+
+const showEditorContextMenu = ref(false)
+const editorContextMenuPosition = ref<ContextMenuPosition>({ x: 0, y: 0 })
+const editorContextMenuItems = ref<ContextMenuItem[]>([])
+const contextSelection = ref<{ from: number; to: number } | null>(null)
+const showImageDialog = ref(false)
+const imageSourceInput = ref('')
+const showTableDialog = ref(false)
+const tableRowsInput = ref(3)
+const tableColsInput = ref(3)
 
 const editorScaleStyle = computed(() => {
   const scale = zoomPercent.value / 100
@@ -300,11 +415,12 @@ function decreaseZoom() { zoomPercent.value = Math.max(60, zoomPercent.value - 1
 function resetZoom() { zoomPercent.value = 100 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
-  const isMod = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey
+  if (handleConfiguredShortcut(event)) return
+  const isMod = isMac ? event.metaKey : event.ctrlKey
   if (!isMod) return
   if (event.key === '+' || event.key === '=' || event.code === 'NumpadAdd') { event.preventDefault(); increaseZoom(); return }
   if (event.key === '-' || event.code === 'NumpadSubtract') { event.preventDefault(); decreaseZoom(); return }
-  if (event.key === '0') { event.preventDefault(); resetZoom(); return }
+  if (event.code === 'Digit0' && event.shiftKey) { event.preventDefault(); resetZoom(); return }
 }
 
 let isSettingContent = false
@@ -378,29 +494,66 @@ async function forceCommit(changeType: 'auto' | 'manual' = 'auto') {
   resetBaseline()
 }
 
-const CustomKeymap = Extension.create({
-  name: 'customKeymap',
-  addKeyboardShortcuts() {
-    return {
-      'Shift-Alt-1': () => this.editor.chain().focus().toggleHeading({ level: 1 }).run(),
-      'Shift-Alt-2': () => this.editor.chain().focus().toggleHeading({ level: 2 }).run(),
-      'Shift-Alt-3': () => this.editor.chain().focus().toggleHeading({ level: 3 }).run(),
-      'Shift-Alt-4': () => this.editor.chain().focus().toggleHeading({ level: 4 }).run(),
-      'Shift-Alt-5': () => this.editor.chain().focus().toggleHeading({ level: 5 }).run(),
-      'Shift-Alt-6': () => this.editor.chain().focus().toggleHeading({ level: 6 }).run(),
-      'Mod-Shift-h': () => this.editor.chain().focus().toggleHighlight().run(),
-      'Mod-Shift-l': () => this.editor.chain().focus().toggleBulletList().run(),
-      'Mod-Shift-o': () => this.editor.chain().focus().toggleOrderedList().run(),
-      'Mod-Shift-t': () => this.editor.chain().focus().toggleTaskList().run(),
-      'Mod-Shift-q': () => this.editor.chain().focus().toggleBlockquote().run(),
-      'Mod-Shift-c': () => this.editor.chain().focus().toggleCodeBlock().run(),
-      'Mod-Shift-x': () => this.editor.chain().focus().toggleStrike().run(),
-      'Mod-Enter': () => this.editor.chain().focus().setHorizontalRule().run(),
-      'Mod-k': () => { toggleLink(); return true },
-      'Mod-s': () => { void forceCommit('manual'); return true }
-    }
+const CONFIGURED_SHORTCUT_ACTIONS = Object.keys(EDITOR_SHORTCUT_LABELS) as EditorShortcutAction[]
+
+function executeEditorAction(action: EditorShortcutAction): void {
+  const ed = editor.value
+  if (!ed) return
+  switch (action) {
+    case 'undo': ed.chain().focus().undo().run(); break
+    case 'redo': ed.chain().focus().redo().run(); break
+    case 'save': void forceCommit('manual'); break
+    case 'h1': ed.chain().focus().toggleHeading({ level: 1 }).run(); break
+    case 'h2': ed.chain().focus().toggleHeading({ level: 2 }).run(); break
+    case 'h3': ed.chain().focus().toggleHeading({ level: 3 }).run(); break
+    case 'h4': ed.chain().focus().toggleHeading({ level: 4 }).run(); break
+    case 'h5': ed.chain().focus().toggleHeading({ level: 5 }).run(); break
+    case 'h6': ed.chain().focus().toggleHeading({ level: 6 }).run(); break
+    case 'paragraph': ed.chain().focus().setParagraph().run(); break
+    case 'bold': ed.chain().focus().toggleBold().run(); break
+    case 'italic': ed.chain().focus().toggleItalic().run(); break
+    case 'underline': ed.chain().focus().toggleUnderline().run(); break
+    case 'strikethrough': ed.chain().focus().toggleStrike().run(); break
+    case 'highlight': ed.chain().focus().toggleHighlight().run(); break
+    case 'clear': ed.chain().focus().clearNodes().unsetAllMarks().run(); break
+    case 'ul': ed.chain().focus().toggleBulletList().run(); break
+    case 'ol': ed.chain().focus().toggleOrderedList().run(); break
+    case 'task': ed.chain().focus().toggleTaskList().run(); break
+    case 'quote': ed.chain().focus().toggleBlockquote().run(); break
+    case 'code': ed.chain().focus().toggleCode().run(); break
+    case 'codeblock': ed.chain().focus().toggleCodeBlock().run(); break
+    case 'link': toggleLink(); break
+    case 'image': void insertImage(); break
+    case 'table': insertTable(); break
+    case 'hr': ed.chain().focus().setHorizontalRule().run(); break
   }
-})
+}
+
+/** 在捕获阶段接管可配置快捷键，覆盖 Tiptap 和浏览器默认 keymap。 */
+function handleConfiguredShortcut(event: KeyboardEvent): boolean {
+  const ed = editor.value
+  const target = event.target as Node | null
+  if (!ed || !target || !ed.view.dom.contains(target)) return false
+
+  const configured = CONFIGURED_SHORTCUT_ACTIONS.find(action => matchesShortcut(getEditorShortcut(action), event))
+  if (configured) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    executeEditorAction(configured)
+    return true
+  }
+
+  const staleDefault = CONFIGURED_SHORTCUT_ACTIONS.some(action =>
+    getEditorShortcut(action) !== DEFAULT_EDITOR_SHORTCUTS[action] &&
+    matchesShortcut(DEFAULT_EDITOR_SHORTCUTS[action], event)
+  )
+  if (staleDefault) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    return true
+  }
+  return false
+}
 
 // ═══════════════════════════════════════════════
 // BulletList NodeView — 每个无序列表块右侧显示思维导图按钮
@@ -620,10 +773,11 @@ const editor = useEditor({
   content: '',
   extensions: [
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, bulletList: false }),
-    Placeholder.configure({ placeholder: 'Start writing...' }),
+    Placeholder.configure({ placeholder: '开始写作...' }),
     Underline,
     TaskList,
     TaskItem.configure({ nested: true }),
+    WooImage,
     Table.configure({ resizable: false, renderWrapper: true }),
     TableRow,
     TableHeader,
@@ -631,7 +785,6 @@ const editor = useEditor({
     Highlight.configure({ multicolor: false }),
     Link.configure({ openOnClick: false, autolink: false }),
     Typography,
-    CustomKeymap,
     MindmapBulletList,
     MarkdownPaste,
     MarkdownLinkInput,
@@ -645,8 +798,10 @@ const editor = useEditor({
         try { (event as any).clipboardData?.setData('text/x-woo', '1') } catch { /* ignore */ }
         return false // 让 ProseMirror 继续默认的复制处理
       },
-
-
+      contextmenu: (_view, event) => {
+        openEditorContextMenu(event as MouseEvent)
+        return true
+      },
     },
     clipboardTextSerializer: (slice, view) => {
       try {
@@ -683,6 +838,14 @@ const editor = useEditor({
     updateActiveHeading()
     syncHeadings()
   },
+  onSelectionUpdate: () => {
+    editorStateVersion.value++
+  },
+})
+
+const isTableActive = computed(() => {
+  void editorStateVersion.value
+  return editor.value?.isActive('table') === true
 })
 
 const currentBlock = computed(() => {
@@ -974,7 +1137,7 @@ function looksLikeUrl(text: string): boolean {
 onMounted(() => {
   window.addEventListener('woo-editor-command', menuActionHandler)
   registerScrollHandler(scrollToPos)
-  window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('keydown', handleGlobalKeydown, true)
   loadSheet()
   void nextTick(() => {
     // 在编辑器 DOM 上注册捕获阶段 mousedown 监听（直接处理链接点击，不依赖 ProseMirror API）
@@ -1019,7 +1182,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('woo-editor-command', menuActionHandler)
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
   clearTimers()
-  window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('keydown', handleGlobalKeydown, true)
   if (scrollRAF !== null) cancelAnimationFrame(scrollRAF)
   if (scrollElRef) {
     scrollElRef.removeEventListener('scroll', onEditorScroll)
@@ -1059,12 +1222,185 @@ function toggleLink() {
   }
 }
 
+function insertTable() {
+  if (!editor.value) return
+  tableRowsInput.value = 3
+  tableColsInput.value = 3
+  showTableDialog.value = true
+}
+
+function closeTableDialog() {
+  showTableDialog.value = false
+}
+
+function confirmInsertTable() {
+  const ed = editor.value
+  if (!ed) return
+  const rows = Math.max(1, Math.min(20, Number(tableRowsInput.value) || 3))
+  const cols = Math.max(1, Math.min(12, Number(tableColsInput.value) || 3))
+  ed.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()
+  closeTableDialog()
+}
+
+function insertImage() {
+  if (!editor.value) return
+  imageSourceInput.value = ''
+  showImageDialog.value = true
+}
+
+function closeImageDialog() {
+  showImageDialog.value = false
+}
+
+function insertImageNode(src: string, alt = '') {
+  const ed = editor.value
+  if (!ed || !src) return
+  ed.chain().focus().insertContent({ type: 'image', attrs: { src, alt } }).run()
+  closeImageDialog()
+}
+
+function confirmImageUrl() {
+  const source = imageSourceInput.value.trim()
+  if (!source) return
+  const src = buildAssetUrl(source)
+  const alt = src.split('/').pop()?.split('?')[0] || ''
+  insertImageNode(src, alt)
+}
+
+async function chooseLocalImage() {
+  try {
+    const selected = await invoke<{ filePath: string }>('dialog:open-image')
+    if (!selected?.filePath) return
+    const image = await invoke<{ data: string; mimeType: string }>('read:image-file', { filePath: selected.filePath })
+    const src = `data:${image.mimeType};base64,${image.data}`
+    const alt = selected.filePath.split(/[\\/]/).pop() || ''
+    insertImageNode(src, alt)
+  } catch (error: any) {
+    const message = error?.message || '选择图片失败'
+    log.editor.warn('选择图片失败:', error)
+    window.dispatchEvent(new CustomEvent('sync:toast', { detail: { message, type: 'error' } }))
+  }
+}
+
+function runTableCommand(command: string) {
+  const ed = editor.value
+  if (!ed) return
+  const chain = ed.chain().focus() as any
+  if (typeof chain[command] !== 'function') return
+  chain[command]().run()
+}
+
+function restoreContextSelection() {
+  const ed = editor.value
+  if (!ed || !contextSelection.value) return
+  ed.commands.focus()
+  ed.commands.setTextSelection(contextSelection.value)
+}
+
+function contextShortcut(action: EditorShortcutAction): string {
+  return shortcutForDisplay(getEditorShortcut(action))
+}
+
+function buildEditorContextMenuItems(): ContextMenuItem[] {
+  const ed = editor.value
+  if (!ed) return []
+  const hasSelection = !ed.state.selection.empty
+  const items: ContextMenuItem[] = [
+    { label: '撤销', action: 'undo', shortcut: contextShortcut('undo') },
+    { label: '重做', action: 'redo', shortcut: contextShortcut('redo') },
+    { label: '', action: 'divider-history', divider: true },
+    { label: '剪切', action: 'cut', disabled: !hasSelection },
+    { label: '复制', action: 'copy', disabled: !hasSelection },
+    { label: '粘贴', action: 'paste' },
+    { label: '全选', action: 'select-all' },
+    { label: '', action: 'divider-clipboard', divider: true },
+    { label: '粗体', action: 'bold', shortcut: contextShortcut('bold') },
+    { label: '斜体', action: 'italic', shortcut: contextShortcut('italic') },
+    { label: '插入图片', action: 'image', shortcut: contextShortcut('image') },
+    { label: '插入表格', action: 'table', shortcut: contextShortcut('table') },
+  ]
+  if (isTableActive.value) {
+    items.push(
+      { label: '', action: 'divider-table', divider: true },
+      { label: '在下方添加行', action: 'table-add-row' },
+      { label: '在右侧添加列', action: 'table-add-column' },
+      { label: '删除当前行', action: 'table-delete-row' },
+      { label: '删除当前列', action: 'table-delete-column' },
+      { label: '切换表头行', action: 'table-header' },
+      { label: '删除表格', action: 'table-delete' },
+    )
+  }
+  return items
+}
+
+function openEditorContextMenu(event: MouseEvent) {
+  const ed = editor.value
+  if (!ed) return
+  event.preventDefault()
+  event.stopPropagation()
+  contextSelection.value = { from: ed.state.selection.from, to: ed.state.selection.to }
+  editorContextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  editorContextMenuItems.value = buildEditorContextMenuItems()
+  showEditorContextMenu.value = true
+}
+
+function closeEditorContextMenu() {
+  showEditorContextMenu.value = false
+}
+
+async function handleEditorContextMenuAction(action: string) {
+  closeEditorContextMenu()
+  restoreContextSelection()
+  const ed = editor.value
+  if (!ed) return
+  if (action === 'copy' || action === 'cut') {
+    const copied = document.execCommand(action)
+    if (!copied && navigator.clipboard && contextSelection.value) {
+      const text = ed.state.doc.textBetween(contextSelection.value.from, contextSelection.value.to, '\n')
+      await navigator.clipboard.writeText(text)
+    }
+    if (action === 'cut' && !copied) ed.commands.deleteSelection()
+    return
+  }
+  if (action === 'paste') {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text) {
+        ed.commands.insertContent(hasMarkdownStructure(text) ? markdownToEditorHtml(text) : text)
+        return
+      }
+    } catch { /* fallback to WebView clipboard */ }
+    document.execCommand('paste')
+    return
+  }
+  if (action === 'select-all') { ed.commands.selectAll(); return }
+  if (action.startsWith('table-')) {
+    const commandMap: Record<string, string> = {
+      'table-add-row': 'addRowAfter', 'table-add-column': 'addColumnAfter',
+      'table-delete-row': 'deleteRow', 'table-delete-column': 'deleteColumn',
+      'table-header': 'toggleHeaderRow', 'table-delete': 'deleteTable',
+    }
+    runTableCommand(commandMap[action])
+    return
+  }
+  if (action in EDITOR_SHORTCUT_LABELS) executeEditorAction(action as EditorShortcutAction)
+}
+
 /** 监听来自 TopMenu 的编辑器命令。 */
 const menuActionHandler = (e: Event) => {
   const detail = (e as CustomEvent).detail
   switch (detail?.command) {
     case 'link':
       toggleLink()
+      break
+    case 'image':
+      void insertImage()
+      break
+    case 'table':
+      insertTable()
+      break
+    case 'hr':
+      editor.value?.chain().focus().setHorizontalRule().run()
       break
     case 'zoom-in':
       increaseZoom()
@@ -1074,6 +1410,11 @@ const menuActionHandler = (e: Event) => {
       break
     case 'zoom-reset':
       resetZoom()
+      break
+    default:
+      if (typeof detail?.command === 'string' && detail.command in EDITOR_SHORTCUT_LABELS) {
+        executeEditorAction(detail.command as EditorShortcutAction)
+      }
       break
   }
 }
@@ -1107,6 +1448,11 @@ const menuActionHandler = (e: Event) => {
 .scroll-nav-btn:active { transform: scale(0.95); }
 .editor-scale-wrap { flex: 1; min-width: 0; min-height: 0; }
 .editor-content { width: 100%; min-width: 0; height: 100%; }
+.table-edit-toolbar { position: sticky; top: 10px; z-index: 8; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 24px); margin: 8px auto -42px; padding: 5px; border: 1px solid var(--border-primary); border-radius: 5px; background: color-mix(in srgb, var(--bg-elevated) 94%, transparent); box-shadow: var(--shadow-dropdown); }
+.table-edit-toolbar button { border: 0; border-radius: 3px; background: transparent; color: var(--text-secondary); padding: 4px 7px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.table-edit-toolbar button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.table-edit-toolbar button.danger:hover { color: var(--danger, #d04444); }
+.table-tool-divider { width: 1px; height: 18px; margin: 0 3px; background: var(--border-secondary); }
 .empty-editor { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
 
 .locked-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
@@ -1122,6 +1468,25 @@ const menuActionHandler = (e: Event) => {
 .editor-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .zoom-control { cursor: pointer; }
 .zoom-control:hover { color: var(--accent); }
+.insert-dialog-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, 0.38); }
+.insert-dialog { width: min(440px, calc(100vw - 32px)); padding: 18px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-surface); box-shadow: var(--shadow-dropdown); color: var(--text-primary); }
+.insert-dialog.compact { width: min(340px, calc(100vw - 32px)); }
+.insert-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.insert-dialog-header h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.insert-dialog-close { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.insert-dialog-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.insert-dialog-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: var(--text-secondary); font-size: 13px; }
+.insert-dialog-field input { box-sizing: border-box; width: 100%; height: 34px; padding: 6px 9px; border: 1px solid var(--border-primary); border-radius: 4px; outline: none; background: var(--bg-elevated); color: var(--text-primary); font: inherit; }
+.insert-dialog-field input:focus { border-color: var(--accent); }
+.table-size-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.insert-dialog-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
+.insert-dialog-spacer { flex: 1; }
+.insert-dialog-actions button { min-height: 32px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px; }
+.insert-dialog-actions .secondary { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); }
+.insert-dialog-actions .secondary:hover { background: var(--bg-hover); }
+.insert-dialog-actions .primary { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.insert-dialog-actions .primary:hover:not(:disabled) { background: var(--accent-hover); }
+.insert-dialog-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
 </style>
 
 <style>
@@ -1183,6 +1548,8 @@ const menuActionHandler = (e: Event) => {
 .wysiwyg-editor s { color: var(--text-muted); }
 .wysiwyg-editor u { text-decoration-color: var(--text-muted); }
 .wysiwyg-editor mark { background-color: var(--editor-highlight-bg); color: var(--editor-highlight-text); padding: 1px 4px; border-radius: 2px; }
+.wysiwyg-editor img { display: inline-block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; cursor: pointer; }
+.wysiwyg-editor img.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wysiwyg-editor a { color: var(--editor-link); text-decoration: none; cursor: pointer; }
 .wysiwyg-editor a[href^="#heading:"] { border-bottom: 1px dashed var(--accent); padding-bottom: 1px; }
 .wysiwyg-editor a:hover { text-decoration: underline; }

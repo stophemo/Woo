@@ -49,6 +49,35 @@
             </div>
             <p class="settings-help">编辑区插入图片时，若输入相对路径将自动拼接为 `baseUrl/pathPrefix/relativePath`。</p>
           </div>
+          <div class="settings-section shortcuts-section">
+            <div class="settings-section-title-row">
+              <h3>编辑器快捷键</h3>
+              <button class="shortcut-reset-all" type="button" @click="resetAllShortcuts">恢复默认</button>
+            </div>
+            <div class="shortcut-list">
+              <div v-for="entry in shortcutEntries" :key="entry.action" class="shortcut-row">
+                <span class="shortcut-label">{{ entry.label }}</span>
+                <button
+                  type="button"
+                  class="shortcut-input"
+                  :class="{ recording: recordingAction === entry.action }"
+                  @click="startRecording(entry.action)"
+                  @keydown="captureShortcut($event, entry.action)"
+                  @keydown.esc="cancelRecording"
+                >
+                  {{ recordingAction === entry.action ? '请按下组合键' : shortcutForDisplay(entry.shortcut) }}
+                </button>
+                <button
+                  v-if="entry.shortcut !== entry.defaultShortcut"
+                  type="button"
+                  class="shortcut-reset"
+                  title="恢复此项默认快捷键"
+                  @click="resetShortcut(entry.action)"
+                >↺</button>
+              </div>
+            </div>
+            <p v-if="shortcutError" class="shortcut-error">{{ shortcutError }}</p>
+          </div>
           <div class="settings-section about-section">
             <h3>关于</h3>
             <div class="about-row">
@@ -69,10 +98,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import IconClose from '../icons/IconClose.vue'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
 import { useThemeStore } from '../../stores/theme'
+import {
+  DEFAULT_EDITOR_SHORTCUTS,
+  editorShortcutEntries,
+  resetEditorShortcuts,
+  setEditorShortcut,
+  shortcutConflicts,
+  shortcutForDisplay,
+  shortcutFromKeyboardEvent,
+  type EditorShortcutAction,
+} from '../../config/editorShortcuts'
 
 interface Props {
   visible: boolean
@@ -82,6 +121,49 @@ interface Props {
 defineProps<Props>()
 const emit = defineEmits<{ close: []; 'check-update': [] }>()
 const themeStore = useThemeStore()
+
+const shortcutEntries = computed(() => editorShortcutEntries())
+const recordingAction = ref<EditorShortcutAction | null>(null)
+const shortcutError = ref('')
+
+function startRecording(action: EditorShortcutAction) {
+  shortcutError.value = ''
+  recordingAction.value = action
+}
+
+function cancelRecording() {
+  recordingAction.value = null
+}
+
+function captureShortcut(event: KeyboardEvent, action: EditorShortcutAction) {
+  if (recordingAction.value !== action) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.key === 'Escape') {
+    cancelRecording()
+    return
+  }
+  const shortcut = shortcutFromKeyboardEvent(event)
+  if (!shortcut) return
+  const conflict = shortcutConflicts(action, shortcut)
+  if (conflict) {
+    shortcutError.value = `与“${shortcutEntries.value.find(item => item.action === conflict)?.label || conflict}”冲突`
+    return
+  }
+  setEditorShortcut(action, shortcut)
+  shortcutError.value = ''
+  recordingAction.value = null
+}
+
+function resetShortcut(action: EditorShortcutAction) {
+  setEditorShortcut(action, DEFAULT_EDITOR_SHORTCUTS[action])
+  shortcutError.value = ''
+}
+
+function resetAllShortcuts() {
+  resetEditorShortcuts()
+  shortcutError.value = ''
+}
 
 /* ========== 资产链接配置状态 ========== */
 const assetProviderInput = ref('custom')
@@ -133,6 +215,18 @@ function handleSave() {
 .settings-help { font-size: 12px; color: var(--text-muted); margin: 0; }
 .settings-help a { color: var(--accent); text-decoration: none; }
 .settings-help a:hover { text-decoration: underline; }
+.settings-section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shortcut-reset-all { border: 1px solid var(--border-primary); border-radius: 4px; background: transparent; color: var(--text-secondary); padding: 4px 8px; cursor: pointer; font-size: 12px; }
+.shortcut-reset-all:hover { background: var(--bg-hover); color: var(--text-primary); }
+.shortcut-list { border: 1px solid var(--border-primary); border-radius: 5px; overflow: hidden; }
+.shortcut-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; align-items: center; gap: 8px; min-height: 38px; padding: 5px 8px 5px 12px; border-bottom: 1px solid var(--border-secondary); }
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-label { min-width: 0; color: var(--text-secondary); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shortcut-input { min-width: 94px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-elevated); color: var(--text-primary); padding: 5px 8px; text-align: center; font: inherit; font-size: 12px; cursor: pointer; }
+.shortcut-input:hover, .shortcut-input.recording { border-color: var(--accent); color: var(--accent); }
+.shortcut-reset { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+.shortcut-reset:hover { background: var(--bg-hover); color: var(--text-primary); }
+.shortcut-error { margin: 8px 0 0; color: var(--danger, #d04444); font-size: 12px; }
 .about-section { padding-top: 18px; border-top: 1px solid var(--border-secondary); }
 .about-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .about-name { color: var(--text-primary); font-size: 13px; font-weight: 600; }
@@ -159,5 +253,6 @@ function handleSave() {
     border-bottom: none;
   }
   .theme-grid { grid-template-columns: 1fr; }
+  .shortcut-row { grid-template-columns: minmax(0, 1fr) auto 28px; }
 }
 </style>

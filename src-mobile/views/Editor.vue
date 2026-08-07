@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showToast, showConfirmDialog, type FieldInstance } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
+import { markdownToEditorHtml } from '../../src/services/markdown'
+import MobileRichEditor from '../components/MobileRichEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,9 +16,8 @@ const noteId = route.params.id as string
 const loading = ref(true)
 const saving = ref(false)
 const editing = ref(false)
-const editText = ref('')
+const editContent = ref('')
 const editOriginal = ref('')
-const editField = ref<FieldInstance>()
 
 // 统一从 store 读取当前文档（草稿走 localStorage，正式文档走后端）
 const doc = computed(() => store.currentDocument)
@@ -102,45 +103,30 @@ onMounted(async () => {
   }
 })
 
-async function startEdit() {
-  const html = content.value
-  if (!html) {
-    editText.value = ''
+function startEdit() {
+  const source = content.value || ''
+  if (!source.trim()) {
+    editContent.value = ''
+  } else if (/<(p|h[1-6]|table|ul|ol|blockquote|pre|div|br|hr|img|a|strong|em|code)\b[^>]*>/i.test(source)) {
+    editContent.value = source
   } else {
-    // 将存储的 HTML 转成 Markdown 供编辑（方案 B：编辑 Markdown，存 HTML）
-    try {
-      const { default: TurndownService } = await import('turndown')
-      const { gfm } = await import('turndown-plugin-gfm')
-      const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
-      td.use(gfm)
-      editText.value = td.turndown(html)
-    } catch {
-      editText.value = html // 回退：直接编辑原文
-    }
+    try { editContent.value = markdownToEditorHtml(source) } catch { editContent.value = source }
   }
-  editOriginal.value = editText.value
+  editOriginal.value = editContent.value
   editing.value = true
-  await nextTick()
-  editField.value?.focus()
 }
 
 function cancelEdit() {
   editing.value = false
-  editText.value = ''
+  editContent.value = ''
   editOriginal.value = ''
 }
 
 async function saveEdit() {
   saving.value = true
   try {
-    // Markdown → HTML 后入库，保持与桌面一致的 HTML 内容模型
-    let html = editText.value
-    try {
-      const { marked } = await import('marked')
-      const out = marked.parse(editText.value)
-      html = typeof out === 'string' ? out : await out
-    } catch { /* 回退：原文当作 HTML 存 */ }
-    store.updateDocumentContent(noteId, html)
+    // 移动端与桌面端统一保存 Tiptap HTML，表格和图片不会被降级成纯文本。
+    store.updateDocumentContent(noteId, editContent.value)
     await store.flushPendingSave(noteId)
     // 正式文档保存后提交一个版本，便于历史回溯（草稿不产生版本）
     if (!isDraft) {
@@ -167,7 +153,7 @@ async function confirmDelete() {
 }
 
 function goBack() {
-  if (editing.value && editText.value !== editOriginal.value) {
+  if (editing.value && editContent.value !== editOriginal.value) {
     showConfirmDialog({ title: '放弃编辑？', message: '未保存的更改将丢失' })
       .then(() => router.back())
       .catch(() => {})
@@ -246,21 +232,10 @@ function goBack() {
       </button>
     </template>
 
-    <!-- 编辑模式（过渡：Markdown/HTML 源码，富文本为子项目 6） -->
+    <!-- 编辑模式：移动端触控富文本编辑器，与桌面端共用 HTML 内容模型 -->
     <template v-else>
       <div class="editor-workbench">
-        <div class="editing-label">
-          <span>Markdown</span>
-          <span>{{ editText.length }} 字符</span>
-        </div>
-        <van-field
-          ref="editField"
-          v-model="editText"
-          type="textarea"
-          autosize
-          placeholder="开始写作…"
-          class="edit-textarea"
-        />
+        <MobileRichEditor v-model="editContent" @shortcut-save="saveEdit" />
       </div>
       <div class="edit-actions safe-area-bottom">
         <van-button class="cancel-button" @click="cancelEdit">取消</van-button>
@@ -477,36 +452,6 @@ function goBack() {
   min-height: calc(100vh - 128px - env(safe-area-inset-top, 0px));
   margin: 0 auto;
   background: var(--van-background-2);
-}
-
-.editing-label {
-  display: flex;
-  justify-content: space-between;
-  padding: 11px 18px;
-  border-bottom: 1px solid var(--van-border-color);
-  color: var(--van-text-color-2);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.edit-textarea {
-  min-height: calc(100vh - 173px - env(safe-area-inset-top, 0px));
-  padding: 20px 18px 32px;
-  background: var(--van-background-2);
-  font-size: 15px;
-  line-height: 1.75;
-  --van-cell-vertical-padding: 0;
-}
-
-.edit-textarea::after {
-  display: none;
-}
-
-.edit-textarea :deep(textarea) {
-  min-height: calc(100vh - 213px - env(safe-area-inset-top, 0px));
-  color: var(--van-text-color);
-  font-family: "SFMono-Regular", Consolas, monospace;
-  caret-color: var(--van-primary-color);
 }
 
 .edit-actions {

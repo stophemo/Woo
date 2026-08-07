@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getVersion } from '@tauri-apps/api/app'
@@ -8,6 +8,16 @@ import { useSyncStore } from '../../src/stores/sync'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
 import { useThemeStore } from '../../src/stores/theme'
+import {
+  DEFAULT_EDITOR_SHORTCUTS,
+  editorShortcutEntries,
+  resetEditorShortcuts,
+  setEditorShortcut,
+  shortcutConflicts,
+  shortcutForDisplay,
+  shortcutFromKeyboardEvent,
+  type EditorShortcutAction,
+} from '../../src/config/editorShortcuts'
 
 const router = useRouter()
 const appVersion = ref(__APP_VERSION__)
@@ -17,13 +27,69 @@ const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
 const themeStore = useThemeStore()
 
+const shortcutEntries = computed(() => editorShortcutEntries())
+const showShortcutSettings = ref(false)
+const recordingAction = ref<EditorShortcutAction | null>(null)
+const shortcutError = ref('')
+
 onMounted(async () => {
+  window.addEventListener('keydown', captureShortcut, true)
   try {
     appVersion.value = await getVersion()
   } catch {
     // 浏览器预览环境没有 Tauri API，继续显示构建时版本。
   }
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', captureShortcut, true)
+})
+
+function startRecording(action: EditorShortcutAction) {
+  recordingAction.value = action
+  shortcutError.value = ''
+}
+
+function cancelRecording() {
+  recordingAction.value = null
+}
+
+function closeShortcutSettings() {
+  showShortcutSettings.value = false
+  cancelRecording()
+}
+
+function captureShortcut(event: KeyboardEvent) {
+  const action = recordingAction.value
+  if (!action) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.key === 'Escape') {
+    cancelRecording()
+    return
+  }
+  const shortcut = shortcutFromKeyboardEvent(event)
+  if (!shortcut) return
+  const conflict = shortcutConflicts(action, shortcut)
+  if (conflict) {
+    shortcutError.value = `与“${shortcutEntries.value.find(item => item.action === conflict)?.label || conflict}”冲突`
+    return
+  }
+  setEditorShortcut(action, shortcut)
+  shortcutError.value = ''
+  recordingAction.value = null
+}
+
+function resetShortcut(action: EditorShortcutAction) {
+  setEditorShortcut(action, DEFAULT_EDITOR_SHORTCUTS[action])
+  shortcutError.value = ''
+}
+
+function resetAllShortcuts() {
+  resetEditorShortcuts()
+  shortcutError.value = ''
+  recordingAction.value = null
+}
 
 const showLogin = ref(false)
 const loginMode = ref<'login' | 'signup'>('login')
@@ -204,6 +270,17 @@ async function beforePwdClose(action: string) {
       <van-cell title="回收站" is-link icon="delete-o" @click="router.push('/trash')" />
     </van-cell-group>
 
+    <!-- 编辑 -->
+    <van-cell-group inset title="编辑">
+      <van-cell
+        icon="edit"
+        title="编辑器快捷键"
+        value="可自定义"
+        is-link
+        @click="showShortcutSettings = true"
+      />
+    </van-cell-group>
+
     <!-- 安全 -->
     <van-cell-group inset title="安全">
       <van-cell
@@ -324,6 +401,44 @@ async function beforePwdClose(action: string) {
         <van-field v-model="pwd.confirm" type="password" label="确认" placeholder="再次输入" />
       </div>
     </van-dialog>
+
+    <!-- 移动端快捷键设置（连接实体键盘后录入组合键） -->
+    <van-popup v-model:show="showShortcutSettings" position="bottom" round :style="{ maxHeight: '82vh' }" @closed="cancelRecording">
+      <div class="shortcut-sheet">
+        <div class="shortcut-sheet-header">
+          <h3>编辑器快捷键</h3>
+          <button type="button" class="shortcut-sheet-close" title="关闭" aria-label="关闭" @click="closeShortcutSettings">
+            <van-icon name="cross" />
+          </button>
+        </div>
+        <p class="shortcut-sheet-hint">连接实体键盘后，点击一项并按下组合键即可修改。</p>
+        <div class="shortcut-sheet-list">
+          <div v-for="entry in shortcutEntries" :key="entry.action" class="shortcut-sheet-row">
+            <span class="shortcut-sheet-label">{{ entry.label }}</span>
+            <button
+              type="button"
+              class="shortcut-sheet-value"
+              :class="{ recording: recordingAction === entry.action }"
+              @click="startRecording(entry.action)"
+            >
+              {{ recordingAction === entry.action ? '请按组合键' : shortcutForDisplay(entry.shortcut) }}
+            </button>
+            <button
+              v-if="entry.shortcut !== entry.defaultShortcut"
+              type="button"
+              class="shortcut-sheet-reset"
+              title="恢复默认快捷键"
+              aria-label="恢复默认快捷键"
+              @click="resetShortcut(entry.action)"
+            >
+              <van-icon name="replay" />
+            </button>
+          </div>
+        </div>
+        <p v-if="shortcutError" class="shortcut-sheet-error">{{ shortcutError }}</p>
+        <van-button block plain type="primary" class="shortcut-reset-all" @click="resetAllShortcuts">恢复全部默认</van-button>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -457,5 +572,110 @@ async function beforePwdClose(action: string) {
 
 .pwd-fields {
   padding: 8px 0;
+}
+
+.shortcut-sheet {
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+.shortcut-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shortcut-sheet-header h3 {
+  margin: 0;
+  color: var(--van-text-color);
+  font-size: 17px;
+}
+
+.shortcut-sheet-close {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--van-text-color-2);
+}
+
+.shortcut-sheet-hint {
+  margin: 7px 0 12px;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shortcut-sheet-list {
+  overflow: hidden;
+  border: 1px solid var(--van-border-color);
+  border-radius: 7px;
+}
+
+.shortcut-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--van-border-color);
+}
+
+.shortcut-sheet-row:last-child { border-bottom: 0; }
+
+.shortcut-sheet-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--van-text-color);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-sheet-value {
+  min-width: 72px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 1px solid var(--van-border-color);
+  border-radius: 5px;
+  background: var(--van-background);
+  color: var(--van-text-color-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.shortcut-sheet-value.recording {
+  border-color: var(--van-primary-color);
+  color: var(--van-primary-color);
+}
+
+.shortcut-sheet-reset {
+  display: inline-flex;
+  width: 28px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--van-text-color-2);
+}
+
+.shortcut-sheet-error {
+  margin: 9px 0 0;
+  color: var(--van-danger-color);
+  font-size: 12px;
+}
+
+.shortcut-reset-all {
+  margin-top: 13px;
 }
 </style>

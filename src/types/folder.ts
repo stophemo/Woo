@@ -16,4 +16,6 @@ export interface ContextMenuItem {
   label: string
   action: string
   disabled?: boolean
+  divider?: boolean
+  shortcut?: string
 }

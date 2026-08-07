@@ -3,7 +3,7 @@
  *
  * macOS 使用 ⌘（Meta），Windows/Linux 使用 Ctrl。
  */
-export const isMac = navigator.platform.includes('Mac')
+export const isMac = typeof navigator !== 'undefined' && (navigator.platform || '').includes('Mac')
 export const modLabel = isMac ? '⌘' : 'Ctrl+'
 export const altLabel = isMac ? '⌥' : 'Alt+'
 export const shiftLabel = isMac ? '⇧' : 'Shift+'
@@ -32,4 +32,3 @@ export function shortcutDisplay(shortcut: string): string {
     .replace(/Alt\+/g, altLabel)
   return result
 }
-

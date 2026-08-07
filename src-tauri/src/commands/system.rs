@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 use crate::commands::CommandResult;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Deserialize;
-use tauri::AppHandle;
 use std::fs;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use tauri::AppHandle;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,9 +19,10 @@ pub async fn dialog_save_image(
     default_name: Option<String>,
 ) -> Result<CommandResult<ImageSaveResult>, String> {
     let default_name = default_name.unwrap_or_else(|| "mindmap.png".to_string());
-    
+
     use tauri_plugin_dialog::DialogExt;
-    let file = app.dialog()
+    let file = app
+        .dialog()
         .file()
         .add_filter("PNG", &["png"])
         .add_filter("JPEG", &["jpg", "jpeg"])
@@ -49,6 +50,63 @@ pub async fn dialog_save_image(
             format: "png".to_string(),
         })),
     }
+}
+
+/// 选择一张图片，前端随后会将它作为 data URL 插入文稿。
+#[tauri::command(rename_all = "camelCase", rename = "dialogOpenImage")]
+pub async fn dialog_open_image(app: AppHandle) -> Result<CommandResult<ImageOpenResult>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let file = app
+        .dialog()
+        .file()
+        .add_filter("图片", &["png", "jpg", "jpeg", "gif", "webp", "svg"])
+        .blocking_pick_file();
+    Ok(CommandResult::success(ImageOpenResult {
+        file_path: file.map(|path| path.to_string()).unwrap_or_default(),
+    }))
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageOpenResult {
+    pub file_path: String,
+}
+
+/// 读取图片并编码为 data URL，避免 WebView 直接访问本机绝对路径。
+#[tauri::command(rename_all = "camelCase", rename = "readImageFile")]
+pub async fn read_image_file(file_path: String) -> Result<CommandResult<ImageFileResult>, String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.is_file() {
+        return Ok(CommandResult::error("图片文件不存在"));
+    }
+    let metadata = fs::metadata(path).map_err(|e| format!("读取图片元数据失败: {}", e))?;
+    if metadata.len() > 20 * 1024 * 1024 {
+        return Ok(CommandResult::error("图片超过 20MB，暂不支持插入"));
+    }
+    let bytes = fs::read(path).map_err(|e| format!("读取图片失败: {}", e))?;
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime_type = match extension.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+    Ok(CommandResult::success(ImageFileResult {
+        data: STANDARD.encode(bytes),
+        mime_type: mime_type.to_string(),
+    }))
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageFileResult {
+    pub data: String,
+    pub mime_type: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -134,9 +192,7 @@ pub fn log_write(level: String, tag: String, message: String) {
     let msg = format!("[{}] {}", tag, message);
     match level.as_str() {
         "error" => log::error!("[WebView] {}", msg),
-        "warn"  => log::warn!("[WebView] {}", msg),
-        _       => log::info!("[WebView] {}", msg),
+        "warn" => log::warn!("[WebView] {}", msg),
+        _ => log::info!("[WebView] {}", msg),
     }
 }
-
-

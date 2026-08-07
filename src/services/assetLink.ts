@@ -34,7 +34,7 @@ export function saveAssetLinkSettings(settings: AssetLinkSettings): void {
 export function buildAssetUrl(pathOrUrl: string): string {
   const input = pathOrUrl.trim()
   if (!input) return ''
-  if (/^https?:\/\//i.test(input)) return input
+  if (/^(?:https?:\/\/|data:|blob:)/i.test(input)) return input
 
   const { baseUrl, pathPrefix } = getAssetLinkSettings()
   if (!baseUrl) return input

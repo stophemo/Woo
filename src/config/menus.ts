@@ -10,6 +10,8 @@ export interface MenuItem {
   children?: MenuItem[]  // 子菜单
 }
 
+// 快捷键由 editorShortcuts.ts 统一维护；这里的值仅作为无 JS 时的菜单回退值。
+
 // 文件菜单
 export const fileMenuItems: MenuItem[] = [
   { type: 'item', label: '新建文稿', action: 'new-document', shortcut: 'Mod+N' },
@@ -43,8 +45,8 @@ export const fileMenuItems: MenuItem[] = [
 
 // 编辑菜单
 export const editMenuItems: MenuItem[] = [
-  { type: 'item', label: '撤销', action: 'undo' },
-  { type: 'item', label: '反撤销', action: 'redo' },
+  { type: 'item', label: '撤销', action: 'undo', shortcut: 'Mod+Z' },
+  { type: 'item', label: '重做', action: 'redo', shortcut: 'Mod+Shift+Z' },
   { type: 'divider' },
   { type: 'item', label: '查找', action: 'find', shortcut: 'Mod+F' },
   { type: 'item', label: '查找并替换', action: 'find-replace', shortcut: 'Mod+H' }
@@ -52,30 +54,34 @@ export const editMenuItems: MenuItem[] = [
 
 // 标记菜单（Markdown 语法）
 export const markMenuItems: MenuItem[] = [
-  { type: 'item', label: '# 一级标题', action: 'h1', shortcut: 'Shift+Alt+1' },
-  { type: 'item', label: '## 二级标题', action: 'h2', shortcut: 'Shift+Alt+2' },
-  { type: 'item', label: '### 三级标题', action: 'h3', shortcut: 'Shift+Alt+3' },
-  { type: 'item', label: '#### 四级标题', action: 'h4', shortcut: 'Shift+Alt+4' },
-  { type: 'item', label: '##### 五级标题', action: 'h5', shortcut: 'Shift+Alt+5' },
-  { type: 'item', label: '###### 六级标题', action: 'h6', shortcut: 'Shift+Alt+6' },
+  { type: 'item', label: '# 一级标题', action: 'h1', shortcut: 'Mod+1' },
+  { type: 'item', label: '## 二级标题', action: 'h2', shortcut: 'Mod+2' },
+  { type: 'item', label: '### 三级标题', action: 'h3', shortcut: 'Mod+3' },
+  { type: 'item', label: '#### 四级标题', action: 'h4', shortcut: 'Mod+4' },
+  { type: 'item', label: '##### 五级标题', action: 'h5', shortcut: 'Mod+5' },
+  { type: 'item', label: '###### 六级标题', action: 'h6', shortcut: 'Mod+6' },
+  { type: 'item', label: '正文', action: 'paragraph', shortcut: 'Mod+0' },
   { type: 'divider' },
   { type: 'item', label: '<strong>粗体</strong>', action: 'bold', shortcut: 'Mod+B', isHtml: true },
   { type: 'item', label: '<em>斜体</em>', action: 'italic', shortcut: 'Mod+I', isHtml: true },
-  { type: 'item', label: '<s>删除线</s>', action: 'strikethrough', shortcut: 'Mod+Shift+X', isHtml: true },
+  { type: 'item', label: '<u>下划线</u>', action: 'underline', shortcut: 'Mod+U', isHtml: true },
+  { type: 'item', label: '<s>删除线</s>', action: 'strikethrough', shortcut: 'Alt+Shift+5', isHtml: true },
+  { type: 'item', label: '高亮', action: 'highlight', shortcut: 'Mod+Shift+H' },
+  { type: 'item', label: '清除格式', action: 'clear', shortcut: 'Mod+\\' },
   { type: 'divider' },
-  { type: 'item', label: '- 无序列表', action: 'ul', shortcut: 'Mod+Shift+L' },
-  { type: 'item', label: '1. 有序列表', action: 'ol', shortcut: 'Mod+Shift+O' },
+  { type: 'item', label: '- 无序列表', action: 'ul', shortcut: 'Mod+Shift+]' },
+  { type: 'item', label: '1. 有序列表', action: 'ol', shortcut: 'Mod+Shift+[' },
   { type: 'item', label: '- [ ] 任务列表', action: 'task', shortcut: 'Mod+Shift+T' },
   { type: 'divider' },
   { type: 'item', label: '> 引用', action: 'quote', shortcut: 'Mod+Shift+Q' },
   { type: 'item', label: '<code> 行内代码', action: 'code', shortcut: 'Mod+Shift+E' },
-  { type: 'item', label: '``` 代码块', action: 'codeblock', shortcut: 'Mod+Shift+C' },
+  { type: 'item', label: '``` 代码块', action: 'codeblock', shortcut: 'Mod+Shift+K' },
   { type: 'divider' },
   { type: 'item', label: '[链接](url)', action: 'link', shortcut: 'Mod+K' },
   { type: 'item', label: '![图片](url)', action: 'image', shortcut: 'Mod+Shift+I' },
-  { type: 'item', label: '| 表格 |', action: 'table', shortcut: 'Mod+Shift+V' },
+  { type: 'item', label: '| 表格 |', action: 'table', shortcut: 'Mod+T' },
   { type: 'divider' },
-  { type: 'item', label: '--- 分割线', action: 'hr', shortcut: 'Mod+Enter' }
+  { type: 'item', label: '--- 分割线', action: 'hr', shortcut: 'Mod+Shift+-' }
 ]
 
 // 查看菜单
@@ -85,7 +91,7 @@ export const viewMenuItems: MenuItem[] = [
   { type: 'divider' },
   { type: 'item', label: '放大', action: 'zoom-in', shortcut: 'Mod++' },
   { type: 'item', label: '缩小', action: 'zoom-out', shortcut: 'Mod+-' },
-  { type: 'item', label: '重置缩放', action: 'zoom-reset', shortcut: 'Mod+0' },
+  { type: 'item', label: '重置缩放', action: 'zoom-reset', shortcut: 'Mod+Shift+0' },
   { type: 'divider' },
   { type: 'item', label: '主题', action: 'theme' },
   { type: 'item', label: '语言', action: 'language' }

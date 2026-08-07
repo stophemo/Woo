@@ -115,6 +115,7 @@ import {
   viewMenuItems,
   helpMenuItems
 } from '../../config/menus'
+import { editorShortcuts, EDITOR_SHORTCUT_LABELS, getEditorShortcut } from '../../config/editorShortcuts'
 
 const themeStore = useThemeStore()
 const syncStore = useSyncStore()
@@ -150,7 +151,11 @@ function normalizeShortcut(shortcut?: string): string | undefined {
 function normalizeItems(items: import('../../config/menus').MenuItem[]): import('../../config/menus').MenuItem[] {
   return items.map(item => {
     if (item.type === 'item') {
-      return { ...item, shortcut: normalizeShortcut(item.shortcut) }
+      const action = item.action as keyof typeof EDITOR_SHORTCUT_LABELS | undefined
+      const shortcut = action && action in EDITOR_SHORTCUT_LABELS
+        ? getEditorShortcut(action)
+        : item.shortcut
+      return { ...item, shortcut: normalizeShortcut(shortcut) }
     }
     if (item.type === 'submenu' && item.children) {
       return { ...item, children: normalizeItems(item.children) }
@@ -159,18 +164,17 @@ function normalizeItems(items: import('../../config/menus').MenuItem[]): import(
   })
 }
 
-// 菜单配置数据
-class TopMenu {
-  static menus = [
+// 菜单与实际快捷键共享同一份配置，设置页修改后立即刷新显示。
+const menus = computed(() => {
+  void editorShortcuts.value
+  return [
     { label: '文件', items: normalizeItems(fileMenuItems) },
     { label: '编辑', items: normalizeItems(editMenuItems) },
     { label: '标记', items: normalizeItems(markMenuItems) },
     { label: '查看', items: normalizeItems(viewMenuItems) },
-    { label: '帮助', items: normalizeItems(helpMenuItems) }
+    { label: '帮助', items: normalizeItems(helpMenuItems) },
   ]
-}
-
-const menus = ref(TopMenu.menus)
+})
 const dropdownRefs = ref<Map<number, ComponentPublicInstance>>(new Map())
 const activeMenuIndex = ref<number | null>(null)
 
@@ -323,7 +327,7 @@ const handleMenuAction = (action: string) => {
     return
   }
   // 编辑器命令通过自定义事件传递给 EditArea。
-  if (['link', 'image', 'table', 'hr', 'zoom-in', 'zoom-out', 'zoom-reset'].includes(action)) {
+  if (action in EDITOR_SHORTCUT_LABELS || ['zoom-in', 'zoom-out', 'zoom-reset'].includes(action)) {
     window.dispatchEvent(new CustomEvent('woo-editor-command', { detail: { command: action } }))
     return
   }

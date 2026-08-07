@@ -501,6 +501,8 @@ pub fn run() {
             commands::sync::sync_trigger,
             // System (dialogs, file IO, export)
             commands::system::dialog_save_image,
+            commands::system::dialog_open_image,
+            commands::system::read_image_file,
             commands::system::file_write,
             commands::system::dialog_save_document,
             commands::system::log_write,
