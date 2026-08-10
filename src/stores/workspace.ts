@@ -9,7 +9,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { FolderNode } from '../types/folder'
+import type { FolderNode, FolderDropZone } from '../types/folder'
 import type { Document } from '../types/document'
 import * as folderApi from '../services/folderApi'
 import * as documentApi from '../services/documentApi'
@@ -1310,6 +1310,91 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /** 从树中摘除某目录，返回其节点引用（用于跨层移动） */
+  function detachFolderFromTree(id: string): FolderNode | null {
+    const target = findFolderById(folders.value, id)
+    if (!target) return null
+    if (target.parentId === null) {
+      const idx = folders.value.findIndex(f => f.id === id)
+      if (idx === -1) return null
+      folders.value.splice(idx, 1)
+    } else if (!removeFolderFromParent(folders.value, id)) {
+      return null
+    }
+    return target
+  }
+
+  /** 判断 id 是否位于 ancestorId 的子树内（含直接子级） */
+  function isDescendantOf(ancestorId: string, id: string): boolean {
+    const ancestor = findFolderById(folders.value, ancestorId)
+    if (!ancestor) return false
+    return findFolderById(ancestor.children, id) !== null
+  }
+
+  /**
+   * 把目录拖到目标目录的某个位置：'above'/'below' 放到目标同级，
+   * 'inside' 放入目标目录下级（追加到末尾，并自动展开目标）。
+   * 乐观更新 + 失败回滚；后端拒绝（成环/同名）时提示并还原。
+   */
+  async function moveFolderRelative(
+    dragId: string,
+    targetId: string,
+    zone: FolderDropZone,
+  ): Promise<void> {
+    if (dragId === targetId) return
+    const target = findFolderById(folders.value, targetId)
+    if (!target) return
+
+    const snapshot = JSON.parse(JSON.stringify(folders.value)) as FolderNode[]
+    const node = findFolderById(folders.value, dragId)
+    if (!node) return
+
+    // 先确定目标父级。above/below 是目标的同级位置，inside 才是目标的子级。
+    const newParentId = zone === 'inside' ? targetId : target.parentId
+    if (newParentId === dragId || (newParentId && isDescendantOf(dragId, newParentId))) {
+      // 防成环：不能把目录放到自己的子树中。
+      error.value = '不能把目录移动到自身的子目录下'
+      return
+    }
+
+    const doMove = async () => {
+      // 先从旧容器摘除，目标容器可能就是旧容器。
+      const moved = detachFolderFromTree(dragId)
+      if (!moved) throw new Error('目录不存在')
+
+      const destination = newParentId === null
+        ? folders.value
+        : findFolderById(folders.value, newParentId)?.children
+      if (!destination) throw new Error('目标目录不存在')
+
+      let insertAt: number
+      if (zone === 'inside') {
+        insertAt = destination.length
+        moved.parentId = targetId
+        destination.push(moved)
+        const targetRef = findFolderById(folders.value, targetId)
+        if (targetRef) targetRef.isExpanded = true
+      } else {
+        const targetIndex = destination.findIndex(f => f.id === targetId)
+        if (targetIndex === -1) throw new Error('目标目录不存在')
+        insertAt = zone === 'above' ? targetIndex : targetIndex + 1
+        moved.parentId = newParentId
+        destination.splice(insertAt, 0, moved)
+      }
+
+      // 后端会在一个事务里更新父级和新旧两边的 sort_order。
+      await folderApi.moveFolder(dragId, newParentId, insertAt)
+    }
+
+    try {
+      await doMove()
+    } catch (e: any) {
+      // 后端拒绝（同名/成环/不存在）→ 还原整棵树（含展开状态）
+      folders.value = snapshot
+      error.value = e?.message || '移动目录失败'
+    }
+  }
+
   /** 持久化当前目录下文稿排序到后端 */
   async function reorderDocumentItems(orderedIds: string[]) {
     const fid = selectedFolderId.value
@@ -1375,6 +1460,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     emptyTrash,
     // 排序
     reorderFolderSiblings,
+    moveFolderRelative,
     reorderDocumentItems,
     // 辅助
     findFolderById,

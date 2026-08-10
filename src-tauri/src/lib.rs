@@ -455,6 +455,7 @@ pub fn run() {
             commands::folder::folder_rename,
             commands::folder::folder_remove,
             commands::folder::folder_reorder,
+            commands::folder::folder_move,
             // Document
             commands::document::document_list_by_folder,
             commands::document::document_list_all,

@@ -19,3 +19,6 @@ export interface ContextMenuItem {
   divider?: boolean
   shortcut?: string
 }
+
+/** 目录拖拽放置区域：above/below 为同层排序，inside 为放入下级 */
+export type FolderDropZone = 'above' | 'below' | 'inside'

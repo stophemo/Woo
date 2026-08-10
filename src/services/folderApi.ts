@@ -42,3 +42,20 @@ export interface ReorderItem {
 export function reorderFolders(parentId: string | null, items: ReorderItem[]): Promise<void> {
   return invoke<void>('folder:reorder', { parentId, items })
 }
+
+/**
+ * 把目录移动到新父级（跨层或同层重排）并放到指定位置。
+ * @param newParentId null 表示移到根层级
+ * @param position 同级内的插入位置索引；省略表示追加到末尾
+ */
+export function moveFolder(
+  folderId: string,
+  newParentId: string | null,
+  position?: number,
+): Promise<void> {
+  return invoke<void>('folder:move', {
+    folderId,
+    newParentId,
+    position: position ?? null,
+  })
+}

@@ -96,21 +96,37 @@ pub fn create_folder(name: &str, parent_id: Option<&str>) -> Result<String, Stri
         // Soft-deleted folder → restore
         if let Some((id, _)) = rows.iter().find(|(_, d)| *d == 1) {
             let now = now_str();
+            let next_order: i32 = conn
+                .query_row(
+                    "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM note_folder
+                     WHERE parent_id IS ? AND deleted = 0",
+                    params![parent_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
             conn.execute(
-                "UPDATE note_folder SET deleted = 0, update_time = ? WHERE id = ?",
-                params![now, id],
+                "UPDATE note_folder SET deleted = 0, sort_order = ?, update_time = ? WHERE id = ?",
+                params![next_order, now, id],
             )
             .unwrap();
             return Ok(id.clone());
         }
 
-        // Create new
+        // Create new：排到同级末尾，与前端「新建后追加到列表尾部」保持一致
         let id = new_id();
         let now = now_str();
+        let next_order: i32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM note_folder
+                 WHERE parent_id IS ? AND deleted = 0",
+                params![parent_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
         conn.execute(
             "INSERT INTO note_folder (id, parent_id, name, sort_order, create_time, update_time)
-             VALUES (?, ?, ?, 0, ?, ?)",
-            params![id, parent_id, name, now, now],
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![id, parent_id, name, next_order, now, now],
         )
         .unwrap();
         Ok(id)
@@ -227,6 +243,146 @@ pub fn delete_folder(folder_id: &str) -> Result<(), String> {
     })
 }
 
+/// 把目录移动到新的父目录下，并放到同级的指定位置。
+///
+/// - `new_parent_id = None` 表示移到根层级
+/// - `position = None` 表示追加到同级末尾
+/// 会拒绝：移到自己、移到自己的子孙（成环）、目标层级同名冲突。
+pub fn move_folder(
+    folder_id: &str,
+    new_parent_id: Option<&str>,
+    position: Option<i32>,
+) -> Result<(), String> {
+    db::with_db(|conn| {
+        let now = now_str();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+        move_folder_inner(&tx, folder_id, new_parent_id, position, &now)?;
+        tx.commit().map_err(|e| format!("提交事务失败: {}", e))?;
+        Ok(())
+    })
+}
+
+fn move_folder_inner(
+    conn: &rusqlite::Connection,
+    folder_id: &str,
+    new_parent_id: Option<&str>,
+    position: Option<i32>,
+    now: &str,
+) -> Result<(), String> {
+    // 1. 源目录必须存在
+    let (old_parent_id, name) = conn
+        .query_row(
+            "SELECT parent_id, name FROM note_folder WHERE id = ? AND deleted = 0",
+            params![folder_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|_| "目录不存在".to_string())?;
+
+    // 2. 不能移到自己下面
+    if new_parent_id == Some(folder_id) {
+        return Err("不能把目录移动到自身下级".to_string());
+    }
+
+    // 3. 目标父目录必须存在，且不能是自己的子孙（否则子树会脱离根成环）
+    if let Some(parent_id) = new_parent_id {
+        conn.query_row(
+            "SELECT id FROM note_folder WHERE id = ? AND deleted = 0",
+            params![parent_id],
+            |_| Ok(()),
+        )
+        .map_err(|_| "目标目录不存在".to_string())?;
+
+        let mut cursor = Some(parent_id.to_string());
+        let mut visited = std::collections::HashSet::new();
+        while let Some(current) = cursor {
+            if current == folder_id {
+                return Err("不能把目录移动到自身的子目录下".to_string());
+            }
+            if !visited.insert(current.clone()) {
+                break;
+            }
+            cursor = conn
+                .query_row(
+                    "SELECT parent_id FROM note_folder WHERE id = ?",
+                    params![current],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .unwrap_or(None);
+        }
+    }
+
+    // 4. 目标层级同名冲突
+    let dup: i32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM note_folder
+             WHERE parent_id IS ? AND name = ? AND deleted = 0 AND id != ?",
+            params![new_parent_id, name, folder_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if dup > 0 {
+        return Err("目标层级已存在同名目录".to_string());
+    }
+
+    // 5. 改父级
+    conn.execute(
+        "UPDATE note_folder SET parent_id = ?, update_time = ? WHERE id = ?",
+        params![new_parent_id, now, folder_id],
+    )
+    .map_err(|e| format!("移动目录失败: {}", e))?;
+
+    // 6. 在新层级里按 position 插入并重排 sort_order
+    let mut siblings: Vec<String> = conn
+        .prepare(
+            "SELECT id FROM note_folder
+             WHERE parent_id IS ? AND deleted = 0 AND id != ?
+             ORDER BY sort_order ASC, create_time ASC",
+        )
+        .map_err(|e| e.to_string())?
+        .query_map(params![new_parent_id, folder_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let insert_at = position
+        .map(|p| p.max(0) as usize)
+        .unwrap_or(siblings.len())
+        .min(siblings.len());
+    siblings.insert(insert_at, folder_id.to_string());
+    renumber(conn, &siblings, now)?;
+
+    // 7. 原层级留下的空位一并压实，避免序号出现空洞
+    if old_parent_id.as_deref() != new_parent_id {
+        let remaining: Vec<String> = conn
+            .prepare(
+                "SELECT id FROM note_folder
+                 WHERE parent_id IS ? AND deleted = 0
+                 ORDER BY sort_order ASC, create_time ASC",
+            )
+            .map_err(|e| e.to_string())?
+            .query_map(params![old_parent_id], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        renumber(conn, &remaining, now)?;
+    }
+
+    Ok(())
+}
+
+fn renumber(conn: &rusqlite::Connection, ordered_ids: &[String], now: &str) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("UPDATE note_folder SET sort_order = ?, update_time = ? WHERE id = ?")
+        .map_err(|e| e.to_string())?;
+    for (idx, id) in ordered_ids.iter().enumerate() {
+        stmt.execute(params![idx as i32, now, id])
+            .map_err(|e| format!("排序更新失败: {}", e))?;
+    }
+    Ok(())
+}
+
 /// Reorder folders (batch update sort_order, matches folderService.reorderFolders)
 pub fn reorder_folders(_parent_id: Option<&str>, items: &[(String, i32)]) -> Result<(), String> {
     db::with_db(|conn| {
@@ -263,5 +419,166 @@ fn collect_descendants(
             result.push(child.clone());
             collect_descendants(child, map, result);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// 造一张与线上一致的 note_folder 表，避免依赖 init_schema（它是私有函数）。
+    fn build_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE note_folder (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                create_time TEXT NOT NULL,
+                update_time TEXT NOT NULL,
+                deleted INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_folder(
+        conn: &Connection,
+        id: &str,
+        parent_id: Option<&str>,
+        name: &str,
+        sort_order: i32,
+    ) {
+        conn.execute(
+            "INSERT INTO note_folder (id, parent_id, name, sort_order, create_time, update_time)
+             VALUES (?1, ?2, ?3, ?4, 't', 't')",
+            rusqlite::params![id, parent_id, name, sort_order],
+        )
+        .unwrap();
+    }
+
+    /// 读取某父级下的有序子目录 id 列表
+    fn child_ids(conn: &Connection, parent_id: Option<&str>) -> Vec<String> {
+        conn.prepare(
+            "SELECT id FROM note_folder
+             WHERE parent_id IS ? AND deleted = 0
+             ORDER BY sort_order ASC, create_time ASC",
+        )
+        .unwrap()
+        .query_map(rusqlite::params![parent_id], |row| row.get(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
+    fn parent_of(conn: &Connection, id: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT parent_id FROM note_folder WHERE id = ?",
+            rusqlite::params![id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn move_folder_cross_level_reorders_both_layers() {
+        let conn = build_conn();
+        // 根：A, B, C；A 下：A1, A2；C 下：C1
+        insert_folder(&conn, "A", None, "A", 0);
+        insert_folder(&conn, "B", None, "B", 1);
+        insert_folder(&conn, "C", None, "C", 2);
+        insert_folder(&conn, "A1", Some("A"), "A1", 0);
+        insert_folder(&conn, "A2", Some("A"), "A2", 1);
+        insert_folder(&conn, "C1", Some("C"), "C1", 0);
+
+        // 把 A2 移到 C 下、插到 C1 前面（position=0）
+        move_folder_inner(&conn, "A2", Some("C"), Some(0), "t").unwrap();
+
+        assert_eq!(parent_of(&conn, "A2").as_deref(), Some("C"));
+        assert_eq!(
+            child_ids(&conn, Some("C")),
+            vec!["A2".to_string(), "C1".to_string()]
+        );
+        // 原层级压实：A 下只剩 A1，序号 0
+        assert_eq!(child_ids(&conn, Some("A")), vec!["A1".to_string()]);
+        assert_eq!(
+            child_ids(&conn, None),
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
+        );
+    }
+
+    #[test]
+    fn move_folder_to_root_appends_at_end() {
+        let conn = build_conn();
+        insert_folder(&conn, "A", None, "A", 0);
+        insert_folder(&conn, "B", None, "B", 1);
+        insert_folder(&conn, "A1", Some("A"), "A1", 0);
+
+        // 子目录移到根，position=None → 追加到末尾
+        move_folder_inner(&conn, "A1", None, None, "t").unwrap();
+
+        assert_eq!(parent_of(&conn, "A1"), None);
+        assert_eq!(
+            child_ids(&conn, None),
+            vec!["A".to_string(), "B".to_string(), "A1".to_string()]
+        );
+        assert!(child_ids(&conn, Some("A")).is_empty());
+    }
+
+    #[test]
+    fn move_folder_same_level_honors_position_after_removing_source() {
+        let conn = build_conn();
+        insert_folder(&conn, "A", None, "A", 0);
+        insert_folder(&conn, "B", None, "B", 1);
+        insert_folder(&conn, "C", None, "C", 2);
+
+        // A 放到 C 前面：目标列表移除 A 后为 B、C，因此 position=1。
+        move_folder_inner(&conn, "A", None, Some(1), "t").unwrap();
+        assert_eq!(
+            child_ids(&conn, None),
+            vec!["B".to_string(), "A".to_string(), "C".to_string()]
+        );
+
+        // C 放到 B 后面，position=1 应得到 B、C、A。
+        move_folder_inner(&conn, "C", None, Some(1), "t").unwrap();
+        assert_eq!(
+            child_ids(&conn, None),
+            vec!["B".to_string(), "C".to_string(), "A".to_string()]
+        );
+    }
+
+    #[test]
+    fn move_folder_rejects_moving_into_own_subtree() {
+        let conn = build_conn();
+        insert_folder(&conn, "A", None, "A", 0);
+        insert_folder(&conn, "A1", Some("A"), "A1", 0);
+        insert_folder(&conn, "A11", Some("A1"), "A11", 0);
+
+        // A → A1（自己的子级）应被拒绝
+        assert!(move_folder_inner(&conn, "A", Some("A1"), None, "t").is_err());
+        // A → A11（自己的孙级）应被拒绝
+        assert!(move_folder_inner(&conn, "A", Some("A11"), None, "t").is_err());
+        // 结构未被破坏
+        assert_eq!(parent_of(&conn, "A"), None);
+        assert_eq!(parent_of(&conn, "A1").as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn move_folder_rejects_self_and_duplicate_name() {
+        let conn = build_conn();
+        insert_folder(&conn, "A", None, "A", 0);
+        insert_folder(&conn, "B", None, "B", 1);
+        insert_folder(&conn, "B1", Some("B"), "B1", 0);
+
+        // 移到自己
+        assert!(move_folder_inner(&conn, "A", Some("A"), None, "t").is_err());
+        // B 下已有名为 A 的目录？没有，先造一个
+        insert_folder(&conn, "Adup", Some("B"), "A", 0);
+        // 根下的 A 移到 B 下会撞名
+        assert!(move_folder_inner(&conn, "A", Some("B"), None, "t").is_err());
     }
 }

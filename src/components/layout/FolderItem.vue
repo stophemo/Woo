@@ -6,22 +6,19 @@
                 'selected': selectedFolderId === folder.id,
                 'dragging': isDragging,
                 'drag-over-above': dragOverState === 'above',
-                'drag-over-below': dragOverState === 'below'
+                'drag-over-below': dragOverState === 'below',
+                'drag-over-inside': dragOverState === 'inside'
             }"
             :style="{ paddingLeft: `${depth * 16 + 10}px` }"
-            :draggable="!folder.isLocked"
+            :data-folder-id="folder.id"
             @contextmenu.stop="handleContextMenu"
             @click="handleClick"
             @dblclick="handleDoubleClick"
+            @pointerdown="onPointerDown"
             @touchstart.passive="handleTouchStart"
             @touchend.passive="handleTouchEnd"
             @touchmove.passive="handleTouchMove"
             @touchcancel.passive="handleTouchEnd"
-            @dragstart="onDragStart"
-            @dragover="onDragOver"
-            @dragleave="onDragLeave"
-            @drop="onDrop"
-            @dragend="onDragEnd"
         >
             <span
                 class="folder-color-dot"
@@ -65,11 +62,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, ref, nextTick, onBeforeUnmount, watch } from 'vue'
 import IconLock from '../icons/IconLock.vue'
 import IconGrip from '../icons/IconGrip.vue'
 import { useWorkspaceStore } from '../../stores/workspace'
-import type { FolderNode, ContextMenuPosition } from '../../types/folder'
+import {
+    folderDragState,
+    clearFolderDragState,
+    clearFolderDropTarget,
+    debugLogDrag,
+    setFolderDropTarget,
+} from './folderDragState'
+import type { FolderNode, FolderDropZone, ContextMenuPosition } from '../../types/folder'
 
 interface Props {
     folder: FolderNode
@@ -158,6 +162,10 @@ const handleContextMenu = (event: MouseEvent) => {
 }
 
 const handleClick = () => {
+    if (suppressClick) {
+        suppressClick = false
+        return
+    }
     if (!isEditing.value) {
         emit('folder-select', props.folder)
     }
@@ -204,82 +212,103 @@ watch(
     { immediate: true }
 )
 
-/* ========== 拖拽排序 ========== */
-// 模块级状态（拖拽期间共享）
-let _dragFolderId: string | null = null
-let _dragParentId: string | null | undefined = undefined
-
-const dragOverState = ref<'above' | 'below' | null>(null)
+/* ========== 拖拽排序 / 跨层移动 ========== */
+const POINTER_DRAG_THRESHOLD = 6
+const dragOverState = computed<FolderDropZone | null>(() => (
+    folderDragState.dragTargetId === props.folder.id ? folderDragState.dropZone : null
+))
 const isDragging = ref(false)
+let pointerId: number | null = null
+let pointerStartX = 0
+let pointerStartY = 0
+let pointerDragging = false
+let suppressClick = false
 
-function onDragStart(event: DragEvent) {
-    if (props.folder.isLocked) { event.preventDefault(); return }
-    _dragFolderId = props.folder.id
-    _dragParentId = props.folder.parentId
-    isDragging.value = true
-    event.dataTransfer!.effectAllowed = 'move'
-    event.dataTransfer!.setData('text/plain', props.folder.id)
+function getDropZone(clientY: number, rect: DOMRect): FolderDropZone {
+    const ratio = (clientY - rect.top) / rect.height
+    if (ratio < 0.28) return 'above'
+    if (ratio > 0.72) return 'below'
+    return 'inside'
 }
 
-function onDragOver(event: DragEvent) {
-    if (!_dragFolderId || _dragFolderId === props.folder.id) return
-    if (_dragParentId !== props.folder.parentId) return // 非同层
-    event.preventDefault()
-    const el = event.currentTarget as HTMLElement
-    const rect = el.getBoundingClientRect()
-    dragOverState.value = event.clientY < rect.top + rect.height / 2 ? 'above' : 'below'
+function onPointerDown(event: PointerEvent) {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || props.folder.isLocked || isEditing.value) return
+    if ((event.target as HTMLElement).closest('input')) return
+
+    pointerId = event.pointerId
+    pointerStartX = event.clientX
+    pointerStartY = event.clientY
+    pointerDragging = false
+    window.addEventListener('pointermove', onPointerMove, { passive: false })
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerCancel)
 }
 
-function onDragLeave(event: DragEvent) {
-    const el = event.currentTarget as HTMLElement
-    if (!el.contains(event.relatedTarget as Node)) {
-        dragOverState.value = null
+function onPointerMove(event: PointerEvent) {
+    if (event.pointerId !== pointerId) return
+
+    if (!pointerDragging) {
+        const distance = Math.hypot(event.clientX - pointerStartX, event.clientY - pointerStartY)
+        if (distance < POINTER_DRAG_THRESHOLD) return
+        pointerDragging = true
+        suppressClick = true
+        folderDragState.dragFolderId = props.folder.id
+        isDragging.value = true
+        document.body.classList.add('folder-pointer-dragging')
+        debugLogDrag('start', props.folder.id, props.folder.id, null)
     }
-}
 
-async function onDrop(event: DragEvent) {
     event.preventDefault()
-    dragOverState.value = null
-    if (!_dragFolderId || _dragFolderId === props.folder.id) return
-    if (_dragParentId !== props.folder.parentId) return
-
-    // 获取同级数组
-    const sibs: any[] = props.folder.parentId === null
-        ? (workspaceStore as any).folders
-        : ((p: any) => p ? p.children : [])(workspaceStore.findFolderById((workspaceStore as any).folders, props.folder.parentId))
-
-    if (!sibs || sibs.length === 0) return
-
-    const dragIdx = sibs.findIndex((f: any) => f.id === _dragFolderId)
-    const dropIdx = sibs.findIndex((f: any) => f.id === props.folder.id)
-    if (dragIdx === -1 || dropIdx === -1) return
-
-    // 快照原始状态（用于回滚）
-    const originalSnapshot = sibs.slice()
-
-    // 从数组中移除拖拽项
-    const [moved] = sibs.splice(dragIdx, 1)
-    // 重新计算目标位置（移除后索引可能偏移）
-    const newDropIdx = sibs.findIndex((f: any) => f.id === props.folder.id)
-    if (newDropIdx === -1) return
-    const insertIdx = dragOverState.value === 'above' ? newDropIdx : newDropIdx + 1
-    sibs.splice(insertIdx, 0, moved)
-
-    // 持久化
-    try {
-        await workspaceStore.reorderFolderSiblings(props.folder.parentId, sibs.map((f: any) => f.id))
-    } catch {
-        // 回滚
-        sibs.splice(0, sibs.length, ...originalSnapshot)
+    const targetRow = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>('.sidebar-item[data-folder-id]')
+    const targetId = targetRow?.dataset.folderId
+    if (!targetRow || !targetId || targetId === props.folder.id) {
+        clearFolderDropTarget()
+        return
     }
+
+    setFolderDropTarget(targetId, getDropZone(event.clientY, targetRow.getBoundingClientRect()))
 }
 
-function onDragEnd() {
-    _dragFolderId = null
-    _dragParentId = undefined
+function stopPointerTracking() {
+    window.removeEventListener('pointermove', onPointerMove)
+    window.removeEventListener('pointerup', onPointerUp)
+    window.removeEventListener('pointercancel', onPointerCancel)
+    pointerId = null
+    pointerDragging = false
     isDragging.value = false
-    dragOverState.value = null
+    document.body.classList.remove('folder-pointer-dragging')
 }
+
+async function onPointerUp(event: PointerEvent) {
+    if (event.pointerId !== pointerId) return
+    const wasDragging = pointerDragging
+    const dragId = folderDragState.dragFolderId
+    const targetId = folderDragState.dragTargetId
+    const zone = folderDragState.dropZone
+    stopPointerTracking()
+
+    if (!wasDragging) return
+    event.preventDefault()
+    debugLogDrag('drop', dragId, targetId, zone)
+    if (dragId && targetId && zone) {
+        await workspaceStore.moveFolderRelative(dragId, targetId, zone)
+    }
+    clearFolderDragState()
+    setTimeout(() => { suppressClick = false }, 0)
+}
+
+function onPointerCancel(event: PointerEvent) {
+    if (event.pointerId !== pointerId) return
+    stopPointerTracking()
+    clearFolderDragState()
+}
+
+onBeforeUnmount(() => {
+    stopPointerTracking()
+    if (folderDragState.dragFolderId === props.folder.id) clearFolderDragState()
+})
 
 const forwardContextMenu = (data: { folder: FolderNode, position: ContextMenuPosition }) => {
     emit('context-menu', data)
@@ -327,6 +356,12 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
     transform: none;
 }
 
+:global(body.folder-pointer-dragging),
+:global(body.folder-pointer-dragging *) {
+    cursor: grabbing !important;
+    user-select: none !important;
+}
+
 /* 拖拽放置指示线 */
 .sidebar-item.drag-over-above::before {
     content: '';
@@ -351,6 +386,16 @@ const forwardRename = (data: { folder: FolderNode, newName: string }) => {
     border-radius: 2px;
     pointer-events: none;
     z-index: 1;
+}
+
+/* 拖入下级：整行高亮，示意将变成目标的子目录 */
+.sidebar-item.drag-over-inside {
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 6px;
+}
+.sidebar-item.drag-over-inside .folder-name {
+    color: var(--accent);
 }
 
 /* 拖拽手柄：默认隐藏，hover 时显示 */
