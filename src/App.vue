@@ -209,21 +209,34 @@ function onLogout() {
   workspaceStore.reset()
 }
 
-// 启动流程：认证恢复 + 工作区加载
+async function refreshSessionAndSync() {
+  const sessionValid = await authStore.refreshSession()
+  if (!sessionValid) {
+    // 服务端确认 session 已失效后，切回未登录数据库并刷新界面。
+    workspaceStore.reset()
+    await Promise.all([
+      workspaceStore.bootstrap()
+        .then(() => workspaceStore.restoreLastView())
+        .catch(() => {}),
+      useLockStore().bootstrap().catch(() => {})
+    ])
+    return
+  }
+
+  const synced = await syncStore.triggerSync()
+  if (!synced && syncStore.errorMsg) {
+    showToast(syncStore.errorMsg, 'error')
+  }
+}
+
+// 启动流程：本地认证与工作区优先，云端校验和同步不阻塞首屏。
 async function initApp() {
-  // 先注册监听，再恢复认证和同步，避免首次同步事件早于前端监听器。
+  // 先注册监听，避免后台首次同步事件早于前端监听器。
   syncStore.listen()
   setupSyncToast()
   setupSyncDataRefresh()
 
   await authStore.bootstrap()
-  if (authStore.isLoggedIn) {
-    const synced = await syncStore.triggerSync()
-    if (!synced && syncStore.errorMsg) {
-      showToast(syncStore.errorMsg, 'error')
-    }
-  }
-
   await Promise.all([
     workspaceStore.bootstrap()
       .then(() => workspaceStore.restoreLastView())
@@ -231,9 +244,8 @@ async function initApp() {
     useLockStore().bootstrap().catch(() => {})
   ])
 
-  try {
-    await syncStore.refreshStatus()
-  } catch { /* ignore */ }
+  void syncStore.refreshStatus()
+  if (authStore.isLoggedIn) void refreshSessionAndSync()
 }
 
 const syncToast = ref({ visible: false, message: '', type: 'success' })

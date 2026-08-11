@@ -49,6 +49,25 @@ const mobileThemeVars = computed(() => MOBILE_THEME_PALETTES[themeStore.theme])
 const TAB_ROUTES = ['/', '/drafts', '/settings']
 const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(route.path) : 0)
 const showTabbar = computed(() => TAB_ROUTES.includes(route.path))
+const appReady = ref(false)
+
+async function refreshSessionAndSync() {
+  const sessionValid = await authStore.refreshSession()
+  if (!sessionValid) {
+    workspaceStore.reset()
+    if (route.path === '/') {
+      await workspaceStore.bootstrap().catch(() => {})
+      await workspaceStore.openAllDocuments()
+    }
+    await lockStore.bootstrap().catch(() => {})
+    return
+  }
+
+  const synced = await syncStore.triggerSync()
+  if (!synced && syncStore.errorMsg) {
+    showToast(syncStore.errorMsg)
+  }
+}
 
 watch(() => route.path, (path) => {
   const idx = TAB_ROUTES.indexOf(path)
@@ -87,21 +106,12 @@ onMounted(async () => {
     }
   })
 
-  // 恢复会话后等待首次同步，再刷新当前移动端视图。
+  // 本地会话立即恢复；联网校验和首次同步转入后台，不阻塞本地文稿。
   await authStore.bootstrap()
-  if (authStore.isLoggedIn) {
-    const synced = await syncStore.triggerSync()
-    if (!synced && syncStore.errorMsg) {
-      showToast(syncStore.errorMsg)
-    }
-    if (route.path === '/') {
-      await workspaceStore.openAllDocuments()
-    } else {
-      await workspaceStore.syncRefresh()
-    }
-  }
-  try { await lockStore.bootstrap() } catch { /* ignore */ }
-  try { await syncStore.refreshStatus() } catch { /* ignore */ }
+  appReady.value = true
+  void lockStore.bootstrap().catch(() => {})
+  void syncStore.refreshStatus()
+  if (authStore.isLoggedIn) void refreshSessionAndSync()
 })
 </script>
 
@@ -109,10 +119,10 @@ onMounted(async () => {
   <van-config-provider :theme="vantTheme" :theme-vars="mobileThemeVars">
     <div class="mobile-app">
       <div class="page-content" :class="{ 'has-tabbar': showTabbar }">
-        <router-view />
+        <router-view v-if="appReady" />
       </div>
       <MobileUpdateNotice />
-      <van-tabbar v-if="showTabbar" v-model="active" class="mobile-tabbar" safe-area-inset-bottom>
+      <van-tabbar v-if="appReady && showTabbar" v-model="active" class="mobile-tabbar" safe-area-inset-bottom>
         <van-tabbar-item icon="notes-o" @click="router.push('/')">文稿</van-tabbar-item>
         <van-tabbar-item icon="edit-o" @click="router.push('/drafts')">草稿</van-tabbar-item>
         <van-tabbar-item icon="setting-o" @click="router.push('/settings')">设置</van-tabbar-item>

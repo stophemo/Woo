@@ -482,6 +482,7 @@ pub fn run() {
             commands::auth::auth_sign_up,
             commands::auth::auth_sign_in,
             commands::auth::auth_sign_out,
+            commands::auth::auth_clear_local_session,
             commands::auth::auth_get_user,
             commands::auth::auth_get_session,
             // Lock

@@ -110,14 +110,20 @@ pub async fn sign_out() -> Result<(), String> {
         supabase::sign_out(&token).await.ok();
     }
 
+    clear_local_session();
+
+    Ok(())
+}
+
+/// Clear only the session stored on this device. Used when the local 30-day
+/// remember-login window expires; it must not wait for a network request.
+pub fn clear_local_session() {
     supabase::clear_persisted_session();
     if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
         *s = None;
     }
 
     db::set_current_user(None);
-
-    Ok(())
 }
 
 pub fn get_current_user() -> Result<Option<AuthUser>, String> {
@@ -190,7 +196,7 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
         .map_err(|e| e.to_string())?
         .clone();
 
-    let Some(_) = session else {
+    let Some(cached_session) = session else {
         return Ok(None);
     };
 
@@ -199,12 +205,13 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
         Ok(session) => session,
         Err(error) => {
             log::warn!("[Auth] Token refresh failed: {}", error);
-            // 刷新失败 → session 已失效（可能被服务端吊销）
-            supabase::clear_persisted_session();
-            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                *current = None;
+            if error.contains("网络错误:") {
+                // 离线启动不能清掉 refresh token；保留本地会话供本地优先模式使用，
+                // 下次联网同步时会再次尝试刷新。
+                return Ok(Some(map_session(&cached_session)));
             }
-            db::set_current_user(None);
+            // 刷新失败 → session 已失效（可能被服务端吊销）
+            clear_local_session();
             return Ok(None);
         }
     };
@@ -225,11 +232,7 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
         Ok(None) => {
             // 服务端返回 401 → token 已被吊销
             log::info!("[Auth] Session revoked on server, clearing");
-            supabase::clear_persisted_session();
-            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                *current = None;
-            }
-            db::set_current_user(None);
+            clear_local_session();
             Ok(None)
         }
         Err(_) => {

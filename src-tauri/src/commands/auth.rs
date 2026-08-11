@@ -2,7 +2,11 @@ use crate::commands::CommandResult;
 use crate::services::auth_service;
 
 #[tauri::command(rename_all = "camelCase", rename = "authSignUp")]
-pub async fn auth_sign_up(email: String, password: String, username: String) -> CommandResult<auth_service::AuthSession> {
+pub async fn auth_sign_up(
+    email: String,
+    password: String,
+    username: String,
+) -> CommandResult<auth_service::AuthSession> {
     match auth_service::sign_up(&email, &password, &username).await {
         Ok(data) => CommandResult::success(data),
         Err(msg) => CommandResult::error(&msg),
@@ -10,7 +14,10 @@ pub async fn auth_sign_up(email: String, password: String, username: String) -> 
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authSignIn")]
-pub async fn auth_sign_in(email: String, password: String) -> CommandResult<auth_service::AuthSession> {
+pub async fn auth_sign_in(
+    email: String,
+    password: String,
+) -> CommandResult<auth_service::AuthSession> {
     match auth_service::sign_in(&email, &password).await {
         Ok(data) => CommandResult::success(data),
         Err(msg) => CommandResult::error(&msg),
@@ -23,6 +30,12 @@ pub async fn auth_sign_out() -> CommandResult<()> {
         Ok(_) => CommandResult::success(()),
         Err(msg) => CommandResult::error(&msg),
     }
+}
+
+#[tauri::command(rename_all = "camelCase", rename = "authClearLocalSession")]
+pub fn auth_clear_local_session() -> CommandResult<()> {
+    auth_service::clear_local_session();
+    CommandResult::success(())
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "authGetUser")]
