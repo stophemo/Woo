@@ -323,6 +323,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_process::init());
 
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(commands::update::android_updater::init());
+
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -448,6 +451,8 @@ pub fn run() {
             // System
             commands::app_get_version,
             commands::update::app_check_mobile_update,
+            commands::update::app_download_mobile_update,
+            commands::update::app_install_mobile_update,
             commands::greet,
             // Folder
             commands::folder::folder_tree,

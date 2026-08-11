@@ -4,13 +4,19 @@
       <button
         type="button"
         class="mobile-update-link"
-        :aria-label="`下载 Woo v${updateInfo.version}`"
-        @click="downloadUpdate"
+        :aria-label="actionLabel"
+        :disabled="isBusy"
+        @click="handleUpdateAction"
       >
-        <span class="mobile-update-dot" aria-hidden="true"></span>
-        <span>新版本 v{{ updateInfo.version }}</span>
+        <span
+          class="mobile-update-dot"
+          :class="{ 'mobile-update-dot--active': actionState === 'downloading' }"
+          aria-hidden="true"
+        ></span>
+        <span>{{ actionLabel }}</span>
       </button>
       <button
+        v-if="!isBusy"
         type="button"
         class="mobile-update-ignore"
         :aria-label="`忽略 v${updateInfo.version}`"
@@ -21,12 +27,14 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { showToast } from 'vant'
 import {
   checkForMobileAppUpdate,
-  openMobileUpdateDownload,
+  downloadMobileAppUpdate,
+  installMobileAppUpdate,
   type MobileUpdateInfo,
+  type MobileUpdateProgress,
 } from '../../src/services/mobileUpdater'
 
 const IGNORED_VERSION_KEY = 'woo-ignored-update-version'
@@ -37,9 +45,47 @@ const MIN_AUTO_ATTEMPT_INTERVAL_MS = 60 * 1000
 const RETRY_DELAYS_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000]
 const updateInfo = ref<MobileUpdateInfo | null>(null)
 const checking = ref(false)
+const actionState = ref<'available' | 'downloading' | 'ready' | 'installing'>('available')
+const downloadProgress = ref<MobileUpdateProgress>({
+  downloadedBytes: 0,
+  downloadFinished: false,
+})
+const downloadedApkPath = ref<string | null>(null)
 let autoCheckTimer: ReturnType<typeof setTimeout> | null = null
 let retryIndex = 0
 let mounted = false
+
+const isBusy = computed(() => (
+  actionState.value === 'downloading' || actionState.value === 'installing'
+))
+
+const actionLabel = computed(() => {
+  const version = updateInfo.value?.version ?? ''
+  if (actionState.value === 'downloading') {
+    const { downloadedBytes, totalBytes } = downloadProgress.value
+    if (totalBytes && totalBytes > 0) {
+      const percentage = Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100))
+      return `下载 ${percentage}%`
+    }
+    return `下载 ${formatMegabytes(downloadedBytes)}`
+  }
+  if (actionState.value === 'installing') return '正在打开安装器'
+  if (actionState.value === 'ready') return `安装 v${version}`
+  return `一键更新 v${version}`
+})
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function resetUpdateAction() {
+  actionState.value = 'available'
+  downloadedApkPath.value = null
+  downloadProgress.value = {
+    downloadedBytes: 0,
+    downloadFinished: false,
+  }
+}
 
 function readStoredTimestamp(key: string): number {
   const value = Number(localStorage.getItem(key))
@@ -71,6 +117,7 @@ async function checkUpdate(manual: boolean) {
     scheduleAutomaticCheck(AUTO_CHECK_INTERVAL_MS, true)
     if (!update) {
       updateInfo.value = null
+      resetUpdateAction()
       if (manual) showToast('已是最新版本')
       return
     }
@@ -81,6 +128,7 @@ async function checkUpdate(manual: boolean) {
       localStorage.removeItem(IGNORED_VERSION_KEY)
     }
 
+    if (updateInfo.value?.version !== update.version) resetUpdateAction()
     updateInfo.value = update
     if (manual) showToast(`发现 v${update.version}，已显示在右下角`)
   } catch (error: unknown) {
@@ -164,14 +212,45 @@ function ignoreUpdate() {
     localStorage.setItem(IGNORED_VERSION_KEY, updateInfo.value.version)
   }
   updateInfo.value = null
+  resetUpdateAction()
 }
 
-async function downloadUpdate() {
-  if (!updateInfo.value) return
+async function installDownloadedUpdate() {
+  if (!downloadedApkPath.value) return
+  actionState.value = 'installing'
   try {
-    await openMobileUpdateDownload(updateInfo.value.downloadUrl)
+    const result = await installMobileAppUpdate(downloadedApkPath.value)
+    actionState.value = 'ready'
+    if (result.status === 'permissionRequired') {
+      showToast('未获得安装权限，请点击“安装更新”后授权')
+    } else {
+      showToast('已打开系统安装器')
+    }
   } catch (error: unknown) {
-    showToast(`无法打开下载链接：${describeError(error)}`)
+    actionState.value = 'ready'
+    showToast(`无法安装更新：${describeError(error)}`)
+  }
+}
+
+async function handleUpdateAction() {
+  if (!updateInfo.value || isBusy.value) return
+  if (downloadedApkPath.value) {
+    await installDownloadedUpdate()
+    return
+  }
+
+  actionState.value = 'downloading'
+  downloadProgress.value = { downloadedBytes: 0, downloadFinished: false }
+  try {
+    const download = await downloadMobileAppUpdate(updateInfo.value, (progress) => {
+      downloadProgress.value = progress
+    })
+    downloadedApkPath.value = download.apkPath
+    actionState.value = 'ready'
+    await installDownloadedUpdate()
+  } catch (error: unknown) {
+    actionState.value = 'available'
+    showToast(`下载更新失败：${describeError(error)}`)
   }
 }
 
@@ -222,8 +301,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
   min-height: 32px;
+  min-width: 118px;
   padding: 0 9px 0 10px;
   font-size: 11px;
+}
+
+.mobile-update-link:disabled {
+  opacity: 0.78;
 }
 
 .mobile-update-dot {
@@ -231,6 +315,10 @@ onBeforeUnmount(() => {
   height: 6px;
   border-radius: 50%;
   background: var(--van-primary-color);
+}
+
+.mobile-update-dot--active {
+  animation: mobile-update-pulse 1s ease-in-out infinite;
 }
 
 .mobile-update-ignore {
@@ -250,5 +338,11 @@ onBeforeUnmount(() => {
 .mobile-update-fade-leave-to {
   opacity: 0;
   transform: translateY(6px);
+}
+
+@keyframes mobile-update-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 </style>
