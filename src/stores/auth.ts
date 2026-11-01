@@ -2,11 +2,13 @@
  * 认证 Store。
  * 通过 IPC 调用主进程的 Supabase Auth 服务。
  *
- * Session 策略：
- *   - 正常登录后持久化到 localStorage
- *   - 应用启动时先恢复本地缓存和后端已持久化的 session，不等待网络
- *   - 首屏加载完成后再由调用方执行 Supabase 校验与同步
- *   - 30 天内免登录；超过期限后清除本地 session
+ * Session 策略（重要）：
+ *   - **Rust 侧的 `supabase-auth.json` 是唯一事实源**。前端 localStorage 只是
+ *     一份用于首屏展示的缓存，任何情况下都不得反向清除后端会话。
+ *   - 启动时直接向后端要当前用户，拿到就进入已登录状态，不等待网络。
+ *   - 只有后端明确返回“无会话”或服务端撤销了 refresh token 时才登出。
+ *   - 不再使用“30 天免登录”本地硬过期：那会让仍在有效期内的 Supabase 会话
+ *     被本地规则强行废弃，并且旧实现还会顺手清掉后端会话文件。
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -21,51 +23,43 @@ export interface AuthUser {
 }
 
 const STORAGE_KEY = 'woo:auth'
-const SESSION_DAYS = 30
-const SESSION_MAX_AGE_MS = SESSION_DAYS * 24 * 60 * 60 * 1000
 
-interface SessionData {
+interface SessionCache {
   userId: string
   email: string
   username: string
-  loginTime: number // Date.now()
+  loginTime: number // Date.now()，仅用于展示
 }
 
-function loadSession(): SessionData | null {
+function loadCache(): SessionCache | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<SessionData>
-    if (
-      typeof parsed.userId !== 'string' || !parsed.userId ||
-      typeof parsed.email !== 'string' ||
-      typeof parsed.username !== 'string' ||
-      typeof parsed.loginTime !== 'number' || !Number.isFinite(parsed.loginTime)
-    ) {
-      return null
+    const parsed = JSON.parse(raw) as Partial<SessionCache>
+    if (typeof parsed.userId !== 'string' || !parsed.userId) return null
+    return {
+      userId: parsed.userId,
+      email: typeof parsed.email === 'string' ? parsed.email : '',
+      username: typeof parsed.username === 'string' ? parsed.username : '',
+      loginTime: typeof parsed.loginTime === 'number' && Number.isFinite(parsed.loginTime)
+        ? parsed.loginTime
+        : Date.now(),
     }
-    return parsed as SessionData
   } catch {
     return null
   }
 }
 
-function persistSession(userId: string, email: string, username: string, loginTime = Date.now()) {
+function persistCache(userId: string, email: string, username: string, loginTime = Date.now()) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId, email, username, loginTime }))
   } catch { /* ignore */ }
 }
 
-function clearSession() {
+function clearCache() {
   try {
     localStorage.removeItem(STORAGE_KEY)
   } catch { /* ignore */ }
-}
-
-/** 检查缓存的 session 是否在有效天数内 */
-function isSessionValid(cached: SessionData): boolean {
-  const elapsed = Date.now() - cached.loginTime
-  return elapsed >= 0 && elapsed < SESSION_MAX_AGE_MS
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -92,60 +86,38 @@ export const useAuthStore = defineStore('auth', () => {
       email: u.email,
       username,
       nickname: username || '用户',
-      avatarUrl: undefined
+      avatarUrl: undefined,
     }
   }
 
-  function persistRestoredUser(restoredUser: AuthUser) {
-    const cached = loadSession()
-    const loginTime = cached?.userId === restoredUser.id && isSessionValid(cached)
-      ? cached.loginTime
-      : Date.now()
-    persistSession(
-      restoredUser.id,
-      restoredUser.email || '',
-      restoredUser.username || '',
-      loginTime
-    )
+  function adoptUser(mappedUser: AuthUser) {
+    user.value = mappedUser
+    persistCache(mappedUser.id, mappedUser.email || '', mappedUser.username || '')
   }
 
   /**
-   * 启动时尝试恢复 session。
+   * 启动时恢复登录态。
    *
-   * 路径：
-   *   1. localStorage 立即恢复登录展示
-   *   2. 后端内存 session 确认账号并保证用户数据库已激活
-   *   3. 不在此处访问网络，避免阻塞本地工作区
+   * 顺序：后端持久化会话 → 前端展示缓存。
+   * 后端没有会话时只清理前端缓存，**不**调用 auth:clearLocalSession，
+   * 避免 IPC 瞬时异常把仍然有效的登录态删掉。
    */
   async function bootstrap() {
     initializing.value = true
-    const cached = loadSession()
-    if (!cached || !isSessionValid(cached)) {
-      clearSession()
-      user.value = null
-      try {
-        await invoke('auth:clearLocalSession')
-      } catch { /* ignore */ }
-      initializing.value = false
-      return
-    }
-
-    user.value = mapUser({ id: cached.userId, email: cached.email, username: cached.username })
-
     try {
-      // 仅读取 Tauri 启动时已恢复的本地 session，不访问 Supabase。
       const restoredUser = await invoke<any>('auth:getUser')
-      if (restoredUser?.id === cached.userId) {
-        const mappedUser = mapUser(restoredUser)
-        user.value = mappedUser
-        persistRestoredUser(mappedUser)
-      } else {
-        clearSession()
-        user.value = null
-        await invoke('auth:clearLocalSession').catch(() => {})
+      if (restoredUser?.id) {
+        adoptUser(mapUser(restoredUser))
+        return
       }
+      if (loadCache()) clearCache()
+      user.value = null
     } catch {
-      // IPC 暂不可用时保留仍在 30 天期限内的前端缓存。
+      // IPC 尚不可用（例如启动竞态）：用缓存维持界面状态，后续 refreshSession 校正。
+      const cached = loadCache()
+      user.value = cached
+        ? mapUser({ id: cached.userId, email: cached.email, username: cached.username })
+        : null
     } finally {
       initializing.value = false
     }
@@ -160,13 +132,11 @@ export const useAuthStore = defineStore('auth', () => {
       // 用户可能在后台请求期间主动登出或切换账号，旧请求不能覆盖新状态。
       if (user.value?.id !== expectedUserId) return isLoggedIn.value
       if (!session?.user) {
-        clearSession()
+        clearCache()
         user.value = null
         return false
       }
-      const mappedUser = mapUser(session.user)
-      user.value = mappedUser
-      persistRestoredUser(mappedUser)
+      adoptUser(mapUser(session.user))
       return true
     } catch {
       return isLoggedIn.value
@@ -179,11 +149,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const result = await invoke<any>('auth:signIn', { email: identifier, password })
       if (!result?.user) {
-        errorMsg.value = '登录失败'
+        errorMsg.value = '登录失败：服务器未返回用户信息'
         return false
       }
-      user.value = mapUser(result.user)
-      persistSession(result.user.id, result.user.email || '', result.user.username || '')
+      adoptUser(mapUser(result.user))
       return true
     } catch (err: any) {
       errorMsg.value = err?.message || '登录失败'
@@ -193,17 +162,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function signup(email: string, username: string, password: string): Promise<{ ok: boolean; message?: string }> {
+  async function signup(
+    email: string,
+    username: string,
+    password: string,
+  ): Promise<{ ok: boolean; message?: string }> {
     loading.value = true
     errorMsg.value = ''
     try {
       const result = await invoke<any>('auth:signUp', { email, username, password })
       if (result?.user) {
-        user.value = mapUser(result.user)
-        persistSession(result.user.id, result.user.email || '', result.user.username || '')
+        adoptUser(mapUser(result.user))
         return { ok: true }
       }
-      return { ok: true, message: '注册成功，请查看邮箱完成确认' }
+      // 未返回会话 → 项目开启了邮箱确认，账号已创建。
+      return { ok: true, message: '注册成功，请前往邮箱点击确认链接后再登录' }
     } catch (err: any) {
       errorMsg.value = err?.message || '注册失败'
       return { ok: false, message: errorMsg.value }
@@ -214,13 +187,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     loading.value = true
-    // 先清除本地缓存，防止进程在异步操作中被终止时 session 残留
+    // 先清除本地展示缓存，防止进程在异步操作中被终止时 session 残留。
     user.value = null
-    clearSession()
+    clearCache()
     try {
-      const { useSyncStore } = await import('./sync')
-      const syncStore = useSyncStore()
-      await syncStore.triggerSync()
       await invoke('auth:signOut')
     } catch { /* ignore */ }
     loading.value = false
@@ -236,6 +206,6 @@ export const useAuthStore = defineStore('auth', () => {
     refreshSession,
     login,
     signup,
-    logout
+    logout,
   }
 })

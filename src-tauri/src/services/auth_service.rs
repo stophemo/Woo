@@ -51,7 +51,39 @@ fn map_session(sb_session: &supabase::SupabaseSession) -> AuthSession {
     }
 }
 
-pub async fn sign_up(email: &str, password: &str, username: &str) -> Result<AuthSession, String> {
+/// 登录/注册成功后统一收尾：切换用户库 → 落盘会话 → 写入内存会话。
+///
+/// 三者顺序很重要：先切库，保证后续任何写入都落在正确的用户数据库；
+/// 落盘失败不阻断本次登录（内存会话仍可用），但必须留下明确的日志，
+/// 否则用户会看到“登录成功、重启又掉线”这种无法解释的现象。
+fn adopt_session(sb_session: &supabase::SupabaseSession) -> Result<(), String> {
+    activate_user_database(&sb_session.user)?;
+
+    let persisted = supabase::persist_session(sb_session);
+    supabase::set_current_session(Some(sb_session.clone()));
+
+    if !persisted {
+        log::error!(
+            "[Auth] 会话无法持久化到本机，重启后需要重新登录（请检查数据目录写权限）"
+        );
+    } else {
+        // 读回校验：确认写入内容可被正确解析，避免启动时静默丢失登录态。
+        match supabase::read_persisted_session() {
+            Some(restored) if restored.access_token == sb_session.access_token => {
+                log::info!("[Auth] 会话已落盘并校验通过 (user={})", sb_session.user.id);
+            }
+            _ => log::error!("[Auth] 会话落盘后读回校验失败，重启后可能需要重新登录"),
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn sign_up(
+    email: &str,
+    password: &str,
+    username: &str,
+) -> Result<AuthSession, String> {
     if email.is_empty() || password.is_empty() || username.is_empty() {
         return Err("邮箱、密码和用户名不能为空".to_string());
     }
@@ -59,17 +91,18 @@ pub async fn sign_up(email: &str, password: &str, username: &str) -> Result<Auth
         return Err("密码长度不能少于 6 位".to_string());
     }
 
-    let sb_session = supabase::sign_up(email, password, username).await?;
+    log::info!("[Auth] 注册请求: username={}", username);
+    let outcome = supabase::sign_up(email, password, username).await?;
 
-    // Persist session to supabase-auth.json
-    supabase::persist_session(&sb_session);
-    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
-        *s = Some(sb_session.clone());
-    }
+    let Some(sb_session) = outcome else {
+        // 项目开启了邮箱确认：账号已创建但没有会话，前端据此提示“查看邮箱”。
+        return Ok(AuthSession {
+            user: None,
+            access_token: None,
+        });
+    };
 
-    // Switch to user-specific database (matches sign_in behavior)
-    activate_user_database(&sb_session.user)?;
-
+    adopt_session(&sb_session)?;
     Ok(map_session(&sb_session))
 }
 
@@ -77,34 +110,48 @@ pub async fn sign_in(identifier: &str, password: &str) -> Result<AuthSession, St
     if identifier.is_empty() {
         return Err("请输入邮箱或用户名".to_string());
     }
+    if password.is_empty() {
+        return Err("请输入密码".to_string());
+    }
 
     // If identifier is not an email, resolve username → email via RPC
     let email = if identifier.contains('@') {
         identifier.to_string()
     } else {
-        supabase::resolve_email_by_username(identifier).await?
+        log::info!("[Auth] 登录：按用户名解析邮箱");
+        supabase::resolve_email_by_username(identifier)
+            .await
+            .map_err(|error| {
+                if supabase::is_network_error(&error) {
+                    format!("{}（请检查网络或代理设置）", error)
+                } else {
+                    error
+                }
+            })?
     };
 
-    let sb_session = supabase::sign_in(&email, password).await?;
+    log::info!("[Auth] 登录：请求 access token");
+    let sb_session = supabase::sign_in(&email, password).await.map_err(|error| {
+        log::warn!("[Auth] 登录失败: {}", error);
+        if supabase::is_network_error(&error) {
+            format!("{}（请检查网络或代理设置）", error)
+        } else {
+            error
+        }
+    })?;
 
-    // After login, check if user DB should be created
-    activate_user_database(&sb_session.user)?;
+    log::info!(
+        "[Auth] 登录成功: user={} expires_at={}",
+        sb_session.user.id,
+        sb_session.expires_at
+    );
 
-    // Persist session
-    supabase::persist_session(&sb_session);
-    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
-        *s = Some(sb_session.clone());
-    }
-
+    adopt_session(&sb_session)?;
     Ok(map_session(&sb_session))
 }
 
 pub async fn sign_out() -> Result<(), String> {
-    let token = supabase::CURRENT_SESSION
-        .lock()
-        .ok()
-        .and_then(|s| s.clone())
-        .map(|s| s.access_token);
+    let token = supabase::current_session().map(|session| session.access_token);
 
     if let Some(token) = token {
         supabase::sign_out(&token).await.ok();
@@ -115,26 +162,41 @@ pub async fn sign_out() -> Result<(), String> {
     Ok(())
 }
 
-/// Clear only the session stored on this device. Used when the local 30-day
-/// remember-login window expires; it must not wait for a network request.
+/// Clear only the session stored on this device. Used when the refresh token is
+/// definitively revoked; it must not wait for a network request.
 pub fn clear_local_session() {
     supabase::clear_persisted_session();
-    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
-        *s = None;
-    }
-
+    supabase::set_current_session(None);
     db::set_current_user(None);
 }
 
 pub fn get_current_user() -> Result<Option<AuthUser>, String> {
-    let session = supabase::CURRENT_SESSION
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
+    Ok(supabase::current_session().map(|session| map_user(&session.user)))
+}
 
-    match session {
-        Some(s) => Ok(Some(map_user(&s.user))),
-        None => Ok(None),
+/// 把「刷新失败」翻译成用户能行动的结论。
+/// 只有确定失效（refresh token 被吊销）才清本地会话；网络/服务端问题必须保留。
+enum RefreshFailure {
+    KeepCurrent(String),
+    Revoked(String),
+}
+
+fn resolve_refresh_failure(
+    error: supabase::RefreshError,
+    current: &supabase::SupabaseSession,
+    now: i64,
+) -> RefreshFailure {
+    match error {
+        supabase::RefreshError::Network(detail) | supabase::RefreshError::Server(detail) => {
+            if current.expires_at > now {
+                // 当前 token 仍有效，下一轮再刷新。
+                RefreshFailure::KeepCurrent(detail)
+            } else {
+                // 无法刷新且已过期：保留 refresh token，联网后重试，不清会话。
+                RefreshFailure::KeepCurrent(format!("登录凭证已过期，无法自动续期（{}）", detail))
+            }
+        }
+        supabase::RefreshError::Invalid(detail) => RefreshFailure::Revoked(detail),
     }
 }
 
@@ -142,11 +204,7 @@ pub fn get_current_user() -> Result<Option<AuthUser>, String> {
 /// refresh window. The periodic sync path uses this instead of reading the
 /// session token directly, because the app can stay open for many hours.
 pub async fn ensure_fresh_session() -> Result<supabase::SupabaseSession, String> {
-    let session = supabase::CURRENT_SESSION
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "未登录，无法同步".to_string())?;
+    let session = supabase::current_session().ok_or_else(|| "未登录，无法同步".to_string())?;
     let now = Utc::now().timestamp();
     if session.expires_at > now.saturating_add(TOKEN_REFRESH_SKEW_SECS) {
         return Ok(session);
@@ -155,11 +213,7 @@ pub async fn ensure_fresh_session() -> Result<supabase::SupabaseSession, String>
     // Auth bootstrap and the periodic timer can reach this path together. Re-check
     // after taking the lock so only one request rotates the refresh token.
     let _refresh_guard = SESSION_REFRESH_LOCK.lock().await;
-    let current = supabase::CURRENT_SESSION
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "未登录，无法同步".to_string())?;
+    let current = supabase::current_session().ok_or_else(|| "未登录，无法同步".to_string())?;
     let now = Utc::now().timestamp();
     if current.expires_at > now.saturating_add(TOKEN_REFRESH_SKEW_SECS) {
         return Ok(current);
@@ -168,35 +222,26 @@ pub async fn ensure_fresh_session() -> Result<supabase::SupabaseSession, String>
     match supabase::refresh_session(&current.refresh_token).await {
         Ok(new_session) => {
             supabase::persist_session(&new_session);
-            if let Ok(mut current_session) = supabase::CURRENT_SESSION.lock() {
-                *current_session = Some(new_session.clone());
-            }
+            supabase::set_current_session(Some(new_session.clone()));
             log::info!("[Auth] Access token refreshed before sync");
             Ok(new_session)
         }
-        Err(error) => {
-            // A temporary network failure should not invalidate a token that is
-            // still usable; the next sync can retry the refresh.
-            if current.expires_at > now {
-                log::warn!(
-                    "[Auth] Token refresh deferred (current token still valid): {}",
-                    error
-                );
+        Err(error) => match resolve_refresh_failure(error, &current, now) {
+            RefreshFailure::KeepCurrent(detail) => {
+                log::warn!("[Auth] Token refresh deferred: {}", detail);
                 Ok(current)
-            } else {
-                Err(format!("登录已过期，请重新登录: {}", error))
             }
-        }
+            RefreshFailure::Revoked(detail) => {
+                log::warn!("[Auth] Refresh token revoked: {}", detail);
+                clear_local_session();
+                Err(format!("登录已失效，请重新登录: {}", detail))
+            }
+        },
     }
 }
 
 pub async fn get_session() -> Result<Option<AuthSession>, String> {
-    let session = supabase::CURRENT_SESSION
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-
-    let Some(cached_session) = session else {
+    let Some(cached_session) = supabase::current_session() else {
         return Ok(None);
     };
 
@@ -205,14 +250,13 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
         Ok(session) => session,
         Err(error) => {
             log::warn!("[Auth] Token refresh failed: {}", error);
-            if error.contains("网络错误:") {
-                // 离线启动不能清掉 refresh token；保留本地会话供本地优先模式使用，
-                // 下次联网同步时会再次尝试刷新。
-                return Ok(Some(map_session(&cached_session)));
+            // refresh token 被吊销时 ensure_fresh_session 已清空内存会话，
+            // 这里用状态判断而不是匹配错误文案。
+            if supabase::current_session().is_none() {
+                return Ok(None);
             }
-            // 刷新失败 → session 已失效（可能被服务端吊销）
-            clear_local_session();
-            return Ok(None);
+            // 网络问题/临时失败 → 继续用本地缓存的会话，保持本地优先可用性。
+            return Ok(Some(map_session(&cached_session)));
         }
     };
 
@@ -224,9 +268,7 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
             verified_session.user = user;
             activate_user_database(&verified_session.user)?;
             supabase::persist_session(&verified_session);
-            if let Ok(mut current) = supabase::CURRENT_SESSION.lock() {
-                *current = Some(verified_session.clone());
-            }
+            supabase::set_current_session(Some(verified_session.clone()));
             Ok(Some(map_session(&verified_session)))
         }
         Ok(None) => {
@@ -247,12 +289,13 @@ pub async fn get_session() -> Result<Option<AuthSession>, String> {
 pub fn try_restore_session() -> Option<String> {
     let session = supabase::read_persisted_session()?;
     let user_id = session.user.id.clone();
-    activate_user_database(&session.user).ok()?;
-
-    // Store in global
-    if let Ok(mut s) = supabase::CURRENT_SESSION.lock() {
-        *s = Some(session);
+    if let Err(error) = activate_user_database(&session.user) {
+        // 用户库准备失败不应阻止应用启动，但必须暴露出来，否则会表现为“登录态丢失”。
+        log::error!("[Auth] 恢复会话时切换用户库失败: {}", error);
+        return None;
     }
 
+    supabase::set_current_session(Some(session));
+    log::info!("[Auth] Restored session for user id: {}", user_id);
     Some(user_id)
 }

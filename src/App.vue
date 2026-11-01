@@ -204,9 +204,14 @@ async function onLoginSuccess() {
   ])
 }
 
-function onLogout() {
-  // 登出后重置工作区
+async function onLogout() {
+  // 登出后后端已切回本地库（woo.db），必须重新加载本地工作区，
+  // 否则界面会继续显示上一个账号的目录与文稿。
   workspaceStore.reset()
+  await Promise.all([
+    workspaceStore.bootstrap().catch(() => {}),
+    useLockStore().bootstrap().catch(() => {})
+  ])
 }
 
 async function refreshSessionAndSync() {

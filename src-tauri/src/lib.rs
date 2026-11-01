@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod logging;
 mod models;
 mod services;
 mod supabase;
@@ -213,11 +214,7 @@ pub fn get_app_handle() -> Option<tauri::AppHandle> {
 }
 
 fn init_logger() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().filter_or("WOO_LOG", "info"),
-    )
-    .format_timestamp_secs()
-    .init();
+    logging::init();
 }
 
 /// Determine data directory matching app-desktop:
@@ -351,12 +348,17 @@ pub fn run() {
             std::fs::create_dir_all(&db_path).ok();
             db::set_data_dir(db_path.clone());
             supabase::set_data_dir(db_path.clone());
+            logging::set_log_dir(&db_path);
             log::info!("[App] Data directory: {:?}", db_path);
+            if let Some(log_path) = logging::log_file_path() {
+                log::info!("[App] Log file: {:?}", log_path);
+            }
 
             // Restore session from supabase-auth.json
             if let Some(user_id) = services::auth_service::try_restore_session() {
                 log::info!("[App] Restored session for user id: {}", user_id);
-                db::set_current_user(Some(&user_id));
+            } else {
+                log::info!("[App] No persisted session, starting in local mode");
             }
 
             // Lazy-init database
@@ -476,6 +478,7 @@ pub fn run() {
             commands::document::document_hard_delete,
             commands::document::document_empty_trash,
             commands::document::document_reorder,
+            commands::document::document_move,
             // Version
             commands::version::version_list,
             commands::version::version_get,

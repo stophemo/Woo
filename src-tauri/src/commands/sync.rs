@@ -22,13 +22,18 @@ pub struct SyncResultResponse {
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "syncStatus")]
-pub fn sync_status() -> CommandResult<SyncStatusResponse> {
-    let s = sync_engine::get_status();
-    CommandResult::success(SyncStatusResponse {
-        is_syncing: s.is_syncing,
-        last_sync_time: s.last_sync_time,
-        pending_changes: s.pending_changes,
-    })
+pub async fn sync_status() -> CommandResult<SyncStatusResponse> {
+    // 同步进行中会长时间占用数据库锁，同步命令不能在主线程上等锁，
+    // 否则每 60 秒的探活就会卡住 UI。
+    let status = tokio::task::spawn_blocking(sync_engine::get_status).await;
+    match status {
+        Ok(s) => CommandResult::success(SyncStatusResponse {
+            is_syncing: s.is_syncing,
+            last_sync_time: s.last_sync_time,
+            pending_changes: s.pending_changes,
+        }),
+        Err(error) => CommandResult::error(&format!("读取同步状态失败: {}", error)),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase", rename = "syncTrigger")]

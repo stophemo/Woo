@@ -1,6 +1,7 @@
 use rusqlite::Connection;
+use std::cell::Cell;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 // ============================================================
 // Connection Manager (matches electron/db/index.cjs)
@@ -15,30 +16,57 @@ pub struct Database {
     pub path: PathBuf,
 }
 
-static DB: Mutex<Option<Database>> = Mutex::new(None);
-static CURRENT_USER: Mutex<Option<String>> = Mutex::new(None);
+/// 连接与「当前用户」必须由同一把锁保护。
+///
+/// 早期实现分别使用 `DB` 与 `CURRENT_USER` 两把锁，`with_db` 的加锁顺序是
+/// `DB → CURRENT_USER`，而 `set_current_user` 是 `CURRENT_USER → DB`，
+/// 两者在同步定时器与登录/登出并发时会形成 ABBA 死锁，表现为登录卡住、
+/// 界面永久无响应（无法自愈，只能杀进程）。合并为单一状态后不再可能死锁。
+struct DbState {
+    db: Option<Database>,
+    user: Option<String>,
+}
+
+static STATE: Mutex<DbState> = Mutex::new(DbState { db: None, user: None });
 static DATA_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+thread_local! {
+    /// 把 `with_db` 的意外嵌套从「永久阻塞」暴露成可定位的错误。
+    static WITH_DB_DEPTH: Cell<u32> = Cell::new(0);
+}
+
+/// 任何持锁线程 panic 都不应让登录/同步永久失败：锁中毒时直接取回内部数据。
+fn lock_state() -> MutexGuard<'static, DbState> {
+    STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_data_dir() -> MutexGuard<'static, Option<PathBuf>> {
+    DATA_DIR.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 数据目录是叶子锁：只在不需要其它锁时短暂持有，返回后立即释放。
+fn data_dir() -> PathBuf {
+    lock_data_dir()
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."))
+}
 
 /// Set the app data directory (called once at startup)
 pub fn set_data_dir(path: PathBuf) {
-    if let Ok(mut dir) = DATA_DIR.lock() {
-        *dir = Some(path);
-    }
+    *lock_data_dir() = Some(path);
 }
 
 /// Switch to a specific user's database using an immutable account key.
 /// `None` = local mode (woo.db).
 pub fn set_current_user(username: Option<&str>) {
-    let mut user = CURRENT_USER.lock().unwrap();
+    let mut state = lock_state();
     let new_val = username.map(String::from);
-    if *user == new_val {
+    if state.user == new_val {
         return;
     }
-    // Close existing connection
-    if let Ok(mut db) = DB.lock() {
-        db.take();
-    }
-    *user = new_val;
+    // Close existing connection before switching files.
+    state.db = None;
+    state.user = new_val;
     log::info!("[DB] Switched to user database: {:?}", username);
 }
 
@@ -92,11 +120,7 @@ pub fn prepare_user_db_on_first_login(
     user_id: &str,
     legacy_username: Option<&str>,
 ) -> Result<(), String> {
-    let dir = DATA_DIR
-        .lock()
-        .unwrap()
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("."));
+    let dir = data_dir();
     let user_db = user_db_path(&dir, user_id);
     if user_db.exists() {
         return Ok(());
@@ -124,49 +148,58 @@ pub fn prepare_user_db_on_first_login(
     Ok(())
 }
 
-/// Get the database filename for the current user
-fn get_db_path() -> PathBuf {
-    let dir = DATA_DIR
-        .lock()
-        .unwrap()
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("."));
-    let user = CURRENT_USER.lock().unwrap();
-    match user.as_ref() {
-        Some(name) => user_db_path(&dir, name),
-        None => dir.join("woo.db"),
-    }
-}
-
-/// Execute a closure with the current database connection.
-/// Auto-opens the database on first call.
+/// Execute a closure with the current database connection. Auto-opens the database
+/// on first call and after a user switch.
+///
+/// 注意：闭包内**不得**再调用任何会走到 `with_db` 的函数（本函数持锁且不可重入）。
+/// 需要连接时请把 `&Connection` 传给 `*_inner(conn, ...)` 形式的内部函数。
 pub fn with_db<F, T>(f: F) -> T
 where
     F: FnOnce(&Connection) -> T,
 {
-    let mut guard = DB.lock().unwrap();
-    let target = get_db_path();
-
-    // Open if not yet open or path changed
-    if guard.is_none() || guard.as_ref().map(|d| &d.path) != Some(&target) {
-        *guard = None; // drop old
-        log::info!("[DB] Opening database: {:?}", target);
-        let conn = Connection::open(&target).expect("Failed to open database");
-        conn.pragma_update(None, "journal_mode", "WAL").ok();
-        conn.pragma_update(None, "foreign_keys", "ON").ok();
-        init_schema(&conn).expect("Failed to initialize schema");
-        *guard = Some(Database { conn, path: target });
+    struct DepthGuard;
+    impl Drop for DepthGuard {
+        fn drop(&mut self) {
+            WITH_DB_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
     }
 
-    let db = guard.as_ref().expect("DB not initialized");
+    WITH_DB_DEPTH.with(|depth| {
+        let current = depth.get();
+        assert!(
+            current == 0,
+            "db::with_db 被重入调用，请改用接收 &Connection 的内部函数"
+        );
+        depth.set(current + 1);
+    });
+    let _depth_guard = DepthGuard;
+
+    let mut state = lock_state();
+    let dir = data_dir();
+    let target = match state.user.as_ref() {
+        Some(name) => user_db_path(&dir, name),
+        None => dir.join("woo.db"),
+    };
+
+    // Open if not yet open or path changed
+    if state.db.as_ref().map(|d| &d.path) != Some(&target) {
+        state.db = None; // drop old connection first
+        log::info!("[DB] Opening database: {:?}", target);
+        let conn = Connection::open(&target)
+            .unwrap_or_else(|e| panic!("无法打开数据库 {:?}: {}", target, e));
+        conn.pragma_update(None, "journal_mode", "WAL").ok();
+        conn.pragma_update(None, "foreign_keys", "ON").ok();
+        init_schema(&conn).unwrap_or_else(|e| panic!("初始化数据库结构失败: {}", e));
+        state.db = Some(Database { conn, path: target });
+    }
+
+    let db = state.db.as_ref().expect("DB not initialized");
     f(&db.conn)
 }
 
 /// Close the current database connection
 pub fn close_db() {
-    if let Ok(mut db) = DB.lock() {
-        db.take();
-    }
+    lock_state().db = None;
 }
 
 /// Initialize the database schema (matches electron/db/schema.cjs)
@@ -284,7 +317,6 @@ mod user_db_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_init_schema() {
@@ -301,5 +333,62 @@ mod tests {
         assert!(tables.contains(&"note_document".to_string()));
         assert!(tables.contains(&"note_document_version".to_string()));
         assert!(tables.contains(&"sync_meta".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod lock_order_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// 回归测试：`with_db` 与 `set_current_user` 并发时曾经会因为两把锁顺序相反
+    /// （DB → CURRENT_USER 与 CURRENT_USER → DB）形成 ABBA 死锁，表现为登录卡死、
+    /// 界面永久无响应。合并为单一状态后必须能在同一时间段内完成。
+    #[test]
+    fn switching_user_database_does_not_deadlock_with_queries() {
+        let dir = std::env::temp_dir().join(format!("woo-lock-order-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+        set_current_user(None);
+
+        let (sender, receiver) = mpsc::channel();
+
+        let reader_sender = sender.clone();
+        let reader = std::thread::spawn(move || {
+            for _ in 0..200 {
+                with_db(|conn| {
+                    let _: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM note_document", [], |row| row.get(0))
+                        .unwrap_or(0);
+                });
+            }
+            reader_sender.send("reader").ok();
+        });
+
+        let switcher = std::thread::spawn(move || {
+            for round in 0..200 {
+                if round % 2 == 0 {
+                    set_current_user(Some("lock-order-user"));
+                } else {
+                    set_current_user(None);
+                }
+            }
+            sender.send("switcher").ok();
+        });
+
+        let first = receiver.recv_timeout(Duration::from_secs(15));
+        let second = receiver.recv_timeout(Duration::from_secs(15));
+
+        assert!(
+            first.is_ok() && second.is_ok(),
+            "with_db 与 set_current_user 并发时发生死锁（旧实现的双锁顺序问题）"
+        );
+
+        reader.join().ok();
+        switcher.join().ok();
+
+        set_current_user(None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
