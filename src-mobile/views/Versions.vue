@@ -60,36 +60,34 @@ function formatTime(ts: string) {
   <div class="versions-page">
     <van-nav-bar title="版本历史" left-text="返回" left-arrow @click-left="router.back()">
       <template #right>
-        <span class="save-btn" @click="onSaveManual">存当前</span>
+        <span class="nav-text" @click="onSaveManual">存当前</span>
       </template>
     </van-nav-bar>
 
     <van-loading v-if="loading" class="mobile-loading" />
 
-    <div v-else-if="versions.length" class="version-list">
-      <button
-        v-for="v in versions"
-        :key="v.id"
-        type="button"
-        class="version-item"
-        @click="onRestore(v)"
-      >
-        <span class="version-marker" aria-hidden="true"></span>
-        <span class="version-body">
-          <span class="version-heading">
-            <strong class="v-no">v{{ v.versionNo }}</strong>
-            <van-tag :type="v.changeType === 'manual' ? 'primary' : v.changeType === 'restore' ? 'success' : 'default'" class="v-tag">
-              {{ typeLabel[v.changeType] || v.changeType }}
-            </van-tag>
-            <time class="v-time">{{ formatTime(v.createTime) }}</time>
-          </span>
-          <span class="v-preview">{{ v.preview || '（空白版本）' }}</span>
-        </span>
-        <van-icon name="arrow" class="version-arrow" />
-      </button>
-    </div>
+    <template v-else-if="versions.length">
+      <p class="hint">点击任意版本即可恢复</p>
+      <ul class="w-group">
+        <li v-for="v in versions" :key="v.id">
+          <button type="button" class="w-row" @click="onRestore(v)">
+            <span class="w-row__main">
+              <span class="w-row__title">
+                <span class="v-no">v{{ v.versionNo }}</span>
+                <span class="v-type">{{ typeLabel[v.changeType] || v.changeType }}</span>
+              </span>
+              <span class="w-row__sub">{{ v.preview || '（空白版本）' }}</span>
+            </span>
+            <span class="w-row__side">
+              <time>{{ formatTime(v.createTime) }}</time>
+            </span>
+            <van-icon name="arrow" class="w-row__chev" />
+          </button>
+        </li>
+      </ul>
+    </template>
 
-    <van-empty v-else description="暂无历史版本" />
+    <van-empty v-else description="暂无历史版本" image-size="72" />
   </div>
 </template>
 
@@ -97,105 +95,35 @@ function formatTime(ts: string) {
 .versions-page {
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--van-background);
+  background: var(--w-paper);
 }
 
-.save-btn {
-  color: var(--van-primary-color);
-  font-size: 13px;
-  font-weight: 600;
+.nav-text {
+  color: var(--w-accent);
+  font-size: 14px;
 }
 
-.version-list {
-  position: relative;
-  padding: 14px 12px 24px;
+.hint {
+  margin: 14px 20px 8px;
+  color: var(--w-ink-3);
+  font-size: 11.5px;
 }
 
-.version-list::before {
-  position: absolute;
-  top: 34px;
-  bottom: 44px;
-  left: 22px;
-  width: 1px;
-  background: var(--van-border-color);
-  content: '';
-}
-
-.version-item {
-  position: relative;
-  display: flex;
-  width: 100%;
-  min-height: 92px;
-  align-items: flex-start;
-  gap: 11px;
-  margin: 0 0 8px;
-  padding: 14px 13px 13px 9px;
-  text-align: left;
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-  background: var(--van-background-2);
-  color: var(--van-text-color);
-}
-
-.version-item:active {
-  background: color-mix(in srgb, var(--van-primary-color) 5%, var(--van-background-2));
-}
-
-.version-marker {
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  margin-top: 6px;
-  border: 2px solid var(--van-background-2);
-  border-radius: 50%;
-  background: var(--van-primary-color);
-  box-shadow: 0 0 0 1px var(--van-primary-color);
-}
-
-.version-body {
-  display: block;
-  min-width: 0;
-  flex: 1;
-}
-
-.version-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.w-group {
+  margin: 0 12px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 
 .v-no {
-  color: var(--van-text-color);
-  font-size: 14px;
+  color: var(--w-accent);
+  font-size: 15px;
   font-weight: 700;
-}
-
-.v-tag {
-  vertical-align: middle;
-}
-
-.v-preview {
-  display: -webkit-box;
-  overflow: hidden;
-  margin-top: 9px;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.v-time {
-  margin-left: auto;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
 
-.version-arrow {
-  align-self: center;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 13px;
+.v-type {
+  color: var(--w-ink-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
 }
 </style>

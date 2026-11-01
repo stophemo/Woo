@@ -18,6 +18,7 @@ import type { Document } from '../../src/types/document'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
 import FolderPicker from '../components/FolderPicker.vue'
+import MIcon from '../components/MIcon.vue'
 
 const router = useRouter()
 const store = useWorkspaceStore()
@@ -395,45 +396,47 @@ function formatTime(iso: string): string {
 
 function subfolderHint(folder: FolderNode): string {
   if (folder.isLocked) return '已加锁'
-  if (!folder.children.length) return '目录'
-  return `${folder.children.length} 个子目录`
+  // 空目录不显示冗余的“目录”二字，保持行内信息克制
+  return folder.children.length ? `${folder.children.length} 个子目录` : ''
 }
 </script>
 
 <template>
   <div class="home">
-    <header class="home-head">
-      <div class="home-head__row">
+    <header class="w-head">
+      <div class="w-head__row">
         <button
           v-if="currentFolderId"
           type="button"
-          class="ghost-btn"
+          class="w-icon-btn"
           aria-label="返回上级"
           @click="goUp"
         >
           <van-icon name="arrow-left" />
         </button>
-        <div class="home-head__titles">
-          <h1 class="home-head__title">{{ viewTitle }}</h1>
-          <p class="home-head__meta">
-            {{ documents.length }} 篇文稿<template v-if="childFolders.length"> · {{ childFolders.length }} 个子目录</template>
-          </p>
+        <div class="w-head__titles">
+          <span class="w-head__kicker">文稿</span>
+          <h1 class="w-head__title">{{ viewTitle }}</h1>
         </div>
-        <button type="button" class="ghost-btn" aria-label="搜索" @click="router.push('/search')">
+        <button type="button" class="w-icon-btn" aria-label="搜索" @click="router.push('/search')">
           <van-icon name="search" />
         </button>
-        <button type="button" class="ghost-btn" aria-label="新建目录" @click="openCreateFolder">
-          <van-icon name="add-o" />
+        <button type="button" class="w-icon-btn" aria-label="新建目录" @click="openCreateFolder">
+          <van-icon name="plus" />
         </button>
       </div>
 
-      <nav v-if="path.length" class="breadcrumb" aria-label="目录层级">
-        <button type="button" class="breadcrumb__item" @click="goToLevel(-1)">全部</button>
+      <p class="w-head__meta">
+        {{ documents.length }} 篇文稿<template v-if="childFolders.length"> · {{ childFolders.length }} 个目录</template>
+      </p>
+
+      <nav v-if="path.length" class="home-crumbs" aria-label="目录层级">
+        <button type="button" class="w-crumb" @click="goToLevel(-1)">全部</button>
         <template v-for="(node, index) in path" :key="node.id">
-          <span class="breadcrumb__sep">/</span>
+          <span class="w-crumb-sep">/</span>
           <button
             type="button"
-            class="breadcrumb__item"
+            class="w-crumb"
             :class="{ 'is-current': index === path.length - 1 }"
             @click="goToLevel(index)"
           >
@@ -444,58 +447,73 @@ function subfolderHint(folder: FolderNode): string {
     </header>
 
     <van-pull-refresh v-model="refreshing" class="home-body" @refresh="refresh">
-      <div v-if="childFolders.length" class="folder-strip" aria-label="子目录">
-        <button
-          v-for="folder in childFolders"
-          :key="folder.id"
-          type="button"
-          class="folder-tile"
-          @click="enterFolder(folder)"
-          @contextmenu.prevent="openFolderMenu(folder)"
-        >
-          <span class="folder-tile__icon">
-            <van-icon :name="folder.isLocked ? 'closed-eye' : 'folder-o'" />
-          </span>
-          <span class="folder-tile__name">{{ folder.name }}</span>
-          <span class="folder-tile__meta">{{ subfolderHint(folder) }}</span>
-        </button>
-      </div>
+      <section v-if="childFolders.length" class="w-section">
+        <p class="w-section__label">目录</p>
+        <ul class="w-group">
+          <li v-for="folder in childFolders" :key="folder.id">
+            <button
+              type="button"
+              class="w-row folder-row"
+              @click="enterFolder(folder)"
+              @contextmenu.prevent="openFolderMenu(folder)"
+            >
+              <span class="w-row__icon">
+                <van-icon v-if="folder.isLocked" name="closed-eye" />
+                <MIcon v-else name="folder" :size="17" />
+              </span>
+              <span class="w-row__main">
+                <span class="w-row__title">{{ folder.name }}</span>
+              </span>
+              <span v-if="subfolderHint(folder)" class="w-row__side">{{ subfolderHint(folder) }}</span>
+              <van-icon name="arrow" class="w-row__chev" />
+            </button>
+          </li>
+        </ul>
+      </section>
 
-      <van-loading v-if="loading && !documents.length" class="home-loading" />
+      <van-loading v-if="loading && !documents.length" class="mobile-loading" />
 
-      <ul v-else-if="documents.length" class="doc-list">
-        <li v-for="doc in documents" :key="doc.id" class="doc-item">
-          <button
-            type="button"
-            class="doc-card"
-            @click="openNote(doc.id)"
-            @contextmenu.prevent="openDocMenu(doc)"
-          >
-            <span class="doc-card__head">
-              <span class="doc-card__title">{{ doc.title || '无标题' }}</span>
-              <van-icon v-if="doc.isLocked" name="lock" class="doc-card__lock" />
-            </span>
-            <span class="doc-card__preview">{{ previewText(doc) }}</span>
-            <span class="doc-card__meta">
-              <span v-if="doc.folderName" class="doc-card__folder">{{ doc.folderName }}</span>
-              <time>{{ formatTime(doc.updatedAt) }}</time>
-            </span>
-          </button>
-          <button
-            type="button"
-            class="doc-more"
-            aria-label="文稿操作"
-            @click.stop="openDocMenu(doc)"
-          >
-            <van-icon name="ellipsis" />
-          </button>
-        </li>
-      </ul>
+      <section v-else-if="documents.length" class="w-section">
+        <p class="w-section__label">文稿</p>
+        <ul class="w-group">
+          <li v-for="doc in documents" :key="doc.id">
+            <button
+              type="button"
+              class="w-row doc-row"
+              @click="openNote(doc.id)"
+              @contextmenu.prevent="openDocMenu(doc)"
+            >
+              <span class="w-row__icon">
+                <van-icon v-if="doc.isLocked" name="closed-eye" />
+                <MIcon v-else name="doc" :size="17" />
+              </span>
+              <span class="w-row__main">
+                <span class="w-row__title">{{ doc.title || '无标题' }}</span>
+                <span class="w-row__sub">
+                  <span v-if="doc.folderName" class="doc-folder">{{ doc.folderName }}</span>
+                  {{ previewText(doc) }}
+                </span>
+              </span>
+              <span class="w-row__side">
+                <time>{{ formatTime(doc.updatedAt) }}</time>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="doc-more"
+              aria-label="文稿操作"
+              @click.stop="openDocMenu(doc)"
+            >
+              <van-icon name="ellipsis" />
+            </button>
+          </li>
+        </ul>
+      </section>
 
-      <van-empty v-else :description="emptyDescription" image-size="84" />
+      <van-empty v-else :description="emptyDescription" image-size="72" class="w-empty" />
     </van-pull-refresh>
 
-    <button type="button" class="fab" aria-label="新建文稿" :disabled="creating" @click="createNote">
+    <button type="button" class="w-fab" aria-label="新建文稿" :disabled="creating" @click="createNote">
       <van-icon name="plus" />
     </button>
 
@@ -547,261 +565,46 @@ function subfolderHint(folder: FolderNode): string {
 .home {
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--van-background);
+  background: var(--w-paper);
 }
 
-/* ---------- 头部 ---------- */
-.home-head {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 8px;
-  border-bottom: 1px solid var(--van-border-color);
-  background: color-mix(in srgb, var(--van-background) 92%, transparent);
-  backdrop-filter: blur(16px);
-}
-
-.home-head__row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.home-head__titles {
-  min-width: 0;
-  flex: 1;
-  padding: 0 4px;
-}
-
-.home-head__title {
-  overflow: hidden;
-  margin: 0;
-  color: var(--van-text-color);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-head__meta {
-  margin: 3px 0 0;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 11px;
-}
-
-.ghost-btn {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--van-text-color-2);
-  font-size: 19px;
-}
-
-.ghost-btn:active {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
-}
-
-.breadcrumb {
+.home-crumbs {
   display: flex;
   align-items: center;
   gap: 2px;
   overflow-x: auto;
-  margin-top: 6px;
-  padding-bottom: 2px;
+  margin-top: 4px;
+  padding-bottom: 1px;
   scrollbar-width: none;
 }
 
-.breadcrumb::-webkit-scrollbar {
+.home-crumbs::-webkit-scrollbar {
   display: none;
 }
 
-.breadcrumb__item {
-  flex: 0 0 auto;
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  white-space: nowrap;
+/* 目录是单行信息，不必占两行高度 */
+.folder-row {
+  min-height: 54px;
 }
 
-.breadcrumb__item.is-current {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
-  font-weight: 600;
-}
-
-.breadcrumb__sep {
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 11px;
-}
-
-/* ---------- 主体 ---------- */
 .home-body {
   min-height: 60vh;
-  padding: 12px 12px calc(96px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
 }
 
-.home-loading {
-  display: flex;
-  justify-content: center;
-  padding: 56px 0;
+/* 文稿行：右侧留出「···」的位置，避免与时间撞在一起 */
+.doc-row {
+  padding-right: 40px;
 }
 
-/* ---------- 目录卡片 ---------- */
-.folder-strip {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 42%;
-  gap: 9px;
-  overflow-x: auto;
-  margin: 0 -12px 14px;
-  padding: 0 12px 4px;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
+.doc-folder {
+  color: var(--w-ink-3);
 }
 
-.folder-strip::-webkit-scrollbar {
-  display: none;
-}
-
-@media (min-width: 560px) {
-  .folder-strip {
-    grid-auto-columns: 30%;
-  }
-}
-
-.folder-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 13px;
-  border: 1px solid var(--van-border-color);
-  border-radius: 12px;
-  background: var(--van-background-2);
-  text-align: left;
-  scroll-snap-align: start;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.folder-tile:active {
-  border-color: color-mix(in srgb, var(--van-primary-color) 40%, var(--van-border-color));
-  background: color-mix(in srgb, var(--van-primary-color) 7%, var(--van-background-2));
-}
-
-.folder-tile__icon {
-  color: var(--van-primary-color);
-  font-size: 19px;
-  line-height: 1;
-}
-
-.folder-tile__name {
-  overflow: hidden;
-  margin-top: 6px;
-  color: var(--van-text-color);
-  font-size: 14px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.folder-tile__meta {
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 11px;
-}
-
-/* ---------- 文稿列表 ---------- */
-.doc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.doc-item {
-  position: relative;
-}
-
-.doc-card {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 5px;
-  padding: 13px 40px 13px 14px;
-  border: 1px solid var(--van-border-color);
-  border-radius: 12px;
-  background: var(--van-background-2);
-  text-align: left;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.doc-card:active {
-  background: color-mix(in srgb, var(--van-primary-color) 6%, var(--van-background-2));
-}
-
-.doc-card__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.doc-card__title {
-  overflow: hidden;
-  color: var(--van-text-color);
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.doc-card__lock {
-  flex: 0 0 auto;
-  color: #d3a32c;
-  font-size: 13px;
-}
-
-.doc-card__preview {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.doc-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 11px;
-}
-
-.doc-card__folder {
-  overflow: hidden;
-  max-width: 55%;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
-  color: var(--van-primary-color);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.doc-folder::after {
+  margin: 0 4px;
+  color: var(--w-ink-3);
+  content: '·';
 }
 
 .doc-more {
@@ -809,7 +612,7 @@ function subfolderHint(folder: FolderNode): string {
   top: 50%;
   right: 6px;
   display: inline-flex;
-  width: 32px;
+  width: 28px;
   height: 32px;
   align-items: center;
   justify-content: center;
@@ -817,41 +620,13 @@ function subfolderHint(folder: FolderNode): string {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 17px;
+  color: var(--w-ink-3);
+  font-size: 16px;
   transform: translateY(-50%);
 }
 
 .doc-more:active {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
-}
-
-/* ---------- 新建按钮 ---------- */
-.fab {
-  position: fixed;
-  right: 18px;
-  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-  z-index: 6;
-  display: flex;
-  width: 54px;
-  height: 54px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 16px;
-  background: var(--van-primary-color);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--van-primary-color) 32%, transparent);
-  color: #fff;
-  font-size: 24px;
-}
-
-.fab:active {
-  transform: scale(0.95);
-}
-
-.fab:disabled {
-  opacity: 0.6;
+  background: var(--w-rise);
+  color: var(--w-accent);
 }
 </style>

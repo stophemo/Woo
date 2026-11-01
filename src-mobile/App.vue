@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../src/stores/workspace'
 import { useLockStore } from '../src/stores/lock'
 import { useThemeStore, type ThemeMode } from '../src/stores/theme'
 import MobileUpdateNotice from './components/MobileUpdateNotice.vue'
+import MIcon from './components/MIcon.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -124,7 +125,10 @@ onMounted(async () => {
       <MobileUpdateNotice />
       <van-tabbar v-if="appReady && showTabbar" v-model="active" class="mobile-tabbar" safe-area-inset-bottom>
         <van-tabbar-item icon="notes-o" @click="router.push('/')">文稿</van-tabbar-item>
-        <van-tabbar-item icon="edit-o" @click="router.push('/drafts')">草稿</van-tabbar-item>
+        <van-tabbar-item @click="router.push('/drafts')">
+          <template #icon><span class="van-tabbar-item__icon"><MIcon name="pencil" :size="19" /></span></template>
+          草稿
+        </van-tabbar-item>
         <van-tabbar-item icon="user-o" @click="router.push('/settings')">我的</van-tabbar-item>
       </van-tabbar>
     </div>

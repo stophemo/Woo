@@ -310,7 +310,7 @@ async function doUnlock() {
         <span class="nav-title">{{ liveTitle }}</span>
       </template>
       <template #right>
-        <span class="save-chip" :class="`is-${saveState}`">{{ savedLabel }}</span>
+        <span class="save-state" :class="`is-${saveState}`">{{ savedLabel }}</span>
         <button type="button" class="nav-action" aria-label="更多" @click="showMore = true">
           <van-icon name="ellipsis" />
         </button>
@@ -323,8 +323,16 @@ async function doUnlock() {
       <span class="locked-icon"><van-icon name="lock" /></span>
       <h2 class="locked-title">此文稿已加锁</h2>
       <p class="locked-copy">输入密码后即可阅读和编辑</p>
-      <van-field v-model="unlockPwd" type="password" placeholder="密码锁密码" class="locked-field" @keyup.enter="doUnlock" />
-      <van-button type="primary" block class="locked-submit" :loading="unlocking" @click="doUnlock">解锁</van-button>
+      <input
+        v-model="unlockPwd"
+        type="password"
+        class="locked-input"
+        placeholder="密码锁密码"
+        @keyup.enter="doUnlock"
+      />
+      <button type="button" class="locked-submit" :disabled="unlocking" @click="doUnlock">
+        {{ unlocking ? '校验中…' : '解锁' }}
+      </button>
     </div>
 
     <div v-else class="edit-stage">
@@ -349,18 +357,19 @@ async function doUnlock() {
   min-height: 100vh;
   min-height: 100dvh;
   flex-direction: column;
-  background: var(--van-background-2);
+  background: var(--w-canvas);
 }
 
 .edit-nav {
   position: sticky;
   top: 0;
   z-index: 6;
-  backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--w-canvas) 92%, transparent);
+  backdrop-filter: blur(20px);
 }
 
 .edit-nav :deep(.van-nav-bar__content) {
-  height: 52px;
+  height: 50px;
 }
 
 .nav-back,
@@ -374,49 +383,41 @@ async function doUnlock() {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: var(--van-text-color-2);
+  color: var(--w-ink-2);
   font-size: 19px;
 }
 
 .nav-back:active,
 .nav-action:active {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
+  color: var(--w-accent);
 }
 
 .nav-title {
   display: block;
   overflow: hidden;
-  color: var(--van-text-color);
-  font-size: 15px;
-  font-weight: 650;
+  color: var(--w-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.save-chip {
+/* 保存状态只用文字表达，不用胶囊底色 */
+.save-state {
   margin-right: 2px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--van-text-color-2) 10%, transparent);
-  color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 11px;
-  line-height: 1.6;
+  color: var(--w-ink-3);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
 
-.save-chip.is-saved {
-  background: color-mix(in srgb, #18a058 12%, transparent);
-  color: #18a058;
+.save-state.is-pending,
+.save-state.is-saving {
+  color: var(--w-accent);
 }
 
-.save-chip.is-saving {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
-}
-
-.save-chip.is-error {
-  background: color-mix(in srgb, var(--van-danger-color) 12%, transparent);
+.save-state.is-error {
   color: var(--van-danger-color);
 }
 
@@ -439,45 +440,56 @@ async function doUnlock() {
   align-items: center;
   width: min(100%, 420px);
   margin: 0 auto;
-  padding: 64px 24px calc(32px + env(safe-area-inset-bottom, 0px));
+  padding: 72px 26px calc(32px + env(safe-area-inset-bottom, 0px));
 }
 
 .locked-icon {
-  display: flex;
-  width: 54px;
-  height: 54px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, #d3a32c 30%, var(--van-border-color));
-  border-radius: 14px;
-  background: color-mix(in srgb, #d3a32c 10%, var(--van-background-2));
-  color: #d3a32c;
-  font-size: 24px;
+  color: var(--w-accent);
+  font-size: 26px;
 }
 
 .locked-title {
-  margin: 18px 0 0;
-  color: var(--van-text-color);
-  font-size: 18px;
-  font-weight: 650;
+  margin: 16px 0 0;
+  color: var(--w-ink);
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .locked-copy {
-  margin: 6px 0 20px;
-  color: var(--van-text-color-2);
-  font-size: 12px;
+  margin: 6px 0 22px;
+  color: var(--w-ink-2);
+  font-size: 12.5px;
 }
 
-.locked-field {
+.locked-input {
   width: 100%;
-  border: 1px solid var(--van-border-color);
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--w-line-strong);
   border-radius: 10px;
-  background: var(--van-background-2);
+  background: var(--w-canvas);
+  color: var(--w-ink);
+  font-size: 15px;
+  outline: none;
+}
+
+.locked-input:focus {
+  border-color: var(--w-accent);
 }
 
 .locked-submit {
+  width: 100%;
   height: 44px;
   margin-top: 12px;
+  border: 0;
   border-radius: 10px;
+  background: var(--w-accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.locked-submit:disabled {
+  opacity: 0.6;
 }
 </style>

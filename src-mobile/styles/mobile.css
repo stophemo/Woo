@@ -1,3 +1,12 @@
+/* ============================================================
+ * 移动端设计体系（参考 Effie 的视觉语言）
+ *
+ * 规则：
+ * - 浅灰页面底 + 白色分组容器，行与行之间只有一条发丝线，不使用卡片堆叠。
+ * - 只用一种强调色（主题主色）表达结构与状态：分节小标签、图标、选中态、标题层级。
+ * - 正文大行距、大留白；元信息（时间/计数）一律小字号、低对比。
+ * ============================================================ */
+
 :root {
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -17,10 +26,16 @@ body,
 }
 
 html {
+  /* Android WebView 默认会做 text autosizing，把 12-16px 的文字整体放大，
+     导致按 CSS 写好的字号/行高全部失真。显式关闭。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background: #f4f7f8;
 }
 
 body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   min-width: 320px;
   margin: 0;
   padding: 0;
@@ -42,11 +57,23 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ---------- 设计 token ---------- */
 .mobile-app {
+  --w-paper: var(--van-background);
+  --w-canvas: var(--van-background-2);
+  --w-ink: var(--van-text-color);
+  --w-ink-2: var(--van-text-color-2);
+  --w-ink-3: color-mix(in srgb, var(--van-text-color-2) 58%, var(--van-background));
+  --w-accent: var(--van-primary-color);
+  --w-line: color-mix(in srgb, var(--van-text-color) 8%, transparent);
+  --w-line-strong: color-mix(in srgb, var(--van-text-color) 13%, transparent);
+  --w-rise: color-mix(in srgb, var(--van-text-color) 4%, transparent);
+  --w-shadow: 0 1px 2px color-mix(in srgb, var(--van-text-color) 6%, transparent);
+
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--van-background);
-  color: var(--van-text-color);
+  background: var(--w-paper);
+  color: var(--w-ink);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -57,75 +84,221 @@ button {
 }
 
 .page-content.has-tabbar {
-  padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px));
 }
 
-.mobile-page-header {
+/* ---------- 页头：小号分节标签 + 大标题 ---------- */
+.w-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 6px;
+  background: color-mix(in srgb, var(--w-paper) 92%, transparent);
+  backdrop-filter: blur(20px);
+}
+
+.w-head__row {
   display: flex;
-  min-height: calc(72px + env(safe-area-inset-top, 0px));
-  align-items: flex-end;
-  gap: 12px;
-  padding: calc(15px + env(safe-area-inset-top, 0px)) 18px 14px;
-  border-bottom: 1px solid var(--van-border-color);
-  background: color-mix(in srgb, var(--van-background-2) 94%, transparent);
+  align-items: center;
+  gap: 2px;
 }
 
-.mobile-page-header__main {
+.w-head__titles {
   min-width: 0;
   flex: 1;
+  padding: 0 2px;
 }
 
-.mobile-page-header__title {
-  overflow: hidden;
+.w-head__kicker {
+  display: block;
   margin: 0;
-  color: var(--van-text-color);
+  color: var(--w-accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.w-head__title {
+  overflow: hidden;
+  margin: 1px 0 0;
+  color: var(--w-ink);
   font-size: 24px;
   font-weight: 700;
-  line-height: 1.2;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mobile-page-header__meta {
-  margin: 5px 0 0;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.mobile-page-header__actions {
+.w-head__meta {
   display: flex;
-  flex-shrink: 0;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  margin: 5px 0 0;
+  padding: 0 2px;
+  color: var(--w-ink-3);
+  font-size: 11.5px;
 }
 
-.mobile-icon-button {
+.w-icon-btn {
   display: inline-flex;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-  background: var(--van-background-2);
-  color: var(--van-text-color-2);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--w-ink-2);
+  font-size: 19px;
 }
 
-.mobile-icon-button:active {
-  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
-  color: var(--van-primary-color);
+.w-icon-btn:active {
+  background: var(--w-rise);
+  color: var(--w-accent);
 }
 
-.mobile-icon-button .van-icon {
-  font-size: 21px;
+/* ---------- 面包屑（纯文字，无胶囊底色） ---------- */
+.w-crumb {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--w-ink-3);
+  font-size: 11.5px;
 }
 
-.mobile-icon-button.is-primary {
-  border-color: color-mix(in srgb, var(--van-primary-color) 25%, var(--van-border-color));
-  background: color-mix(in srgb, var(--van-primary-color) 12%, var(--van-background-2));
-  color: var(--van-primary-color);
+.w-crumb.is-current {
+  color: var(--w-ink-2);
+  font-weight: 600;
+}
+
+.w-crumb-sep {
+  color: var(--w-ink-3);
+  opacity: 0.7;
+}
+
+/* ---------- 分组容器 + 发丝线行 ---------- */
+.w-section {
+  margin: 13px 12px 0;
+}
+
+.w-section__label {
+  margin: 0 0 7px;
+  padding: 0 6px;
+  color: var(--w-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.w-group {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border-radius: 14px;
+  background: var(--w-canvas);
+  box-shadow: var(--w-shadow), inset 0 0 0 1px var(--w-line);
+  list-style: none;
+}
+
+/* 每个列表项都要是定位上下文，否则行内绝对定位的操作按钮会逃到页面层级 */
+.w-group > li {
+  position: relative;
+}
+
+.w-group > li + li::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 53px;
+  height: 1px;
+  background: var(--w-line);
+  content: '';
+}
+
+.w-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.w-row:active {
+  background: var(--w-rise);
+}
+
+.w-row__icon {
+  display: inline-flex;
+  width: 21px;
+  flex: 0 0 21px;
+  align-items: center;
+  justify-content: center;
+  color: var(--w-accent);
+  font-size: 19px;
+  opacity: 0.9;
+}
+
+.w-row__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.w-row__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--w-ink);
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.w-row__sub {
+  overflow: hidden;
+  color: var(--w-ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.w-row__side {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding-left: 6px;
+  color: var(--w-ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.w-row__chev {
+  flex: 0 0 auto;
+  color: var(--w-ink-3);
+  font-size: 15px;
+}
+
+.w-empty {
+  padding: 64px 0 0;
 }
 
 .mobile-loading {
@@ -134,71 +307,43 @@ button {
   padding: 56px 0;
 }
 
-.mobile-empty-copy {
-  color: var(--van-text-color-2);
-  font-size: 13px;
-}
-
-/* Vant is kept as the interaction layer; these rules make it read as one app. */
-.van-nav-bar {
-  padding-top: env(safe-area-inset-top, 0px);
-  border-bottom: 1px solid var(--van-border-color);
-  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
-}
-
-.van-nav-bar::after {
-  display: none;
-}
-
-.van-nav-bar__content {
+/* ---------- 主操作：圆形浮动按钮 ---------- */
+.w-fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  z-index: 6;
+  display: flex;
+  width: 54px;
   height: 54px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--w-accent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--w-accent) 34%, transparent);
+  color: #fff;
+  font-size: 22px;
 }
 
-.van-nav-bar__title {
-  max-width: 48%;
-  color: var(--van-text-color);
-  font-size: 16px;
-  font-weight: 650;
+.w-fab:active {
+  transform: scale(0.94);
 }
 
-.van-nav-bar__text,
-.van-nav-bar .van-icon {
-  color: var(--van-text-color-2);
+.w-fab:disabled {
+  opacity: 0.55;
 }
 
-.van-tabs__nav {
-  background: transparent;
-}
-
-.van-tabs__wrap {
-  height: 48px;
-}
-
-.van-tabs__line {
-  width: 20px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--van-primary-color);
-}
-
-.van-tab {
-  color: var(--van-text-color-2);
-  font-size: 13px;
-}
-
-.van-tab--active {
-  color: var(--van-text-color);
-  font-weight: 650;
-}
-
+/* ---------- 底部导航：无胶囊，仅强调色 ---------- */
 .mobile-tabbar.van-tabbar {
+  --van-tabbar-item-active-background: transparent;
   box-sizing: border-box;
-  height: calc(62px + env(safe-area-inset-bottom, 0px));
-  padding: 5px max(22px, env(safe-area-inset-left, 0px)) env(safe-area-inset-bottom, 0px) max(22px, env(safe-area-inset-right, 0px));
-  border-top: 1px solid var(--van-border-color);
-  background: color-mix(in srgb, var(--van-background-2) 95%, transparent);
-  box-shadow: 0 -8px 24px rgba(18, 37, 45, 0.04);
-  backdrop-filter: blur(18px);
+  height: calc(58px + env(safe-area-inset-bottom, 0px));
+  padding: 4px max(16px, env(safe-area-inset-left, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-right, 0px));
+  border-top: 1px solid var(--w-line);
+  background: color-mix(in srgb, var(--w-paper) 96%, transparent);
+  backdrop-filter: blur(20px);
 }
 
 .mobile-tabbar.van-tabbar::after {
@@ -208,75 +353,149 @@ button {
 .mobile-tabbar .van-tabbar-item {
   min-width: 0;
   flex: 1 1 0;
-  border-radius: 7px;
   background: transparent;
-  color: var(--van-text-color-2);
-  font-size: 11px;
+  color: var(--w-ink-3);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
 }
 
 .mobile-tabbar .van-tabbar-item--active {
-  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
-  color: var(--van-primary-color);
+  background: transparent;
+  color: var(--w-accent);
+  font-weight: 600;
 }
 
 .mobile-tabbar .van-tabbar-item__icon {
-  margin-bottom: 3px;
-  font-size: 21px;
+  margin-bottom: 2px;
+  font-size: 19px;
+}
+
+/* ---------- Vant 组件向「纸面」收敛 ---------- */
+.van-nav-bar {
+  padding-top: env(safe-area-inset-top, 0px);
+  background: color-mix(in srgb, var(--w-canvas) 94%, transparent);
+}
+
+.van-nav-bar::after {
+  display: none;
+}
+
+.van-nav-bar__content {
+  height: 50px;
+}
+
+.van-nav-bar__title {
+  max-width: 52%;
+  color: var(--w-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.van-nav-bar__text,
+.van-nav-bar .van-icon {
+  color: var(--w-ink-2);
 }
 
 .van-cell-group--inset {
-  margin: 0 14px;
+  margin: 0 12px;
   overflow: hidden;
-  border: 1px solid var(--van-border-color);
-  border-radius: 8px;
-  background: var(--van-background-2);
-  box-shadow: 0 4px 18px rgba(18, 37, 45, 0.035);
+  border-radius: 14px;
+  background: var(--w-canvas);
+  box-shadow: var(--w-shadow);
 }
 
 .van-cell-group__title {
-  padding: 22px 18px 8px;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  font-weight: 650;
+  padding: 20px 22px 7px;
+  color: var(--w-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .van-cell {
-  background: var(--van-background-2);
+  background: var(--w-canvas);
+  color: var(--w-ink);
 }
 
 .van-cell::after {
-  border-color: var(--van-border-color);
+  right: 14px;
+  left: 56px;
+  border-color: var(--w-line);
+}
+
+.van-cell__title {
+  font-size: 15px;
+}
+
+.van-cell__label {
+  color: var(--w-ink-2);
+  font-size: 12px;
+}
+
+.van-cell__value .van-icon,
+.van-cell__right-icon {
+  color: var(--w-ink-3);
 }
 
 .van-dialog,
 .van-popup,
 .van-action-sheet {
-  background: var(--van-background-2);
+  background: var(--w-canvas);
 }
 
 .van-dialog {
-  width: min(88vw, 360px);
-  border-radius: 8px;
+  width: min(86vw, 340px);
+  border-radius: 14px;
 }
 
 .van-action-sheet {
-  border-radius: 8px 8px 0 0;
+  border-radius: 16px 16px 0 0;
+}
+
+.van-action-sheet__item {
+  color: var(--w-ink);
+  font-size: 16px;
+}
+
+.van-action-sheet__cancel {
+  color: var(--w-ink-2);
+}
+
+.van-action-sheet__gap {
+  background: color-mix(in srgb, var(--w-ink) 5%, transparent);
 }
 
 .van-field,
 .van-search,
 .van-search__content {
-  background: var(--van-background-2);
+  background: var(--w-canvas);
+}
+
+.van-search__content {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--w-line);
 }
 
 .van-toast {
-  border-radius: 7px;
+  border-radius: 10px;
 }
 
 .van-empty {
-  padding-top: 56px;
+  padding-top: 64px;
 }
 
+.van-empty__description {
+  color: var(--w-ink-3);
+  font-size: 12.5px;
+}
+
+.van-button--primary {
+  background: var(--w-accent);
+  border-color: var(--w-accent);
+}
+
+/* ---------- 主题底色 ---------- */
 html[data-theme='dark'],
 html[data-theme='ink'],
 html[data-theme='graphite'],
@@ -305,7 +524,6 @@ html[data-theme='deepsea'] body { background: #0f181b; }
   .mobile-app {
     width: min(100%, 720px);
     margin: 0 auto;
-    border-inline: 1px solid var(--van-border-color);
   }
 }
 

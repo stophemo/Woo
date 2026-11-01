@@ -6,6 +6,7 @@
 import { computed } from 'vue'
 import type { FolderNode } from '../../src/types/folder'
 import { useWorkspaceStore } from '../../src/stores/workspace'
+import MIcon from './MIcon.vue'
 
 const props = defineProps<{ show: boolean; title?: string }>()
 const emit = defineEmits<{
@@ -59,28 +60,29 @@ function pick(folder: FlatFolder) {
         </button>
       </div>
 
-      <div v-if="flatFolders.length" class="picker-list">
-        <button
-          v-for="folder in flatFolders"
-          :key="folder.id"
-          type="button"
-          class="picker-item"
-          :style="{ paddingLeft: `${14 + folder.depth * 16}px` }"
-          @click="pick(folder)"
-        >
-          <van-icon name="folder-o" class="picker-icon" />
-          <span class="picker-name">{{ folder.name }}</span>
-        </button>
-      </div>
+      <ul v-if="flatFolders.length" class="w-group picker-list">
+        <li v-for="folder in flatFolders" :key="folder.id">
+          <button type="button" class="w-row" @click="pick(folder)">
+            <span class="w-row__icon" :style="{ marginLeft: `${folder.depth * 14}px` }">
+              <MIcon name="folder" :size="17" />
+            </span>
+            <span class="w-row__main">
+              <span class="w-row__title">{{ folder.name }}</span>
+            </span>
+            <van-icon name="arrow" class="w-row__chev" />
+          </button>
+        </li>
+      </ul>
 
-      <van-empty v-else description="还没有目录，先去首页新建一个" image-size="72" />
+      <van-empty v-else description="还没有目录，先去首页新建一个" image-size="64" />
     </div>
   </van-popup>
 </template>
 
 <style scoped>
 .picker {
-  padding: 14px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 14px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--w-paper);
 }
 
 .picker-head {
@@ -88,14 +90,14 @@ function pick(folder: FlatFolder) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 16px 8px;
+  padding: 0 16px 10px;
 }
 
 .picker-head h3 {
   margin: 0;
-  color: var(--van-text-color);
+  color: var(--w-ink);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .picker-close {
@@ -108,43 +110,13 @@ function pick(folder: FlatFolder) {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--van-text-color-2);
+  color: var(--w-ink-2);
   font-size: 17px;
 }
 
 .picker-list {
   max-height: 52vh;
   overflow-y: auto;
-  padding: 4px 8px;
-}
-
-.picker-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  text-align: left;
-}
-
-.picker-item:active {
-  background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
-}
-
-.picker-icon {
-  flex: 0 0 auto;
-  color: var(--van-primary-color);
-  font-size: 17px;
-}
-
-.picker-name {
-  overflow: hidden;
-  color: var(--van-text-color);
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0 12px;
 }
 </style>

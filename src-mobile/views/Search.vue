@@ -29,55 +29,40 @@ function openNote(id: string) {
   router.push(`/note/${id}`)
 }
 
-function stripHtml(html: string) {
-  return html.replace(/<[^>]+>/g, '').slice(0, 60)
-}
 </script>
 
 <template>
   <div class="search-page">
-    <van-nav-bar title="搜索" left-text="返回" left-arrow @click-left="router.back()" />
-    <div class="search-field-wrap">
+    <van-nav-bar title="搜索" left-arrow @click-left="router.back()" />
+
+    <div class="search-field">
       <van-search
         v-model="keyword"
-        placeholder="搜索标题或正文…"
-        show-action
+        placeholder="搜索标题或正文"
         autofocus
         @update:model-value="onInput"
         @search="runSearch"
-        @cancel="router.back()"
       />
     </div>
 
-    <div v-if="searched && store.currentFolderDocuments.length" class="search-results">
-      <p class="result-count">找到 {{ store.currentFolderDocuments.length }} 篇文稿</p>
-      <van-cell
-        v-for="d in store.currentFolderDocuments"
-        :key="d.id"
-        class="result-cell"
-        clickable
-        @click="openNote(d.id)"
-      >
-        <template #title>
-          <div class="result-heading">
-            <span class="result-dot" aria-hidden="true"></span>
-            <span>{{ d.title || '无标题' }}</span>
-          </div>
-        </template>
-        <template #label>
-          <span class="result-preview">{{ stripHtml(d.content || '') || '暂无正文' }}</span>
-        </template>
-      </van-cell>
-    </div>
+    <template v-if="searched">
+      <p class="hint">找到 {{ store.currentFolderDocuments.length }} 篇</p>
+      <ul v-if="store.currentFolderDocuments.length" class="w-group">
+        <li v-for="d in store.currentFolderDocuments" :key="d.id">
+          <button type="button" class="w-row" @click="openNote(d.id)">
+            <span class="w-row__icon"><van-icon name="search" /></span>
+            <span class="w-row__main">
+              <span class="w-row__title">{{ d.title || '无标题' }}</span>
+              <span class="w-row__sub">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
+            </span>
+            <van-icon name="arrow" class="w-row__chev" />
+          </button>
+        </li>
+      </ul>
+      <van-empty v-else description="没有匹配的笔记" image-size="72" />
+    </template>
 
-    <van-empty
-      v-if="searched && !store.currentFolderDocuments.length"
-      description="没有匹配的笔记"
-    />
-    <div v-if="!searched" class="hint">
-      <van-icon name="search" />
-      <span>输入关键词开始搜索</span>
-    </div>
+    <p v-else class="hint">输入关键词开始搜索</p>
   </div>
 </template>
 
@@ -85,95 +70,20 @@ function stripHtml(html: string) {
 .search-page {
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--van-background);
+  background: var(--w-paper);
 }
 
-.search-field-wrap {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--van-border-color);
-  background: var(--van-background-2);
-}
-
-.search-field-wrap :deep(.van-search) {
-  padding: 0;
-}
-
-.search-field-wrap :deep(.van-search__content) {
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--van-background) 75%, var(--van-background-2));
-}
-
-.search-results {
-  padding: 0 12px 18px;
-}
-
-.result-count {
-  margin: 0;
-  padding: 15px 3px 9px;
-  color: var(--van-text-color-2);
-  font-size: 11px;
-}
-
-.result-cell {
-  margin-bottom: 8px;
-  padding: 14px 15px;
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-}
-
-.result-cell::after {
-  display: none;
-}
-
-.result-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: var(--van-text-color);
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.result-heading span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.result-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  background: var(--van-primary-color);
-}
-
-.result-preview {
-  display: block;
-  overflow: hidden;
-  margin: 7px 0 0 15px;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.search-field {
+  padding: 10px 8px 2px;
 }
 
 .hint {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-  color: var(--van-text-color-2);
-  margin-top: 72px;
-  font-size: 13px;
+  margin: 14px 20px 8px;
+  color: var(--w-ink-3);
+  font-size: 11.5px;
 }
 
-.hint .van-icon {
-  font-size: 28px;
-  opacity: 0.55;
+.w-group {
+  margin: 0 12px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 </style>

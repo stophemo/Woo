@@ -38,6 +38,18 @@ async function onHardDelete(d: { id: string; title?: string }) {
   } catch { /* 取消 */ }
 }
 
+function formatTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleDateString('zh-CN', date.getFullYear() === now.getFullYear()
+    ? { month: 'numeric', day: 'numeric' }
+    : { year: 'numeric', month: 'numeric', day: 'numeric' })
+}
+
 async function onEmpty() {
   if (!store.currentFolderDocuments.length) return
   try {
@@ -56,34 +68,38 @@ async function onEmpty() {
   <div class="trash-page">
     <van-nav-bar title="回收站" left-text="返回" left-arrow @click-left="router.back()">
       <template #right>
-        <span class="empty-btn" @click="onEmpty">清空</span>
+        <span class="nav-text" @click="onEmpty">清空</span>
       </template>
     </van-nav-bar>
 
     <van-loading v-if="loading" class="mobile-loading" />
 
-    <div v-else-if="store.currentFolderDocuments.length" class="trash-list">
-      <van-swipe-cell v-for="d in store.currentFolderDocuments" :key="d.id" class="trash-swipe-cell">
-        <van-cell class="trash-cell">
-          <template #title>
-            <div class="trash-heading">
-              <van-icon name="delete-o" />
-              <span>{{ d.title || '无标题' }}</span>
+    <template v-else-if="store.currentFolderDocuments.length">
+      <p class="hint">左滑可恢复或彻底删除</p>
+      <ul class="w-group">
+        <li v-for="d in store.currentFolderDocuments" :key="d.id">
+          <van-swipe-cell>
+            <div class="w-row">
+              <span class="w-row__icon"><van-icon name="delete-o" /></span>
+              <span class="w-row__main">
+                <span class="w-row__title">{{ d.title || '无标题' }}</span>
+                <span class="w-row__sub">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
+              </span>
+              <span class="w-row__side">
+                <time>{{ formatTime(d.updatedAt) }}</time>
+                <span v-if="d.folderName" class="src">{{ d.folderName }}</span>
+              </span>
             </div>
-          </template>
-          <template #label>
-            <span class="preview">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
-            <span v-if="d.folderName" class="src">原位置 · {{ d.folderName }}</span>
-          </template>
-        </van-cell>
-        <template #right>
-          <van-button square type="primary" text="恢复" class="sw" @click="onRestore(d)" />
-          <van-button square type="danger" text="彻底删除" class="sw" @click="onHardDelete(d)" />
-        </template>
-      </van-swipe-cell>
-    </div>
+            <template #right>
+              <button type="button" class="swipe-btn" @click="onRestore(d)">恢复</button>
+              <button type="button" class="swipe-btn is-danger" @click="onHardDelete(d)">删除</button>
+            </template>
+          </van-swipe-cell>
+        </li>
+      </ul>
+    </template>
 
-    <van-empty v-else description="回收站为空" />
+    <van-empty v-else description="回收站为空" image-size="72" />
   </div>
 </template>
 
@@ -91,75 +107,40 @@ async function onEmpty() {
 .trash-page {
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--van-background);
+  background: var(--w-paper);
 }
 
-.empty-btn {
-  color: var(--van-danger-color);
-  font-size: 13px;
+.nav-text {
+  color: var(--w-accent);
+  font-size: 14px;
 }
 
-.trash-list {
-  padding: 12px;
+.hint {
+  margin: 14px 20px 8px;
+  color: var(--w-ink-3);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
 }
 
-.trash-swipe-cell {
-  margin-bottom: 8px;
-  overflow: hidden;
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-  background: var(--van-background-2);
-}
-
-.trash-cell {
-  min-height: 106px;
-  padding: 14px 15px;
-}
-
-.trash-cell::after {
-  display: none;
-}
-
-.trash-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: var(--van-text-color);
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.trash-heading .van-icon {
-  flex-shrink: 0;
-  color: var(--van-text-color-3, var(--van-text-color-2));
-}
-
-.trash-heading span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview {
-  display: block;
-  overflow: hidden;
-  margin: 7px 0 0 23px;
-  color: var(--van-text-color-2);
-  font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.w-group {
+  margin: 0 12px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 
 .src {
-  display: block;
-  margin: 8px 0 0 23px;
-  color: var(--van-text-color-3, var(--van-text-color-2));
+  color: var(--w-ink-3);
   font-size: 10px;
 }
 
-.sw {
+.swipe-btn {
   height: 100%;
+  padding: 0 18px;
+  border: 0;
+  background: var(--w-accent);
+  color: #fff;
+  font-size: 14px;
+}
+
+.swipe-btn.is-danger {
+  background: var(--van-danger-color);
 }
 </style>
