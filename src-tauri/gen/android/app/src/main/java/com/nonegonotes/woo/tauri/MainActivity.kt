@@ -110,13 +110,25 @@ class MainActivity : TauriActivity() {
    * 只能单次取值，因此靠 insets 变化与 onResume 触发，避免常驻轮询。
    */
   private fun syncChromeColors() {
+    // 取「状态栏正下方实际显示的颜色」：不同页面底色不同（列表是纸面色、
+    // 编辑器是画布色），统一取纸面色会留一条色差。
     val script = """
       (function(){
-        var root = document.documentElement;
-        var theme = root.getAttribute('data-theme') || 'light';
-        var host = document.querySelector('.van-config-provider') || root;
-        var bg = getComputedStyle(host).getPropertyValue('--van-background').trim();
-        if (!bg) { bg = getComputedStyle(document.body).backgroundColor || ''; }
+        function bgOf(el){
+          while (el) {
+            var c = getComputedStyle(el).backgroundColor;
+            if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c;
+            el = el.parentElement;
+          }
+          return getComputedStyle(document.body).backgroundColor || '';
+        }
+        var theme = document.documentElement.getAttribute('data-theme') || 'light';
+        var probe = document.elementFromPoint(Math.round(window.innerWidth / 2), 4);
+        var bg = probe ? bgOf(probe) : '';
+        if (!bg) {
+          var host = document.querySelector('.van-config-provider') || document.documentElement;
+          bg = getComputedStyle(host).getPropertyValue('--van-background').trim();
+        }
         return theme + '|' + bg;
       })()
     """.trimIndent().replace("\n", "")
