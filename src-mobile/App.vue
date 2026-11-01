@@ -125,7 +125,7 @@ onMounted(async () => {
       <van-tabbar v-if="appReady && showTabbar" v-model="active" class="mobile-tabbar" safe-area-inset-bottom>
         <van-tabbar-item icon="notes-o" @click="router.push('/')">文稿</van-tabbar-item>
         <van-tabbar-item icon="edit-o" @click="router.push('/drafts')">草稿</van-tabbar-item>
-        <van-tabbar-item icon="setting-o" @click="router.push('/settings')">设置</van-tabbar-item>
+        <van-tabbar-item icon="user-o" @click="router.push('/settings')">我的</van-tabbar-item>
       </van-tabbar>
     </div>
   </van-config-provider>

@@ -3,10 +3,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
+import type { Document } from '../../src/types/document'
+import FolderPicker from '../components/FolderPicker.vue'
 
 const router = useRouter()
 const store = useWorkspaceStore()
 const loading = ref(true)
+const showFolderPicker = ref(false)
+const activeDraft = ref<Document | null>(null)
 
 // 草稿箱 = 本地草稿 + 后端孤儿（无目录/目录已删）
 const drafts = computed(() => store.currentFolderDocuments)
@@ -35,6 +39,31 @@ async function newDraft() {
 function formatTime(ts: string) {
   const d = new Date(ts)
   return d.toLocaleString('zh-CN', { hour12: false })
+}
+
+function openPicker(draft: Document) {
+  activeDraft.value = draft
+  showFolderPicker.value = true
+}
+
+async function onFolderPicked(folderId: string) {
+  const draft = activeDraft.value
+  if (!draft) return
+  const moved = await store.moveDocument(draft.id, folderId)
+  if (!moved) {
+    showToast(store.error || '移动失败')
+    return
+  }
+  showToast('已归档到目录')
+  await load()
+}
+
+async function load() {
+  try {
+    await store.openDraftBox()
+  } catch {
+    showToast('加载草稿失败')
+  }
 }
 </script>
 
@@ -81,10 +110,27 @@ function formatTime(ts: string) {
             <time class="draft-time">{{ formatTime(d.updatedAt) }}</time>
           </span>
         </template>
+        <template #right>
+          <button
+            type="button"
+            class="draft-move"
+            title="归档到目录"
+            aria-label="归档到目录"
+            @click.stop="openPicker(d)"
+          >
+            <van-icon name="folder-o" />
+          </button>
+        </template>
       </van-cell>
     </div>
 
     <van-empty v-else description="暂无草稿" />
+
+    <FolderPicker
+      v-model:show="showFolderPicker"
+      title="归档到目录"
+      @select="onFolderPicked"
+    />
   </div>
 </template>
 
@@ -166,5 +212,23 @@ function formatTime(ts: string) {
   color: var(--van-text-color-3, var(--van-text-color-2));
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.draft-move {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--van-primary-color);
+  font-size: 18px;
+}
+
+.draft-move:active {
+  background: color-mix(in srgb, var(--van-primary-color) 14%, transparent);
 }
 </style>

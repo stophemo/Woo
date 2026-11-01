@@ -1,73 +1,170 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+/**
+ * 移动端首页：层级目录导航 + 文稿列表。
+ *
+ * 设计取舍（针对旧版可用性问题）：
+ * - 旧版把根目录做成横向 tab，二级及更深目录在移动端完全无法触达；
+ *   现在改为「下钻 + 面包屑」，任意层级都能进出。
+ * - 旧版必须先进某个目录才能新建文稿；现在右下角一键新建，
+ *   在根视图新建直接落到草稿箱，不再先弹名称输入框。
+ * - 目录与文稿分成两个明确的区块（目录在前、文稿在后），
+ *   避免旧版“全部文稿”里目录/文稿混杂难以扫读。
+ */
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
+import type { FolderNode } from '../../src/types/folder'
+import type { Document } from '../../src/types/document'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
+import FolderPicker from '../components/FolderPicker.vue'
 
 const router = useRouter()
 const store = useWorkspaceStore()
 const lockStore = useLockStore()
 
-// 0 = 全部；>=1 对应 store.folders[activeTab-1]（移动端只做根目录，扁平 tab）
-const activeTab = ref(0)
+const currentFolderId = ref<string | null>(null)
+const path = ref<FolderNode[]>([])
 const refreshing = ref(false)
-const showCreateDoc = ref(false)
-const newTitle = ref('')
+const loading = ref(true)
+const creating = ref(false)
 
-// 文件夹管理
-const showFolderSheet = ref(false)
-const showNameDialog = ref(false)
-const nameMode = ref<'newRoot' | 'rename'>('newRoot')
-const nameInput = ref('')
+const currentNode = computed<FolderNode | null>(() =>
+  currentFolderId.value ? store.findFolderById(store.folders, currentFolderId.value) : null,
+)
+const childFolders = computed<FolderNode[]>(() =>
+  currentNode.value ? currentNode.value.children : store.folders,
+)
+const documents = computed<Document[]>(() => store.currentFolderDocuments)
+const viewTitle = computed(() => currentNode.value?.name || '全部文稿')
+const emptyDescription = computed(() =>
+  currentFolderId.value ? '这个目录还没有文稿' : '还没有任何文稿，点右下角开始写',
+)
 
-const topFolders = computed(() => store.folders)
-const documents = computed(() => store.currentFolderDocuments)
-const currentRealFolderId = computed<string | null>(() => {
-  const f = activeTab.value >= 1 ? topFolders.value[activeTab.value - 1] : null
-  return f ? f.id : null
-})
-const currentFolderName = computed(() => {
-  const f = activeTab.value >= 1 ? topFolders.value[activeTab.value - 1] : null
-  return f ? f.name : ''
-})
-const currentViewName = computed(() => currentFolderName.value || '全部文稿')
+// ------- 加载 -------
+async function loadRoot() {
+  currentFolderId.value = null
+  path.value = []
+  await store.browseAllDocuments()
+}
 
-const folderActions = computed(() => {
-  const acts: { name: string; key: string; color?: string }[] = [
-    { name: '新建文件夹', key: 'newRoot' },
-  ]
-  if (currentRealFolderId.value) {
-    acts.push({ name: `重命名「${currentFolderName.value}」`, key: 'rename' })
-    acts.push({ name: `删除「${currentFolderName.value}」`, key: 'delete', color: '#ee0a24' })
-  }
-  return acts
-})
+async function enterFolder(folder: FolderNode) {
+  currentFolderId.value = folder.id
+  // 面包屑：把当前路径栈中该目录及其父级保留下来
+  const existingIndex = path.value.findIndex((node) => node.id === folder.id)
+  path.value = existingIndex >= 0 ? path.value.slice(0, existingIndex + 1) : [...path.value, folder]
+  // 压一条同 URL 的历史记录，让 Android 物理返回键先“退一层”而不是直接退出应用。
+  window.history.pushState({ wooFolder: folder.id }, '')
+  await store.browseFolder(folder.id)
+}
 
-onMounted(async () => {
-  try {
-    await store.bootstrap()
-  } catch {
-    showToast('加载文件夹失败')
-  }
-  await store.openAllDocuments()
-})
-
-async function onTabChange(index: number) {
-  activeTab.value = index
-  if (index === 0) {
-    await store.openAllDocuments()
-  } else {
-    const folder = topFolders.value[index - 1]
-    if (folder) await store.selectFolder(folder.id)
+/** Android 物理返回键：在目录内部时逐层返回，到根级后交还给系统（退出应用）。 */
+function onPopState() {
+  if (path.value.length) {
+    void goUp()
   }
 }
 
-async function onRefresh() {
+async function goToLevel(index: number) {
+  // index = -1 表示回到根
+  if (index < 0) {
+    await loadRoot()
+    return
+  }
+  const target = path.value[index]
+  if (!target) return
+  path.value = path.value.slice(0, index + 1)
+  currentFolderId.value = target.id
+  await store.browseFolder(target.id)
+}
+
+async function goUp() {
+  await goToLevel(path.value.length - 2)
+}
+
+async function refresh() {
   try {
-    await onTabChange(activeTab.value)
+    await store.bootstrap()
+    if (currentFolderId.value) {
+      const stillExists = store.findFolderById(store.folders, currentFolderId.value)
+      if (!stillExists) {
+        await loadRoot()
+        return
+      }
+      // 目录树刷新后节点对象已变，重建面包屑
+      path.value = buildPath(store.folders, currentFolderId.value) || []
+      await store.browseFolder(currentFolderId.value)
+    } else {
+      await store.browseAllDocuments()
+    }
+  } catch {
+    showToast('刷新失败')
   } finally {
     refreshing.value = false
+  }
+}
+
+function buildPath(nodes: FolderNode[], targetId: string, trail: FolderNode[] = []): FolderNode[] | null {
+  for (const node of nodes) {
+    const next = [...trail, node]
+    if (node.id === targetId) return next
+    const found = buildPath(node.children, targetId, next)
+    if (found) return found
+  }
+  return null
+}
+
+onMounted(async () => {
+  window.addEventListener('popstate', onPopState)
+  try {
+    await store.bootstrap()
+  } catch {
+    showToast('加载目录失败')
+  }
+  // 保留上次浏览的目录（桌面端与移动端共享 woo:lastView）
+  const lastView = localStorage.getItem('woo:lastView')
+  if (lastView && !lastView.startsWith('__')) {
+    const node = store.findFolderById(store.folders, lastView)
+    if (node) {
+      currentFolderId.value = node.id
+      path.value = buildPath(store.folders, node.id) || []
+      await store.browseFolder(node.id)
+      loading.value = false
+      return
+    }
+  }
+  await loadRoot()
+  loading.value = false
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPopState)
+})
+
+// ------- 新建 -------
+async function createNote() {
+  if (creating.value) return
+  creating.value = true
+  try {
+    if (currentFolderId.value) {
+      const doc = await store.createDocument(currentFolderId.value)
+      if (doc) {
+        router.push(`/note/${doc.id}`)
+        return
+      }
+      showToast(store.error || '创建失败')
+      return
+    }
+    // 根视图没有归属目录 → 建草稿，稍后可在编辑器里归入目录
+    store.createNewDocument()
+    const id = store.selectedDocumentId
+    if (id) {
+      router.push(`/note/${id}`)
+    } else {
+      showToast('创建失败')
+    }
+  } finally {
+    creating.value = false
   }
 }
 
@@ -75,408 +172,686 @@ function openNote(id: string) {
   router.push(`/note/${id}`)
 }
 
-async function createDocument() {
-  const fid = currentRealFolderId.value
-  if (!newTitle.value.trim() || !fid) return
-  const doc = await store.createDocument(fid, newTitle.value.trim())
-  newTitle.value = ''
-  showCreateDoc.value = false
-  if (doc) {
-    showToast('创建成功')
-    router.push(`/note/${doc.id}`)
-  } else {
-    showToast('创建失败')
+// ------- 文稿操作 -------
+const showDocActions = ref(false)
+const activeDoc = ref<Document | null>(null)
+const showFolderPicker = ref(false)
+
+function openDocMenu(doc: Document) {
+  activeDoc.value = doc
+  showDocActions.value = true
+}
+
+async function onDocAction(action: { key: string }) {
+  const doc = activeDoc.value
+  showDocActions.value = false
+  if (!doc) return
+
+  if (action.key === 'lock') {
+    if (doc.isLocked) {
+      const password = await promptPassword()
+      if (password === null) return
+      const ok = await lockStore.verify(password)
+      if (!ok) {
+        showToast('密码错误')
+        return
+      }
+      await lockStore.unlockDocument(doc.id)
+      showToast('已解锁')
+    } else {
+      if (!lockStore.hasPassword) {
+        showToast('请先在「我的 → 密码锁」中设置密码')
+        return
+      }
+      await lockStore.lockDocument(doc.id)
+      showToast('已加锁')
+    }
+    await refreshCurrent()
+    return
+  }
+
+  if (action.key === 'move') {
+    showFolderPicker.value = true
+    return
+  }
+
+  if (action.key === 'delete') {
+    try {
+      await showConfirmDialog({
+        title: '删除文稿',
+        message: `「${doc.title || '无标题'}」将移入回收站`,
+      })
+      await store.deleteDocument(doc.id)
+      showToast('已移入回收站')
+      await refreshCurrent()
+    } catch { /* 取消 */ }
   }
 }
 
-async function onDeleteDoc(d: { id: string; title?: string }) {
-  try {
-    await showConfirmDialog({ title: '删除笔记', message: `确定删除「${d.title || '无标题'}」？` })
-    await store.deleteDocument(d.id)
-    showToast('已移入回收站')
-  } catch { /* 取消 */ }
+async function onFolderPicked(folderId: string) {
+  const doc = activeDoc.value
+  if (!doc) return
+  const moved = await store.moveDocument(doc.id, folderId)
+  if (!moved) {
+    showToast(store.error || '移动失败')
+    return
+  }
+  showToast('已移动')
+  await refreshCurrent()
 }
 
-// ------- 加锁/解锁 -------
+async function refreshCurrent() {
+  if (currentFolderId.value) {
+    await store.browseFolder(currentFolderId.value)
+  } else {
+    await store.browseAllDocuments()
+  }
+}
+
+function docActions(doc: Document): { name: string; key: string; color?: string }[] {
+  return [
+    { name: '移动到目录', key: 'move' },
+    { name: doc.isLocked ? '解除锁定' : '加锁保护', key: 'lock' },
+    { name: '移入回收站', key: 'delete', color: '#ee0a24' },
+  ]
+}
+
+// ------- 目录操作 -------
+const showFolderSheet = ref(false)
+const activeFolder = ref<FolderNode | null>(null)
+const showNameDialog = ref(false)
+const nameInput = ref('')
+const nameTarget = ref<'root' | 'child' | 'rename'>('root')
+
+function openFolderMenu(folder: FolderNode) {
+  activeFolder.value = folder
+  showFolderSheet.value = true
+}
+
+async function onFolderAction(action: { key: string }) {
+  const folder = activeFolder.value
+  showFolderSheet.value = false
+  if (!folder) return
+
+  if (action.key === 'enter') {
+    await enterFolder(folder)
+  } else if (action.key === 'rename') {
+    nameTarget.value = 'rename'
+    nameInput.value = folder.name
+    showNameDialog.value = true
+  } else if (action.key === 'child') {
+    nameTarget.value = 'child'
+    nameInput.value = ''
+    showNameDialog.value = true
+  } else if (action.key === 'delete') {
+    try {
+      await showConfirmDialog({
+        title: '删除目录',
+        message: `「${folder.name}」中的文稿会一起移入回收站`,
+      })
+      await store.deleteFolder(folder)
+      if (path.value.some((node) => node.id === folder.id)) {
+        await loadRoot()
+      } else {
+        await refreshCurrent()
+      }
+      showToast('已删除')
+    } catch { /* 取消 */ }
+  }
+}
+
+function folderActionsMenu(): { name: string; key: string; color?: string }[] {
+  return [
+    { name: '进入目录', key: 'enter' },
+    { name: '新建子目录', key: 'child' },
+    { name: '重命名', key: 'rename' },
+    { name: '删除目录', key: 'delete', color: '#ee0a24' },
+  ]
+}
+
+function openCreateFolder() {
+  nameTarget.value = currentFolderId.value ? 'child' : 'root'
+  nameInput.value = ''
+  showNameDialog.value = true
+}
+
+async function submitFolderName() {
+  const name = nameInput.value.trim()
+  if (!name) return
+
+  if (nameTarget.value === 'rename' && activeFolder.value) {
+    await store.renameFolder(activeFolder.value, name)
+    showToast('已重命名')
+    await refresh()
+    return
+  }
+
+  if (nameTarget.value === 'child' && currentNode.value) {
+    await store.createChildFolder(currentNode.value)
+  } else {
+    await store.createRootFolder()
+  }
+  const createdId = store.editingFolderId
+  const created = createdId ? store.findFolderById(store.folders, createdId) : null
+  if (created) {
+    await store.renameFolder(created, name)
+  }
+  store.clearEditingFolder()
+  showToast('已创建')
+  await refresh()
+}
+
+function validateFolderName(action: string): boolean {
+  if (action === 'confirm' && !nameInput.value.trim()) {
+    showToast('请输入名称')
+    return false
+  }
+  return true
+}
+
+// ------- 解锁 -------
 const showUnlock = ref(false)
 const unlockPwd = ref('')
-let unlockResolve: ((v: string | null) => void) | null = null
+let unlockResolve: ((value: string | null) => void) | null = null
 
 function promptPassword(): Promise<string | null> {
   unlockPwd.value = ''
   showUnlock.value = true
-  return new Promise((r) => { unlockResolve = r })
+  return new Promise((resolve) => { unlockResolve = resolve })
 }
+
 function unlockConfirm() {
   showUnlock.value = false
   unlockResolve?.(unlockPwd.value)
   unlockResolve = null
 }
+
 function unlockCancel() {
   showUnlock.value = false
   unlockResolve?.(null)
   unlockResolve = null
 }
 
-async function onToggleLock(d: { id: string; isLocked?: boolean }) {
-  if (d.isLocked) {
-    const pw = await promptPassword()
-    if (pw === null) return
-    const ok = await lockStore.verify(pw)
-    if (!ok) { showToast('密码错误'); return }
-    await lockStore.unlockDocument(d.id)
-    showToast('已解锁')
-  } else {
-    if (!lockStore.hasPassword) {
-      showToast('请先在设置里设置密码锁')
-      return
-    }
-    await lockStore.lockDocument(d.id)
-    showToast('已加锁')
-  }
-  await onTabChange(activeTab.value)
+// ------- 展示辅助 -------
+function previewText(doc: Document): string {
+  if (doc.isLocked) return '已加锁'
+  // 摘要统一走 store（内部会按块级元素切行，跳过作为标题的首行）
+  return store.getDocumentPreview(doc) || '暂无正文'
 }
 
-// ------- 文件夹管理 -------
-function currentFolderNode() {
-  const id = currentRealFolderId.value
-  return id ? store.findFolderById(store.folders, id) : null
-}
-
-function onFolderAction(action: { key: string }) {
-  showFolderSheet.value = false
-  if (action.key === 'newRoot') {
-    nameMode.value = 'newRoot'
-    nameInput.value = ''
-    showNameDialog.value = true
-  } else if (action.key === 'rename') {
-    nameMode.value = 'rename'
-    nameInput.value = currentFolderName.value
-    showNameDialog.value = true
-  } else if (action.key === 'delete') {
-    void deleteCurrentFolder()
-  }
-}
-
-async function submitName() {
-  const name = nameInput.value.trim()
-  if (!name) return
-  if (nameMode.value === 'newRoot') {
-    await store.createRootFolder() // 建“新建目录”并置 editingFolderId
-    const node = store.findFolderById(store.folders, store.editingFolderId as string)
-    if (node) await store.renameFolder(node, name)
-    store.clearEditingFolder()
-    showToast('已创建')
-    // 切到新建的文件夹
-    const idx = topFolders.value.findIndex((f) => f.id === node?.id)
-    if (idx >= 0) await onTabChange(idx + 1)
-  } else if (nameMode.value === 'rename') {
-    const node = currentFolderNode()
-    if (node) await store.renameFolder(node, name)
-    showToast('已重命名')
-  }
-}
-
-async function deleteCurrentFolder() {
-  const node = currentFolderNode()
-  if (!node) return
-  try {
-    await showConfirmDialog({
-      title: '删除文件夹',
-      message: `确定删除「${node.name}」？其中的笔记将移入回收站。`,
-    })
-    await store.deleteFolder(node)
-    activeTab.value = 0
-    await store.openAllDocuments()
-    showToast('已删除')
-  } catch { /* 取消 */ }
-}
-
-function formatTime(ts: string) {
-  const d = new Date(ts)
+function formatTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
   const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  if (diff < 86400000 && d.getDate() === now.getDate()) {
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   }
-  return d.toLocaleDateString('zh-CN')
+  const sameYear = date.getFullYear() === now.getFullYear()
+  return date.toLocaleDateString('zh-CN', sameYear
+    ? { month: 'numeric', day: 'numeric' }
+    : { year: 'numeric', month: 'numeric', day: 'numeric' })
 }
 
-const FOLDER_DOT_COLORS = ['#4597b7', '#3da57a', '#ec7047', '#d3a32c', '#9b78c6', '#6f8fa4']
-
-function documentDotColor(folderId: string) {
-  let hash = 0
-  for (const char of folderId) {
-    hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0
-  }
-  return FOLDER_DOT_COLORS[Math.abs(hash) % FOLDER_DOT_COLORS.length]
+function subfolderHint(folder: FolderNode): string {
+  if (folder.isLocked) return '已加锁'
+  if (!folder.children.length) return '目录'
+  return `${folder.children.length} 个子目录`
 }
 </script>
 
 <template>
-  <div class="home-page">
-    <header class="mobile-page-header">
-      <div class="mobile-page-header__main">
-        <h1 class="mobile-page-header__title">文稿</h1>
-        <p class="mobile-page-header__meta">{{ currentViewName }} · {{ documents.length }} 篇</p>
-      </div>
-      <div class="mobile-page-header__actions">
+  <div class="home">
+    <header class="home-head">
+      <div class="home-head__row">
         <button
+          v-if="currentFolderId"
           type="button"
-          class="mobile-icon-button"
-          title="搜索"
-          aria-label="搜索"
-          @click="router.push('/search')"
+          class="ghost-btn"
+          aria-label="返回上级"
+          @click="goUp"
         >
+          <van-icon name="arrow-left" />
+        </button>
+        <div class="home-head__titles">
+          <h1 class="home-head__title">{{ viewTitle }}</h1>
+          <p class="home-head__meta">
+            {{ documents.length }} 篇文稿<template v-if="childFolders.length"> · {{ childFolders.length }} 个子目录</template>
+          </p>
+        </div>
+        <button type="button" class="ghost-btn" aria-label="搜索" @click="router.push('/search')">
           <van-icon name="search" />
         </button>
-        <button
-          v-if="currentRealFolderId"
-          type="button"
-          class="mobile-icon-button is-primary"
-          title="新建文稿"
-          aria-label="新建文稿"
-          @click="showCreateDoc = true"
-        >
-          <van-icon name="plus" />
-        </button>
-        <button
-          type="button"
-          class="mobile-icon-button"
-          title="管理文件夹"
-          aria-label="管理文件夹"
-          @click="showFolderSheet = true"
-        >
-          <van-icon name="more-o" />
+        <button type="button" class="ghost-btn" aria-label="新建目录" @click="openCreateFolder">
+          <van-icon name="add-o" />
         </button>
       </div>
+
+      <nav v-if="path.length" class="breadcrumb" aria-label="目录层级">
+        <button type="button" class="breadcrumb__item" @click="goToLevel(-1)">全部</button>
+        <template v-for="(node, index) in path" :key="node.id">
+          <span class="breadcrumb__sep">/</span>
+          <button
+            type="button"
+            class="breadcrumb__item"
+            :class="{ 'is-current': index === path.length - 1 }"
+            @click="goToLevel(index)"
+          >
+            {{ node.name }}
+          </button>
+        </template>
+      </nav>
     </header>
 
-    <!-- 文件夹横向 tab -->
-    <div class="folder-strip">
-      <van-tabs v-model:active="activeTab" shrink @change="onTabChange">
-        <van-tab title="全部" />
-        <van-tab v-for="f in topFolders" :key="f.id" :title="f.name" />
-      </van-tabs>
-    </div>
+    <van-pull-refresh v-model="refreshing" class="home-body" @refresh="refresh">
+      <div v-if="childFolders.length" class="folder-strip" aria-label="子目录">
+        <button
+          v-for="folder in childFolders"
+          :key="folder.id"
+          type="button"
+          class="folder-tile"
+          @click="enterFolder(folder)"
+          @contextmenu.prevent="openFolderMenu(folder)"
+        >
+          <span class="folder-tile__icon">
+            <van-icon :name="folder.isLocked ? 'closed-eye' : 'folder-o'" />
+          </span>
+          <span class="folder-tile__name">{{ folder.name }}</span>
+          <span class="folder-tile__meta">{{ subfolderHint(folder) }}</span>
+        </button>
+      </div>
 
-    <!-- 文档列表（滑动删除） -->
-    <div class="doc-list">
-      <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <van-swipe-cell v-for="d in documents" :key="d.id" class="doc-swipe-cell">
-          <van-cell class="doc-cell" clickable @click="openNote(d.id)">
-            <template #title>
-              <div class="doc-heading">
-                <span class="doc-dot" :style="{ backgroundColor: documentDotColor(d.folderId) }" aria-hidden="true"></span>
-                <span class="doc-title">{{ d.isLocked ? '已锁定' : (d.title || '无标题') }}</span>
-                <van-icon v-if="d.isLocked" name="lock" class="lock-ic" />
-              </div>
-            </template>
-            <template #label>
-              <span v-if="!d.isLocked" class="doc-preview">{{ store.getDocumentPreview(d) || '暂无正文' }}</span>
-              <span class="doc-meta">
-                <span v-if="d.folderName" class="doc-folder">{{ d.folderName }}</span>
-                <time class="doc-time">{{ formatTime(d.updatedAt) }}</time>
-              </span>
-            </template>
-          </van-cell>
-          <template #right>
-            <van-button square type="warning" :text="d.isLocked ? '解锁' : '加锁'" class="swipe-lock" @click="onToggleLock(d)" />
-            <van-button square type="danger" text="删除" class="swipe-del" @click="onDeleteDoc(d)" />
-          </template>
-        </van-swipe-cell>
+      <van-loading v-if="loading && !documents.length" class="home-loading" />
 
-        <template v-if="!documents.length && !store.loading">
-          <van-empty description="暂无笔记">
-            <van-button
-              v-if="!topFolders.length"
-              type="primary"
-              icon="plus"
-              class="empty-create-button"
-              @click="onFolderAction({ key: 'newRoot' })"
-            >
-              新建文件夹
-            </van-button>
-          </van-empty>
-        </template>
-      </van-pull-refresh>
-    </div>
+      <ul v-else-if="documents.length" class="doc-list">
+        <li v-for="doc in documents" :key="doc.id" class="doc-item">
+          <button
+            type="button"
+            class="doc-card"
+            @click="openNote(doc.id)"
+            @contextmenu.prevent="openDocMenu(doc)"
+          >
+            <span class="doc-card__head">
+              <span class="doc-card__title">{{ doc.title || '无标题' }}</span>
+              <van-icon v-if="doc.isLocked" name="lock" class="doc-card__lock" />
+            </span>
+            <span class="doc-card__preview">{{ previewText(doc) }}</span>
+            <span class="doc-card__meta">
+              <span v-if="doc.folderName" class="doc-card__folder">{{ doc.folderName }}</span>
+              <time>{{ formatTime(doc.updatedAt) }}</time>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="doc-more"
+            aria-label="文稿操作"
+            @click.stop="openDocMenu(doc)"
+          >
+            <van-icon name="ellipsis" />
+          </button>
+        </li>
+      </ul>
 
-    <!-- 文件夹管理 action sheet -->
+      <van-empty v-else :description="emptyDescription" image-size="84" />
+    </van-pull-refresh>
+
+    <button type="button" class="fab" aria-label="新建文稿" :disabled="creating" @click="createNote">
+      <van-icon name="plus" />
+    </button>
+
+    <FolderPicker
+      v-model:show="showFolderPicker"
+      :title="activeDoc ? `移动「${activeDoc.title || '无标题'}」到` : '移动到目录'"
+      @select="onFolderPicked"
+    />
+
+    <van-action-sheet
+      v-model:show="showDocActions"
+      :actions="activeDoc ? docActions(activeDoc) : []"
+      cancel-text="取消"
+      close-on-click-action
+      @select="onDocAction"
+    />
+
     <van-action-sheet
       v-model:show="showFolderSheet"
-      :actions="folderActions"
+      :actions="activeFolder ? folderActionsMenu() : []"
       cancel-text="取消"
       close-on-click-action
       @select="onFolderAction"
     />
 
-    <!-- 文件夹命名对话框 -->
     <van-dialog
       v-model:show="showNameDialog"
-      :title="nameMode === 'newRoot' ? '新建文件夹' : '重命名文件夹'"
+      :title="nameTarget === 'rename' ? '重命名目录' : '新建目录'"
       show-cancel-button
-      @confirm="submitName"
+      :before-close="validateFolderName"
+      @confirm="submitFolderName"
     >
-      <van-field v-model="nameInput" placeholder="文件夹名称" autofocus maxlength="50" clearable />
+      <van-field v-model="nameInput" placeholder="目录名称" autofocus maxlength="50" clearable />
     </van-dialog>
 
-    <!-- 新建文档对话框 -->
-    <van-dialog
-      v-model:show="showCreateDoc"
-      title="新建笔记"
-      show-cancel-button
-      @confirm="createDocument"
-    >
-      <van-field v-model="newTitle" placeholder="输入笔记标题" autofocus maxlength="200" clearable />
-    </van-dialog>
-
-    <!-- 解锁密码对话框 -->
     <van-dialog
       v-model:show="showUnlock"
-      title="解锁笔记"
+      title="输入密码"
       show-cancel-button
       @confirm="unlockConfirm"
       @cancel="unlockCancel"
     >
-      <van-field v-model="unlockPwd" type="password" placeholder="输入密码锁密码" autofocus />
+      <van-field v-model="unlockPwd" type="password" placeholder="密码锁密码" autofocus />
     </van-dialog>
   </div>
 </template>
 
 <style scoped>
-.home-page {
+.home {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--van-background);
 }
 
-.folder-strip {
+/* ---------- 头部 ---------- */
+.home-head {
   position: sticky;
   top: 0;
-  z-index: 4;
-  overflow: hidden;
-  padding: 0 8px;
+  z-index: 5;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 8px;
   border-bottom: 1px solid var(--van-border-color);
-  background: color-mix(in srgb, var(--van-background) 94%, transparent);
-  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--van-background) 92%, transparent);
+  backdrop-filter: blur(16px);
 }
 
-.folder-strip :deep(.van-tabs__nav) {
+.home-head__row {
+  display: flex;
+  align-items: center;
   gap: 4px;
-  padding: 0 8px;
 }
 
-.folder-strip :deep(.van-tab) {
-  min-width: auto;
-  padding: 0 11px;
+.home-head__titles {
+  min-width: 0;
+  flex: 1;
+  padding: 0 4px;
 }
 
-.doc-list {
-  padding: 10px 12px 20px;
-}
-
-.doc-swipe-cell {
-  margin-bottom: 8px;
+.home-head__title {
   overflow: hidden;
-  border: 1px solid var(--van-border-color);
-  border-radius: 7px;
-  background: var(--van-background-2);
+  margin: 0;
+  color: var(--van-text-color);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.doc-swipe-cell :deep(.van-swipe-cell__wrapper) {
-  min-height: 108px;
+.home-head__meta {
+  margin: 3px 0 0;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 11px;
 }
 
-.doc-cell {
-  min-height: 108px;
-  padding: 14px 15px 13px;
+.ghost-btn {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--van-text-color-2);
+  font-size: 19px;
 }
 
-.doc-cell::after {
+.ghost-btn:active {
+  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
+  color: var(--van-primary-color);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  margin-top: 6px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.breadcrumb::-webkit-scrollbar {
   display: none;
 }
 
-.doc-heading {
+.breadcrumb__item {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--van-text-color-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.breadcrumb__item.is-current {
+  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
+  color: var(--van-primary-color);
+  font-weight: 600;
+}
+
+.breadcrumb__sep {
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 11px;
+}
+
+/* ---------- 主体 ---------- */
+.home-body {
+  min-height: 60vh;
+  padding: 12px 12px calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+.home-loading {
   display: flex;
-  min-width: 0;
+  justify-content: center;
+  padding: 56px 0;
+}
+
+/* ---------- 目录卡片 ---------- */
+.folder-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 42%;
+  gap: 9px;
+  overflow-x: auto;
+  margin: 0 -12px 14px;
+  padding: 0 12px 4px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.folder-strip::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 560px) {
+  .folder-strip {
+    grid-auto-columns: 30%;
+  }
+}
+
+.folder-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 13px;
+  border: 1px solid var(--van-border-color);
+  border-radius: 12px;
+  background: var(--van-background-2);
+  text-align: left;
+  scroll-snap-align: start;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.folder-tile:active {
+  border-color: color-mix(in srgb, var(--van-primary-color) 40%, var(--van-border-color));
+  background: color-mix(in srgb, var(--van-primary-color) 7%, var(--van-background-2));
+}
+
+.folder-tile__icon {
+  color: var(--van-primary-color);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.folder-tile__name {
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--van-text-color);
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-tile__meta {
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 11px;
+}
+
+/* ---------- 文稿列表 ---------- */
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-item {
+  position: relative;
+}
+
+.doc-card {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 40px 13px 14px;
+  border: 1px solid var(--van-border-color);
+  border-radius: 12px;
+  background: var(--van-background-2);
+  text-align: left;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.doc-card:active {
+  background: color-mix(in srgb, var(--van-primary-color) 6%, var(--van-background-2));
+}
+
+.doc-card__head {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.doc-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent);
-}
-
-.doc-title {
+.doc-card__title {
   overflow: hidden;
   color: var(--van-text-color);
   font-size: 15px;
   font-weight: 650;
-  line-height: 1.4;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.doc-preview {
+.doc-card__lock {
+  flex: 0 0 auto;
+  color: #d3a32c;
+  font-size: 13px;
+}
+
+.doc-card__preview {
   display: -webkit-box;
   overflow: hidden;
-  margin: 7px 0 0 15px;
   color: var(--van-text-color-2);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
 }
 
-.doc-meta {
+.doc-card__meta {
   display: flex;
-  min-height: 17px;
   align-items: center;
   gap: 8px;
-  margin: 9px 0 0 15px;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  font-size: 11px;
 }
 
-.doc-folder {
+.doc-card__folder {
   overflow: hidden;
-  max-width: 54%;
-  padding: 1px 5px;
-  border-radius: 3px;
+  max-width: 55%;
+  padding: 1px 6px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--van-primary-color) 10%, transparent);
   color: var(--van-primary-color);
-  font-size: 10px;
-  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.doc-time {
-  margin-left: auto;
+.doc-more {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--van-text-color-3, var(--van-text-color-2));
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  transform: translateY(-50%);
 }
 
-.swipe-del {
-  height: 100%;
+.doc-more:active {
+  background: color-mix(in srgb, var(--van-primary-color) 12%, transparent);
+  color: var(--van-primary-color);
 }
 
-.swipe-lock {
-  height: 100%;
+/* ---------- 新建按钮 ---------- */
+.fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  z-index: 6;
+  display: flex;
+  width: 54px;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--van-primary-color);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--van-primary-color) 32%, transparent);
+  color: #fff;
+  font-size: 24px;
 }
 
-.lock-ic {
-  flex-shrink: 0;
-  margin-left: auto;
-  color: #d3a32c;
-  font-size: 14px;
+.fab:active {
+  transform: scale(0.95);
 }
 
-.empty-create-button {
-  border-radius: 7px;
+.fab:disabled {
+  opacity: 0.6;
 }
 </style>

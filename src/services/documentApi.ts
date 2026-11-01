@@ -83,3 +83,8 @@ export interface ReorderItem {
 export function reorderDocuments(folderId: string, items: ReorderItem[]): Promise<void> {
   return invoke<void>('document:reorder', { folderId, items })
 }
+
+/** 把文稿移动到另一个目录 */
+export function moveToFolder(documentId: string, folderId: string): Promise<void> {
+  return invoke<void>('document:move', { id: documentId, folderId })
+}

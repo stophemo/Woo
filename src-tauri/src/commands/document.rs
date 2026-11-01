@@ -104,6 +104,14 @@ pub fn document_hard_delete(id: String) -> CommandResult<()> {
     }
 }
 
+#[tauri::command(rename_all = "camelCase", rename = "documentMove")]
+pub fn document_move(id: String, folder_id: String) -> CommandResult<()> {
+    match document_service::move_to_folder(&id, &folder_id) {
+        Ok(_) => CommandResult::success(()),
+        Err(msg) => CommandResult::error(&msg),
+    }
+}
+
 #[tauri::command(rename_all = "camelCase", rename = "documentEmptyTrash")]
 pub fn document_empty_trash() -> CommandResult<()> {
     match document_service::empty_trash() {

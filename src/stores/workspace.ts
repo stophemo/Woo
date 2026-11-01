@@ -509,6 +509,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (draft) {
         draft.content = content
         draft.updatedAt = new Date().toISOString()
+        // 草稿不走后端 update_content，标题必须在前端同步推导，
+        // 否则草稿列表永远显示创建时的“新建文稿”。
+        const derivedTitle = deriveTitleFromContent(content)
+        if (derivedTitle) {
+          draft.title = derivedTitle
+          if (meta) meta.title = derivedTitle
+          if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
+            currentDocumentData.value.title = derivedTitle
+          }
+        }
         persistDrafts(drafts.value)
         // 若该草稿关联了外部文件，异步写回源文件
         const filePath = externalFilePathMap.value[documentId]
@@ -763,6 +773,62 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /**
+   * 仅加载目录下的文稿列表，**不**自动打开第一篇。
+   *
+   * 桌面端 `selectFolder` 会顺手选中并加载首篇正文（三栏布局需要），
+   * 但移动端层级浏览会反复进出目录，加载正文属于纯浪费，
+   * 也会把“上次打开的文稿”写成用户根本没看的文档。
+   */
+  async function browseFolder(folderId: string) {
+    if (folderId === ALL_FOLDER_ID) {
+      await browseAllDocuments()
+      return
+    }
+    selectedFolderId.value = folderId
+    saveLastView(folderId)
+    selectedDocumentId.value = null
+    currentDocumentData.value = null
+    try {
+      const effectivelyLocked = await lockApi.isFolderEffectivelyLocked(folderId)
+      if (selectedFolderId.value !== folderId) return
+      selectedFolderLocked.value = effectivelyLocked
+      if (effectivelyLocked) {
+        folderDocuments.value = []
+        return
+      }
+      const list = await documentApi.listByFolder(folderId)
+      if (selectedFolderId.value !== folderId) return
+      folderDocuments.value = list.map(mapDocument)
+    } catch (e: any) {
+      error.value = e?.message || '加载文稿列表失败'
+    }
+  }
+
+  /** 仅加载全部文稿（含草稿），不自动打开第一篇。 */
+  async function browseAllDocuments() {
+    selectedFolderId.value = ALL_FOLDER_ID
+    saveLastView(ALL_FOLDER_ID)
+    selectedFolderLocked.value = false
+    selectedDocumentId.value = null
+    currentDocumentData.value = null
+    try {
+      const backendDocs = (await documentApi.listAll()).map(d => ({
+        ...mapDocument(d),
+        folderName: d.folderName || '未分类'
+      }))
+      const draftDocs = drafts.value.map(d => ({
+        ...d,
+        folderName: '草稿箱'
+      }))
+      folderDocuments.value = [...backendDocs, ...draftDocs].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+    } catch (e: any) {
+      error.value = e?.message || '加载文稿失败'
+    }
+  }
+
   // 本地创建一篇草稿，加入草稿列表并选中进入编辑
   function createDraft(title?: string): Document {
     const now = new Date().toISOString()
@@ -876,6 +942,65 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
     } else {
       createDraft()
+    }
+  }
+
+  /**
+   * 把文稿移动到指定目录。
+   *
+   * 草稿（仅存在 localStorage）会先被“升格”为正式文稿：在新目录创建文档、
+   * 写入正文、迁移外部文件映射，然后从草稿列表移除。
+   * 没有这个能力时，移动端从首页新建的草稿永远无法归入目录。
+   */
+  async function moveDocument(documentId: string, targetFolderId: string): Promise<boolean> {
+    if (!targetFolderId || targetFolderId.startsWith('__')) return false
+
+    if (isDraftId(documentId)) {
+      const draft = drafts.value.find(d => d.id === documentId)
+      if (!draft) return false
+      try {
+        const dto = await documentApi.create({ title: draft.title, folderId: targetFolderId })
+        if (draft.content) await documentApi.updateContent(dto.id, draft.content)
+
+        // 继续保持外部文件写回：把映射键从草稿 id 换成新文稿 id
+        const externalPath = externalFilePathMap.value[documentId]
+        if (externalPath) {
+          delete externalFilePathMap.value[documentId]
+          externalFilePathMap.value[dto.id] = externalPath
+          persistExternalFilePathMap()
+        }
+
+        drafts.value = drafts.value.filter(d => d.id !== documentId)
+        persistDrafts(drafts.value)
+        folderDocuments.value = folderDocuments.value.filter(d => d.id !== documentId)
+
+        const pendingTimer = saveTimers.get(documentId)
+        if (pendingTimer !== undefined) clearTimeout(pendingTimer)
+        saveTimers.delete(documentId)
+        pendingSaves.delete(documentId)
+
+        if (selectedDocumentId.value === documentId) selectedDocumentId.value = dto.id
+        if (currentDocumentData.value?.id === documentId) {
+          currentDocumentData.value = mapDocument(dto)
+        }
+        return true
+      } catch (e: any) {
+        error.value = e?.message || '移动到目录失败'
+        return false
+      }
+    }
+
+    try {
+      await documentApi.moveToFolder(documentId, targetFolderId)
+      const meta = folderDocuments.value.find(d => d.id === documentId)
+      if (meta) meta.folderId = targetFolderId
+      if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
+        currentDocumentData.value.folderId = targetFolderId
+      }
+      return true
+    } catch (e: any) {
+      error.value = e?.message || '移动到目录失败'
+      return false
     }
   }
 
@@ -1287,13 +1412,36 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return false
   }
 
-  function getDocumentPreview(doc: Document): string {
-    const content = doc.content || ''
-    if (!content) return ''
+  /**
+   * 把编辑器 HTML 拆成“行”：块级元素结尾补换行。
+   *
+   * ProseMirror 输出的 HTML 里段落不带换行符，`textContent` 会把所有段落直接拼接到一起
+   * （"第一段第二段"），因此不能直接按 '\n' 切行。
+   */
+  function htmlToTextLines(html: string): string[] {
+    if (!html) return []
     const tmp = document.createElement('div')
-    tmp.innerHTML = content
-    const text = tmp.textContent || tmp.innerText || ''
-    const lines = text.split('\n').filter(l => l.trim())
+    tmp.innerHTML = html
+    tmp.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
+    tmp
+      .querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote,pre,tr,table')
+      .forEach(el => el.append('\n'))
+    return (tmp.textContent || '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+  }
+
+  /** 从正文首行推导标题（与后端 extract_first_line_as_title 规则一致） */
+  function deriveTitleFromContent(html: string): string | null {
+    const first = htmlToTextLines(html)[0]
+    if (!first) return null
+    return first.length > 40 ? `${first.slice(0, 40)}…` : first
+  }
+
+  function getDocumentPreview(doc: Document): string {
+    const lines = htmlToTextLines(doc.content || '')
+    // 首行是标题，摘要从第二行开始
     const body = lines.slice(1).join(' ').trim()
     return body.length > 80 ? body.substring(0, 80) + '...' : body
   }
@@ -1449,11 +1597,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     createNewDocument,
     openDraftBox,
     openAllDocuments,
+    browseFolder,
+    browseAllDocuments,
     openTrashBox,
     openSearch,
     openExternalFile,
     externalFilePathMap,
     renameDocument,
+    moveDocument,
     deleteDocument,
     restoreDocument,
     hardDeleteDocument,

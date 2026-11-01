@@ -1,6 +1,6 @@
 use crate::db;
 use crate::services::utils::{new_id, now_str, strip_html_keep_lines};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use super::lock_service;
@@ -345,6 +345,60 @@ pub fn update_content(id: &str, content: &str) -> Result<(), String> {
         conn.execute(
             "UPDATE note_document SET content = ?, title = ?, update_time = ? WHERE id = ?",
             params![content, title, now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// 把文稿移动到另一个目录（排序号追加到目标目录末尾）。
+///
+/// 移动端需要在「草稿 / 目录」之间整理文稿，旧版本没有这个能力，
+/// 导致草稿一旦创建就永远无法归入目录。
+pub fn move_to_folder(id: &str, folder_id: &str) -> Result<(), String> {
+    db::with_db(|conn| {
+        conn.query_row(
+            "SELECT id FROM note_document WHERE id = ? AND deleted = 0",
+            params![id],
+            |_| Ok(()),
+        )
+        .map_err(|_| "文稿不存在".to_string())?;
+
+        let target: Option<String> = conn
+            .query_row(
+                "SELECT id FROM note_folder WHERE id = ? AND deleted = 0",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if target.is_none() {
+            return Err("目标目录不存在".to_string());
+        }
+
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT folder_id FROM note_document WHERE id = ?",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if current.as_deref() == Some(folder_id) {
+            return Ok(());
+        }
+
+        let next_sort: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM note_document WHERE folder_id = ? AND deleted = 0",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        conn.execute(
+            "UPDATE note_document SET folder_id = ?, sort_order = ?, update_time = ? WHERE id = ?",
+            params![folder_id, next_sort, now_str(), id],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

@@ -1,39 +1,51 @@
 <template>
   <div class="mobile-rich-editor">
-    <div class="mobile-editor-toolbar" @mousedown.prevent @touchstart.stop>
-      <button type="button" class="editor-tool" title="撤销" aria-label="撤销" @click="runEditorAction('undo')">
-        <van-icon name="revoke" />
-      </button>
-      <button type="button" class="editor-tool" title="重做" aria-label="重做" @click="runEditorAction('redo')">
-        <van-icon name="back-top" class="redo-icon" />
-      </button>
-      <span class="editor-tool-divider"></span>
-      <button type="button" class="editor-tool text-tool" :class="{ active: isActive('bold') }" title="粗体" aria-label="粗体" @click="runEditorAction('bold')">B</button>
-      <button type="button" class="editor-tool text-tool italic" :class="{ active: isActive('italic') }" title="斜体" aria-label="斜体" @click="runEditorAction('italic')">I</button>
-      <button type="button" class="editor-tool text-tool underline" :class="{ active: isActive('underline') }" title="下划线" aria-label="下划线" @click="runEditorAction('underline')">U</button>
-      <button type="button" class="editor-tool text-tool strike" :class="{ active: isActive('strikethrough') }" title="删除线" aria-label="删除线" @click="runEditorAction('strikethrough')">S</button>
-      <span class="editor-tool-divider"></span>
-      <button type="button" class="editor-tool" title="插入图片" aria-label="插入图片" @click="openImagePanel">
-        <van-icon name="photo-o" />
-      </button>
-      <button type="button" class="editor-tool" title="插入表格" aria-label="插入表格" @click="openTablePanel">
-        <van-icon name="apps-o" />
-      </button>
-      <button type="button" class="editor-tool" title="更多格式" aria-label="更多格式" @click="openMorePanel">
-        <van-icon name="ellipsis" />
-      </button>
-    </div>
-
-    <div v-if="isTableActive" class="mobile-table-toolbar" @mousedown.prevent @touchstart.stop>
-      <button type="button" @click="runTableCommand('addRowAfter')">+ 行</button>
-      <button type="button" @click="runTableCommand('deleteRow')">- 行</button>
-      <button type="button" @click="runTableCommand('addColumnAfter')">+ 列</button>
-      <button type="button" @click="runTableCommand('deleteColumn')">- 列</button>
-      <button type="button" @click="runTableCommand('toggleHeaderRow')">表头</button>
-      <button type="button" class="danger" @click="runTableCommand('deleteTable')">删除表格</button>
-    </div>
-
     <EditorContent :editor="editor" class="mobile-editor-content" />
+
+    <!-- 底部工具坞：拇指可达，不遮挡正文（内容区已留出相同高度）。 -->
+    <div
+      class="mobile-editor-dock"
+      :class="{ 'is-keyboard-open': keyboardInset > 0 }"
+      :style="{ bottom: `${keyboardInset}px` }"
+    >
+      <div v-if="isTableActive" class="mobile-table-toolbar" @mousedown.prevent @touchstart.stop>
+        <button type="button" @click="runTableCommand('addRowAfter')">+ 行</button>
+        <button type="button" @click="runTableCommand('deleteRow')">- 行</button>
+        <button type="button" @click="runTableCommand('addColumnAfter')">+ 列</button>
+        <button type="button" @click="runTableCommand('deleteColumn')">- 列</button>
+        <button type="button" @click="runTableCommand('toggleHeaderRow')">表头</button>
+        <button type="button" class="danger" @click="runTableCommand('deleteTable')">删除表格</button>
+      </div>
+
+      <div class="mobile-editor-toolbar" @mousedown.prevent @touchstart.stop>
+        <button type="button" class="editor-tool text-tool" :class="{ active: isActive('bold') }" title="粗体" aria-label="粗体" @click="runEditorAction('bold')">B</button>
+        <button type="button" class="editor-tool text-tool italic" :class="{ active: isActive('italic') }" title="斜体" aria-label="斜体" @click="runEditorAction('italic')">I</button>
+        <button type="button" class="editor-tool text-tool underline" :class="{ active: isActive('underline') }" title="下划线" aria-label="下划线" @click="runEditorAction('underline')">U</button>
+        <button type="button" class="editor-tool text-tool strike" :class="{ active: isActive('strikethrough') }" title="删除线" aria-label="删除线" @click="runEditorAction('strikethrough')">S</button>
+        <span class="editor-tool-divider"></span>
+        <button type="button" class="editor-tool heading-tool" :class="{ active: isActive('heading', { level: 1 }) }" title="一级标题" aria-label="一级标题" @click="runEditorAction('h1')">H1</button>
+        <button type="button" class="editor-tool heading-tool" :class="{ active: isActive('heading', { level: 2 }) }" title="二级标题" aria-label="二级标题" @click="runEditorAction('h2')">H2</button>
+        <button type="button" class="editor-tool" :class="{ active: isActive('bulletList') }" title="无序列表" aria-label="无序列表" @click="runEditorAction('ul')">
+          <van-icon name="bars" />
+        </button>
+        <button type="button" class="editor-tool" :class="{ active: isActive('taskList') }" title="任务列表" aria-label="任务列表" @click="runEditorAction('task')">
+          <van-icon name="passed" />
+        </button>
+        <button type="button" class="editor-tool" :class="{ active: isActive('blockquote') }" title="引用" aria-label="引用" @click="runEditorAction('quote')">
+          <van-icon name="description" />
+        </button>
+        <span class="editor-tool-divider"></span>
+        <button type="button" class="editor-tool" title="插入图片" aria-label="插入图片" @click="openImagePanel">
+          <van-icon name="photo-o" />
+        </button>
+        <button type="button" class="editor-tool" title="插入表格" aria-label="插入表格" @click="openTablePanel">
+          <van-icon name="apps-o" />
+        </button>
+        <button type="button" class="editor-tool" title="更多格式" aria-label="更多格式" @click="openMorePanel">
+          <van-icon name="ellipsis" />
+        </button>
+      </div>
+    </div>
 
     <van-popup v-model:show="showImagePanel" position="bottom" round :style="{ minHeight: '238px' }">
       <div class="insert-panel">
@@ -83,6 +95,8 @@
           </button>
         </div>
         <div class="format-grid">
+          <button type="button" @click="runEditorAction('undo')">撤销</button>
+          <button type="button" @click="runEditorAction('redo')">重做</button>
           <button type="button" @click="toggleHeading(1)">一级标题</button>
           <button type="button" @click="toggleHeading(2)">二级标题</button>
           <button type="button" @click="toggleHeading(3)">三级标题</button>
@@ -121,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -182,6 +196,32 @@ function normalizeContent(value: string): string {
     return source
   }
   return markdownToEditorHtml(source)
+}
+
+// 键盘遮挡高度。
+// Android 应用启用 edge-to-edge 后窗口不会因输入法 resize，WebView 的 visualViewport
+// 也看不到键盘，因此由原生 MainActivity 通过 `woo:ime-inset` 事件把遮挡高度（CSS px）
+// 推过来；其它平台（窗口会 resize 的场景）继续用 visualViewport 兜底，两者取较大值。
+const keyboardInset = ref(0)
+let nativeImeInset = 0
+
+function applyKeyboardInset() {
+  const viewport = window.visualViewport
+  const obscuredByViewport = viewport
+    ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+    : 0
+  const observed = Math.max(nativeImeInset, obscuredByViewport > 80 ? obscuredByViewport : 0)
+  keyboardInset.value = Math.round(observed)
+}
+
+function onNativeImeInset(event: Event) {
+  const detail = (event as CustomEvent<number>).detail
+  nativeImeInset = typeof detail === 'number' && Number.isFinite(detail) && detail > 0 ? detail : 0
+  applyKeyboardInset()
+}
+
+function syncKeyboardInset() {
+  applyKeyboardInset()
 }
 
 const editorStateVersion = ref(0)
@@ -447,23 +487,57 @@ function handleConfiguredShortcut(event: KeyboardEvent) {
   runEditorAction(action)
 }
 
+function attachViewportListeners() {
+  window.addEventListener('woo:ime-inset', onNativeImeInset)
+  const viewport = window.visualViewport
+  viewport?.addEventListener('resize', syncKeyboardInset)
+  viewport?.addEventListener('scroll', syncKeyboardInset)
+  syncKeyboardInset()
+}
+
+function detachViewportListeners() {
+  window.removeEventListener('woo:ime-inset', onNativeImeInset)
+  const viewport = window.visualViewport
+  viewport?.removeEventListener('resize', syncKeyboardInset)
+  viewport?.removeEventListener('scroll', syncKeyboardInset)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleConfiguredShortcut, true)
-  void nextTick(() => editor.value?.commands.focus())
+  attachViewportListeners()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleConfiguredShortcut, true)
+  detachViewportListeners()
 })
 </script>
 
 <style scoped>
-.mobile-rich-editor { min-height: calc(100vh - 110px); background: var(--van-background-2); }
-.mobile-editor-toolbar { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 7px 10px; border-bottom: 1px solid var(--van-border-color); background: color-mix(in srgb, var(--van-background-2) 94%, transparent); backdrop-filter: blur(16px); -webkit-overflow-scrolling: touch; }
+.mobile-rich-editor { position: relative; min-height: 100%; background: var(--van-background-2); }
+
+/* 底部工具坞：常驻可见、拇指可达；键盘遮挡高度由原生注入的 --woo-ime-inset 驱动上推。 */
+.mobile-editor-dock {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 7;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--van-border-color);
+  background: color-mix(in srgb, var(--van-background-2) 96%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+/* 键盘弹出时系统手势区已被覆盖，不再保留底部安全区，避免工具坞悬空。 */
+.mobile-editor-dock.is-keyboard-open { padding-bottom: 0; }
+
+.mobile-editor-toolbar { display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 7px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .mobile-editor-toolbar::-webkit-scrollbar { display: none; }
-.editor-tool { display: inline-flex; flex: 0 0 34px; width: 34px; height: 32px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--van-text-color-2); font-size: 17px; }
+.editor-tool { display: inline-flex; flex: 0 0 34px; width: 34px; height: 34px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--van-text-color-2); font-size: 17px; }
 .editor-tool:active, .editor-tool.active { background: color-mix(in srgb, var(--van-primary-color) 14%, transparent); color: var(--van-primary-color); }
 .editor-tool.text-tool { font-weight: 700; font-family: Georgia, serif; }
+.editor-tool.heading-tool { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
 .editor-tool.italic { font-style: italic; }
 .editor-tool.underline { text-decoration: underline; }
 .editor-tool.strike { text-decoration: line-through; }
@@ -472,9 +546,18 @@ onBeforeUnmount(() => {
 .mobile-table-toolbar { display: flex; gap: 6px; overflow-x: auto; padding: 7px 10px; border-bottom: 1px solid var(--van-border-color); background: var(--van-background); -webkit-overflow-scrolling: touch; }
 .mobile-table-toolbar button { flex: 0 0 auto; min-height: 28px; padding: 3px 9px; border: 1px solid var(--van-border-color); border-radius: 5px; background: var(--van-background-2); color: var(--van-text-color-2); font-size: 12px; white-space: nowrap; }
 .mobile-table-toolbar button.danger { color: var(--van-danger-color); }
-.mobile-editor-content { min-height: calc(100vh - 164px); padding: 22px 18px 126px; }
-.mobile-editor-content :deep(.mobile-tiptap-editor) { min-height: calc(100vh - 220px); outline: none; color: var(--van-text-color); font-size: 16px; line-height: 1.78; overflow-wrap: break-word; caret-color: var(--van-primary-color); }
+
+/* padding-bottom 为底部工具坞 + 安全区预留空间，旤保温层 */
+.mobile-editor-content { min-height: 100%; padding: 18px 18px calc(150px + env(safe-area-inset-bottom, 0px)); }
+.mobile-editor-content :deep(.mobile-tiptap-editor) { min-height: calc(100vh - 260px); outline: none; color: var(--van-text-color); font-size: 16px; line-height: 1.78; overflow-wrap: break-word; caret-color: var(--van-primary-color); }
 .mobile-editor-content :deep(.mobile-tiptap-editor p) { margin: 0 0 15px; }
+.mobile-editor-content :deep(.mobile-tiptap-editor p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--van-text-color-3, var(--van-text-color-2));
+  pointer-events: none;
+}
 .mobile-editor-content :deep(.mobile-tiptap-editor h1), .mobile-editor-content :deep(.mobile-tiptap-editor h2), .mobile-editor-content :deep(.mobile-tiptap-editor h3), .mobile-editor-content :deep(.mobile-tiptap-editor h4), .mobile-editor-content :deep(.mobile-tiptap-editor h5), .mobile-editor-content :deep(.mobile-tiptap-editor h6) { color: var(--van-text-color); letter-spacing: 0; }
 .mobile-editor-content :deep(.mobile-tiptap-editor h1) { margin: 0 0 20px; font-size: 28px; line-height: 1.35; }
 .mobile-editor-content :deep(.mobile-tiptap-editor h2) { margin: 28px 0 10px; font-size: 21px; line-height: 1.4; }
