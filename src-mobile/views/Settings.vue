@@ -91,83 +91,8 @@ function resetAllShortcuts() {
   recordingAction.value = null
 }
 
-const showLogin = ref(false)
-const loginMode = ref<'login' | 'signup'>('login')
-const form = reactive({
-  identifier: '',
-  email: '',
-  username: '',
-  password: '',
-  confirmPassword: '',
-})
-
-function resetForm() {
-  form.identifier = ''
-  form.email = ''
-  form.username = ''
-  form.password = ''
-  form.confirmPassword = ''
-  authStore.errorMsg = ''
-}
-
 function openLogin() {
-  loginMode.value = 'login'
-  resetForm()
-  showLogin.value = true
-}
-
-function switchMode(mode: 'login' | 'signup') {
-  loginMode.value = mode
-  authStore.errorMsg = ''
-}
-
-async function onSubmit() {
-  if (loginMode.value === 'login') {
-    if (!form.identifier.trim() || !form.password) {
-      showToast('请填写账号和密码')
-      return
-    }
-    const ok = await authStore.login(form.identifier.trim(), form.password)
-    if (ok) {
-      showLogin.value = false
-      const synced = await syncStore.triggerSync()
-      // 同步完成后再读取用户库，避免首屏停留在同步前的空状态。
-      await workspaceStore.bootstrap()
-      showToast(synced ? '登录并同步成功' : (syncStore.errorMsg || '登录成功，同步失败'))
-    } else {
-      showToast(authStore.errorMsg || '登录失败')
-    }
-    return
-  }
-  // 注册
-  if (!form.email.trim() || !form.username.trim() || !form.password) {
-    showToast('请完整填写邮箱、用户名和密码')
-    return
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-    showToast('邮箱格式不正确')
-    return
-  }
-  if (form.password !== form.confirmPassword) {
-    showToast('两次输入的密码不一致')
-    return
-  }
-  const res = await authStore.signup(form.email.trim(), form.username.trim(), form.password)
-  if (!res.ok) {
-    showToast(authStore.errorMsg || '注册失败')
-    return
-  }
-  if (res.message) {
-    // 需邮箱确认，尚未登录：提示并切回登录模式
-    showToast(res.message)
-    switchMode('login')
-  } else {
-    // 直接注册并登录成功
-    showLogin.value = false
-    const synced = await syncStore.triggerSync()
-    await workspaceStore.bootstrap()
-    showToast(synced ? '注册并同步成功' : (syncStore.errorMsg || '注册成功，同步失败'))
-  }
+  router.push('/login')
 }
 
 async function onLogout() {
@@ -323,74 +248,6 @@ async function beforePwdClose(action: string) {
       <van-cell icon="link-o" title="项目主页" value="GitHub" is-link @click="showToast('打开链接')" />
     </van-cell-group>
 
-    <!-- 登录 / 注册 弹层 -->
-    <van-popup v-model:show="showLogin" position="bottom" :style="{ paddingBottom: '24px' }">
-      <div class="login-sheet">
-        <van-tabs v-model:active="loginMode" @change="(m: string) => switchMode(m as 'login' | 'signup')">
-          <van-tab title="登录" name="login" />
-          <van-tab title="注册" name="signup" />
-        </van-tabs>
-
-        <van-form class="login-form" @submit="onSubmit">
-          <template v-if="loginMode === 'login'">
-            <van-field
-              v-model="form.identifier"
-              label="账号"
-              placeholder="邮箱或用户名"
-              clearable
-            />
-            <van-field
-              v-model="form.password"
-              type="password"
-              label="密码"
-              placeholder="请输入密码"
-            />
-          </template>
-
-          <template v-else>
-            <van-field
-              v-model="form.email"
-              label="邮箱"
-              placeholder="用于登录与找回"
-              clearable
-            />
-            <van-field
-              v-model="form.username"
-              label="用户名"
-              placeholder="用于云端分库标识"
-              clearable
-            />
-            <van-field
-              v-model="form.password"
-              type="password"
-              label="密码"
-              placeholder="请设置密码"
-            />
-            <van-field
-              v-model="form.confirmPassword"
-              type="password"
-              label="确认密码"
-              placeholder="请再次输入密码"
-            />
-          </template>
-
-          <div v-if="authStore.errorMsg" class="login-error">{{ authStore.errorMsg }}</div>
-
-          <div class="login-actions">
-            <van-button
-              block
-              type="primary"
-              class="login-submit"
-              native-type="submit"
-              :loading="authStore.loading"
-            >
-              {{ loginMode === 'login' ? '登录' : '注册' }}
-            </van-button>
-          </div>
-        </van-form>
-      </div>
-    </van-popup>
-
     <!-- 密码锁设置对话框 -->
     <van-dialog
       v-model:show="showPwdDialog"
@@ -527,29 +384,6 @@ async function beforePwdClose(action: string) {
   margin-left: auto;
   color: var(--van-primary-color);
   font-size: 14px;
-}
-
-.login-sheet {
-  padding: 8px 0 0;
-}
-
-.login-form {
-  padding: 12px 0;
-}
-
-.login-error {
-  color: var(--van-danger-color);
-  font-size: 13px;
-  padding: 8px 16px 0;
-}
-
-.login-actions {
-  padding: 16px;
-}
-
-.login-submit {
-  height: 44px;
-  border-radius: 7px;
 }
 
 .pwd-fields {
