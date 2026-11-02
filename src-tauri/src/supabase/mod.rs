@@ -188,7 +188,11 @@ pub fn read_persisted_session() -> Option<SupabaseSession> {
     match serde_json::from_str::<SupabaseSession>(session_str) {
         Ok(session) => Some(session),
         Err(error) => {
-            log::warn!("[Supabase] 会话内容无法解析: {}", error);
+            // 文件已损坏（历史版本退出登录时写过 "{}"）：直接删掉自愈，
+            // 否则每次启动都要告警一次，且永远不会被清理。
+            log::warn!("[Supabase] 会话内容无法解析，已删除损坏的会话文件: {}", error);
+            drop(map);
+            let _ = std::fs::remove_file(&path);
             None
         }
     }
@@ -198,13 +202,15 @@ pub fn clear_persisted_session() {
     let Some(path) = session_file_path() else {
         return;
     };
-    let key = session_file_key();
-    let mut map = serde_json::Map::new();
-    map.insert(key, serde_json::Value::String("{}".to_string()));
-    let content = serde_json::to_string(&map).unwrap_or_default();
-    if let Err(error) = std::fs::write(&path, content) {
-        log::warn!("[Supabase] 清除本地会话失败 {:?}: {}", path, error);
+    // 直接删文件。旧实现写入 `{"<key>":"{}"}`，读取端解析失败后会一直
+    // 被当成「有文件但内容无效」，每次启动刷一条告警。
+    match std::fs::remove_file(&path) {
+        Ok(()) => log::info!("[Supabase] 已删除本地会话文件 {:?}", path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => log::warn!("[Supabase] 清除本地会话失败 {:?}: {}", path, error),
     }
+    let temp_path = path.with_extension("json.tmp");
+    let _ = std::fs::remove_file(temp_path);
 }
 
 pub fn get_username_from_user(user: &SupabaseUser) -> Option<&str> {
