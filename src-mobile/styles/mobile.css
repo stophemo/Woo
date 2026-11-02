@@ -297,10 +297,6 @@ button {
   font-size: 15px;
 }
 
-.w-empty {
-  padding: 64px 0 0;
-}
-
 .mobile-loading {
   display: flex;
   justify-content: center;
@@ -481,13 +477,43 @@ button {
   border-radius: 10px;
 }
 
+/* 搜索框：默认是方角描边框，改成无边框圆角填充 */
+.van-search {
+  padding: 14px 0 6px;
+  background: transparent;
+}
+
+.van-search__content {
+  min-height: 38px;
+  padding-left: 12px;
+  border-radius: 10px;
+  background: var(--w-canvas);
+}
+
+.van-search .van-field__left-icon {
+  margin-right: 8px;
+  color: var(--w-ink-3);
+}
+
+.van-search .van-field__control::placeholder {
+  color: var(--w-ink-3);
+}
+
+/* 空态只留一行文字：Vant 默认的灰色 3D 插画与纸面风格冲突 */
 .van-empty {
-  padding-top: 64px;
+  padding: 76px 0;
+}
+
+.van-empty__image {
+  display: none;
 }
 
 .van-empty__description {
+  margin: 0;
+  padding: 0;
   color: var(--w-ink-3);
   font-size: 12.5px;
+  letter-spacing: 0.02em;
 }
 
 .van-button--primary {

@@ -225,12 +225,14 @@ async function beforePwdClose(action: string) {
 
 <template>
   <div class="settings-page">
-    <header class="mobile-page-header settings-header">
-      <span class="woo-mark" aria-hidden="true">W</span>
-      <div class="mobile-page-header__main">
-        <h1 class="mobile-page-header__title">设置</h1>
-        <p class="mobile-page-header__meta">Woo v{{ appVersion }}</p>
+    <header class="w-head">
+      <div class="w-head__row">
+        <div class="w-head__titles">
+          <span class="w-head__kicker">无我笔记</span>
+          <h1 class="w-head__title">我的</h1>
+        </div>
       </div>
+      <p class="w-head__meta">Woo v{{ appVersion }}</p>
     </header>
 
     <!-- 账户 -->
@@ -448,26 +450,6 @@ async function beforePwdClose(action: string) {
   min-height: 100dvh;
   padding-bottom: 24px;
   background: var(--van-background);
-}
-
-.settings-header {
-  align-items: center;
-}
-
-.woo-mark {
-  display: flex;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  background: #25304f;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 25px;
-  font-weight: 700;
 }
 
 .settings-page :deep(.van-cell__left-icon) {
