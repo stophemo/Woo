@@ -516,6 +516,9 @@ jobs:
 
       - name: 设置 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 新版 SDK 仓库已移除旧版 `tools` 包，避免 setup-android 默认安装它导致失败。
+          packages: 'platform-tools'
 
       - name: 安装 NDK
         run: |
