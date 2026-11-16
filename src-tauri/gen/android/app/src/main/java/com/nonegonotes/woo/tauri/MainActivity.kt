@@ -14,6 +14,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
   private var appWebView: WebView? = null
+  private var contentRoot: View? = null
 
   private val darkThemes = listOf("dark", "ink", "graphite", "deepsea")
 
@@ -40,6 +41,7 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
 
     val contentView = findViewById<View>(android.R.id.content)
+    contentRoot = contentView
     val initialPaddingLeft = contentView.paddingLeft
     val initialPaddingTop = contentView.paddingTop
     val initialPaddingRight = contentView.paddingRight
@@ -49,8 +51,9 @@ class MainActivity : TauriActivity() {
       val topInset = windowInsets.getInsets(
         WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
       ).top
-      // WebView 没有 viewport-fit=cover 时 env(safe-area-inset-bottom) 恒为 0，
-      // 底部导航条（手势胶囊）会压住 tabbar 文字，因此底部安全区也由原生补齐。
+      // 系统栏留白统一由原生 contentView padding 负责；CSS 不再叠加
+      // env(safe-area-inset-*)，避免部分三星 WebView 重复计算状态栏高度。
+      // 底部导航条（手势胶囊）同理由这里补齐，tabbar 只占自身 58px。
       val bottomInset = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
 
       view.setPadding(
@@ -118,22 +121,35 @@ class MainActivity : TauriActivity() {
     // 编辑器是画布色），统一取纸面色会留一条色差。
     val script = """
       (function(){
-        function bgOf(el){
-          while (el) {
-            var c = getComputedStyle(el).backgroundColor;
-            if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c;
-            el = el.parentElement;
+        try {
+          function alphaOf(c){
+            var m = c.match(/rgba\([^)]*,\s*([\d.]+)\)/);
+            if (m) return parseFloat(m[1]);
+            m = c.match(/color\([^)]*\/\s*([\d.]+)\s*\)/);
+            if (m) return parseFloat(m[1]);
+            return 1;
           }
-          return getComputedStyle(document.body).backgroundColor || '';
+          function bgOf(el){
+            while (el) {
+              var c = getComputedStyle(el).backgroundColor;
+              /* 跳过透明和半透明层（页头是 92% 纸面色 + blur），
+                 取它下面真正的实色页面背景，状态栏才不会在深色主题下发白。 */
+              if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent' && alphaOf(c) >= 0.95) return c;
+              el = el.parentElement;
+            }
+            return getComputedStyle(document.body).backgroundColor || '';
+          }
+          var theme = document.documentElement.getAttribute('data-theme') || 'light';
+          var probe = document.elementFromPoint(Math.round(window.innerWidth / 2), 4);
+          var bg = probe ? bgOf(probe) : '';
+          if (!bg) {
+            var host = document.querySelector('.van-config-provider') || document.documentElement;
+            bg = getComputedStyle(host).getPropertyValue('--van-background').trim();
+          }
+          return theme + '|' + bg;
+        } catch (e) {
+          return 'ERR:' + (e && e.message ? e.message : String(e));
         }
-        var theme = document.documentElement.getAttribute('data-theme') || 'light';
-        var probe = document.elementFromPoint(Math.round(window.innerWidth / 2), 4);
-        var bg = probe ? bgOf(probe) : '';
-        if (!bg) {
-          var host = document.querySelector('.van-config-provider') || document.documentElement;
-          bg = getComputedStyle(host).getPropertyValue('--van-background').trim();
-        }
-        return theme + '|' + bg;
       })()
     """.trimIndent().replace("\n", "")
     appWebView?.evaluateJavascript(script) { result ->
@@ -160,6 +176,7 @@ class MainActivity : TauriActivity() {
   private fun applyChromeColors(isDark: Boolean, color: Int?) {
     if (color != null) {
       window.setBackgroundDrawable(ColorDrawable(color))
+      contentRoot?.setBackgroundColor(color)
       window.statusBarColor = color
     }
     val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -167,7 +184,7 @@ class MainActivity : TauriActivity() {
     controller.isAppearanceLightNavigationBars = !isDark
   }
 
-  /** 只处理 #rrggbb / #aarrggbb / rgb() / rgba()，取不到时返回 null（保持原值）。 */
+  /** 处理 #rrggbb / #aarrggbb / rgb() / rgba() / color(srgb …)，取不到时返回 null（保持原值）。 */
   private fun parseCssColor(value: String): Int? {
     val text = value.trim()
     if (text.isEmpty()) return null
@@ -188,14 +205,23 @@ class MainActivity : TauriActivity() {
       }
     }
 
-    if (!text.startsWith("rgb")) return null
     val numbers = Regex("""[\d.]+""").findAll(text).map { it.value }.toList()
     if (numbers.size < 3) return null
-    val red = numbers[0].toFloatOrNull()?.toInt() ?: return null
-    val green = numbers[1].toFloatOrNull()?.toInt() ?: return null
-    val blue = numbers[2].toFloatOrNull()?.toInt() ?: return null
+
+    val isSrgb = text.startsWith("color(srgb")
+    if (!isSrgb && !text.startsWith("rgb")) return null
+
+    fun channel(index: Int): Int {
+      val raw = numbers[index].toFloatOrNull() ?: return -1
+      return if (isSrgb) (raw * 255f).toInt().coerceIn(0, 255) else raw.toInt().coerceIn(0, 255)
+    }
+
+    val red = channel(0)
+    val green = channel(1)
+    val blue = channel(2)
+    if (red < 0 || green < 0 || blue < 0) return null
     val alpha = if (numbers.size >= 4) {
-      ((numbers[3].toFloatOrNull() ?: 1f) * 255).toInt()
+      ((numbers[3].toFloatOrNull() ?: 1f) * 255).toInt().coerceIn(0, 255)
     } else {
       255
     }
