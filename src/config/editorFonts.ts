@@ -29,7 +29,7 @@ export const editorFontOptions: EditorFontOption[] = [
     label: '黑体',
     hint: '清爽',
     preview: '春江潮水',
-    stack: '"MiSans", "HarmonyOS Sans SC", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif',
+    stack: '"Woo Sans", "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif',
   },
   {
     id: 'serif',

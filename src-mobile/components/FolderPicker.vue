@@ -82,7 +82,7 @@ function pick(folder: FlatFolder) {
 
 <style scoped>
 .picker {
-  padding: 14px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 14px 0 16px;
   background: var(--w-paper);
 }
 

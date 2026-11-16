@@ -80,16 +80,17 @@ async function load() {
     <header class="w-head">
       <div class="w-head__row">
         <div class="w-head__titles">
-          <span class="w-head__kicker">草稿</span>
           <h1 class="w-head__title">草稿箱</h1>
         </div>
         <button type="button" class="w-icon-btn" aria-label="新建草稿" @click="newDraft">
           <van-icon name="plus" />
         </button>
       </div>
-      <p class="w-head__meta">
-        {{ loading ? '正在读取…' : `${drafts.length} 篇未归档文稿` }}
-      </p>
+      <div class="w-head__sub">
+        <p class="w-head__meta">
+          {{ loading ? '正在读取…' : `${drafts.length} 篇未归档文稿` }}
+        </p>
+      </div>
     </header>
 
     <van-loading v-if="loading" class="mobile-loading" />

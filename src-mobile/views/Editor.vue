@@ -358,7 +358,7 @@ async function doUnlock() {
       <button type="button" class="edit-top__btn" aria-label="返回" @click="goBack">
         <van-icon name="arrow-left" />
       </button>
-      <span class="edit-top__title">{{ liveTitle }}</span>
+      <span class="edit-top__spacer"></span>
       <span
         v-if="savedLabel"
         class="edit-top__state"
@@ -425,7 +425,8 @@ async function doUnlock() {
   background: var(--w-canvas);
 }
 
-/* 顶部只留「返回 / 标题 / 保存状态 / 更多」，不抢正文的注意力。 */
+/* 顶部只留「返回 / 保存状态 / 更多」：正文首行就是标题，
+ * 这里再显示一次会和正文的大标题重复，也容易显得像一条贴顶的 tab。 */
 .edit-top {
   position: relative;
   z-index: 35;
@@ -434,19 +435,13 @@ async function doUnlock() {
   height: 50px;
   align-items: center;
   gap: 4px;
-  padding: 0 8px;
-  background: color-mix(in srgb, var(--w-canvas) 92%, transparent);
-  backdrop-filter: blur(20px);
+  padding: 8px 10px 2px;
+  background: var(--w-canvas);
 }
 
-.edit-top::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: color-mix(in srgb, var(--w-line) 65%, transparent);
-  content: '';
+.edit-top__spacer {
+  min-width: 0;
+  flex: 1;
 }
 
 .edit-top__btn {
@@ -467,19 +462,6 @@ async function doUnlock() {
 .edit-top__btn:active {
   background: var(--w-rise);
   color: var(--w-accent);
-}
-
-.edit-top__title {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  padding: 0 4px;
-  color: var(--w-ink-2);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.005em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .edit-top__state {
@@ -536,7 +518,7 @@ async function doUnlock() {
   align-items: center;
   width: min(100%, 420px);
   margin: 0 auto;
-  padding: 72px 26px calc(32px + env(safe-area-inset-bottom, 0px));
+  padding: 72px 26px 32px;
 }
 
 .locked-icon {

@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
 .mobile-update-notice {
   position: fixed;
   right: 12px;
-  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  bottom: 74px;
   z-index: 101;
   display: flex;
   align-items: center;

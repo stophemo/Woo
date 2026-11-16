@@ -224,14 +224,13 @@ onMounted(async () => {
 
 <template>
   <div class="webdav-page">
-    <header class="w-head webdav-head">
+    <header class="w-head">
       <div class="w-head__row">
         <button type="button" class="w-icon-btn" aria-label="返回" @click="goBack">
           <van-icon name="arrow-left" />
         </button>
         <div class="w-head__titles">
-          <span class="w-head__kicker">同步</span>
-          <h1 class="w-head__title">WebDAV</h1>
+          <h1 class="w-head__title">WebDAV 同步</h1>
         </div>
       </div>
     </header>
@@ -349,16 +348,8 @@ onMounted(async () => {
 .webdav-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 28px;
   background: var(--w-paper);
-}
-
-.webdav-head .w-head__titles {
-  padding-left: 2px;
-}
-
-.webdav-head .w-icon-btn {
-  margin-left: -4px;
 }
 
 .webdav-loading {

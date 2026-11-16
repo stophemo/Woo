@@ -109,7 +109,7 @@ onMounted(async () => {
         <router-view v-if="appReady" />
       </div>
       <MobileUpdateNotice />
-      <van-tabbar v-if="appReady && showTabbar" v-model="active" class="mobile-tabbar" safe-area-inset-bottom>
+      <van-tabbar v-if="appReady && showTabbar" v-model="active" class="mobile-tabbar">
         <van-tabbar-item icon="notes-o" @click="router.push('/')">文稿</van-tabbar-item>
         <van-tabbar-item @click="router.push('/drafts')">
           <template #icon><span class="van-tabbar-item__icon"><MIcon name="pencil" :size="19" /></span></template>

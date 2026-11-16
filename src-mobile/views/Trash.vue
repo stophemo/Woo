@@ -123,7 +123,7 @@ async function onEmpty() {
 }
 
 .w-group {
-  margin: 0 12px calc(28px + env(safe-area-inset-bottom, 0px));
+  margin: 0 12px 28px;
 }
 
 .src {

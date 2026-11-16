@@ -1512,7 +1512,6 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 30;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   border-top: 1px solid var(--w-line);
   background: color-mix(in srgb, var(--w-paper) 96%, transparent);
   backdrop-filter: blur(20px);
@@ -1649,10 +1648,10 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  height: calc(42px + env(safe-area-inset-bottom, 0px));
+  height: 42px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px env(safe-area-inset-bottom, 0px);
+  padding: 0 18px;
   border-top: 1px solid var(--w-line);
   background: color-mix(in srgb, var(--w-paper) 94%, transparent);
   backdrop-filter: blur(20px);
@@ -1691,7 +1690,7 @@ onBeforeUnmount(() => {
 .m-sheet {
   max-height: inherit;
   overflow-y: auto;
-  padding: 10px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 18px 20px;
   background: var(--w-canvas);
   color: var(--w-ink);
   overscroll-behavior: contain;

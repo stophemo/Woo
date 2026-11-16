@@ -21,14 +21,16 @@
 
 
 /*
- * 霞鹜新晰黑 Screen 子集：用于应用界面（按钮、列表、设置等）。
- * 来源：https://github.com/lxgw/LxgwNeoXiHei
- * 许可：SIL Open Font License 1.1（见 src/assets/fonts/LICENSE-LXGWNeoXiHei.txt）
+ * 界面字体：Noto Sans SC 可变字重子集，用于按钮、列表、设置等应用界面。
+ * 与正文文楷分离：界面保持干净的中性黑体，不做手写化处理；400–700 为真实字重，
+ * 避免浏览器合成粗体在中文小字号下发虚。
+ * 来源：https://github.com/notofonts/noto-cjk
+ * 许可：SIL Open Font License 1.1（见 src/assets/fonts/LICENSE-NotoSansSC.txt）
  */
 @font-face {
-  font-family: "LXGW Neo XiHei Screen";
-  src: url("../assets/fonts/lxgw-neo-xihei-screen-subset.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "Woo Sans";
+  src: url("../assets/fonts/noto-sans-sc-ui-subset.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }

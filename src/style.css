@@ -505,7 +505,7 @@
 }
 
 body {
-  font-family: "LXGW Neo XiHei Screen", -apple-system, BlinkMacSystemFont, 'Segoe UI', "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+  font-family: "Woo Sans", -apple-system, BlinkMacSystemFont, 'Segoe UI', "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;

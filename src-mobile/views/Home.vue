@@ -415,7 +415,6 @@ function subfolderHint(folder: FolderNode): string {
           <van-icon name="arrow-left" />
         </button>
         <div class="w-head__titles">
-          <span class="w-head__kicker">文稿</span>
           <h1 class="w-head__title">{{ viewTitle }}</h1>
         </div>
         <button type="button" class="w-icon-btn" aria-label="搜索" @click="router.push('/search')">
@@ -426,24 +425,23 @@ function subfolderHint(folder: FolderNode): string {
         </button>
       </div>
 
-      <p class="w-head__meta">
-        {{ documents.length }} 篇文稿<template v-if="childFolders.length"> · {{ childFolders.length }} 个目录</template>
-      </p>
-
-      <nav v-if="path.length" class="home-crumbs" aria-label="目录层级">
-        <button type="button" class="w-crumb" @click="goToLevel(-1)">全部</button>
-        <template v-for="(node, index) in path" :key="node.id">
-          <span class="w-crumb-sep">/</span>
-          <button
-            type="button"
-            class="w-crumb"
-            :class="{ 'is-current': index === path.length - 1 }"
-            @click="goToLevel(index)"
-          >
-            {{ node.name }}
-          </button>
-        </template>
-      </nav>
+      <div
+        v-if="path.length > 1 || documents.length || childFolders.length"
+        class="w-head__sub"
+      >
+        <nav v-if="path.length > 1" class="home-crumbs" aria-label="上级目录">
+          <button type="button" class="w-crumb" @click="goToLevel(-1)">全部</button>
+          <template v-for="(node, index) in path.slice(0, -1)" :key="node.id">
+            <span class="w-crumb-sep">/</span>
+            <button type="button" class="w-crumb" @click="goToLevel(index)">
+              {{ node.name }}
+            </button>
+          </template>
+        </nav>
+        <p v-if="documents.length || childFolders.length" class="w-head__meta">
+          {{ documents.length }} 篇文稿<template v-if="childFolders.length"> · {{ childFolders.length }} 个目录</template>
+        </p>
+      </div>
     </header>
 
     <van-pull-refresh v-model="refreshing" class="home-body" @refresh="refresh">
@@ -570,10 +568,11 @@ function subfolderHint(folder: FolderNode): string {
 
 .home-crumbs {
   display: flex;
+  min-width: 0;
+  flex: 1;
   align-items: center;
   gap: 2px;
   overflow-x: auto;
-  margin-top: 4px;
   padding-bottom: 1px;
   scrollbar-width: none;
 }
@@ -589,7 +588,7 @@ function subfolderHint(folder: FolderNode): string {
 
 .home-body {
   min-height: 60vh;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 96px;
 }
 
 /* 文稿行：右侧留出「···」的位置，避免与时间撞在一起 */

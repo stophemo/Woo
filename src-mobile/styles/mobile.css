@@ -10,8 +10,7 @@
 
 :root {
   color-scheme: light;
-  font-family: "LXGW Neo XiHei Screen", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
-  font-synthesis: weight;
+  font-family: "Woo Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
   text-rendering: optimizeLegibility;
 }
 
@@ -19,7 +18,7 @@ body,
 #app,
 .van-config-provider,
 .mobile-app {
-  font-family: "LXGW Neo XiHei Screen", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+  font-family: "Woo Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
 }
 
 * {
@@ -102,25 +101,29 @@ button {
 .page-content {
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .page-content.has-tabbar {
-  padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 58px;
 }
 
-/* ---------- 页头：小号分节标签 + 大标题 ---------- */
+/* ---------- 页头：一个主标题 + 一行有意义的上下文 ----------
+ * 系统状态栏与底部手势区由 Android 原生负责留白（见 MainActivity.kt），
+ * CSS 不再叠加 env(safe-area-inset-*)：部分三星 WebView 会额外上报
+ * safe-area-inset-top，导致同一样式在三星上比红米多出一截空白。
+ */
 .w-head {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 6px;
+  padding: 10px 16px 8px;
   background: color-mix(in srgb, var(--w-paper) 92%, transparent);
   backdrop-filter: blur(20px);
 }
 
 .w-head__row {
   display: flex;
+  min-height: 38px;
   align-items: center;
   gap: 2px;
 }
@@ -131,37 +134,37 @@ button {
   padding: 0 2px;
 }
 
-.w-head__kicker {
-  display: block;
-  margin: 0;
-  color: var(--w-accent);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  line-height: 1.4;
-  text-transform: uppercase;
-}
-
 .w-head__title {
   overflow: hidden;
-  margin: 1px 0 0;
+  margin: 0;
   color: var(--w-ink);
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.015em;
-  line-height: 1.15;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.w-head__meta {
+.w-head__sub {
   display: flex;
+  min-height: 17px;
   align-items: center;
-  gap: 3px;
-  margin: 5px 0 0;
+  gap: 10px;
+  margin-top: 4px;
   padding: 0 2px;
+}
+
+.w-head__meta {
+  margin: 0;
   color: var(--w-ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.w-head__sub .home-crumbs + .w-head__meta {
+  margin-left: auto;
 }
 
 .w-icon-btn {
@@ -179,6 +182,15 @@ button {
   font-size: 19px;
 }
 
+/* 图标按钮的视觉边缘与标题/列表内容对齐 */
+.w-head__row > .w-icon-btn:first-child {
+  margin-left: -8px;
+}
+
+.w-head__row > .w-icon-btn:last-child {
+  margin-right: -8px;
+}
+
 .w-icon-btn:active {
   background: var(--w-rise);
   color: var(--w-accent);
@@ -191,11 +203,6 @@ button {
   background: transparent;
   color: var(--w-ink-3);
   font-size: 11.5px;
-}
-
-.w-crumb.is-current {
-  color: var(--w-ink-2);
-  font-weight: 600;
 }
 
 .w-crumb-sep {
@@ -329,7 +336,7 @@ button {
 .w-fab {
   position: fixed;
   right: 18px;
-  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  bottom: 74px;
   z-index: 6;
   display: flex;
   width: 54px;
@@ -357,8 +364,8 @@ button {
 .mobile-tabbar.van-tabbar {
   --van-tabbar-item-active-background: transparent;
   box-sizing: border-box;
-  height: calc(58px + env(safe-area-inset-bottom, 0px));
-  padding: 4px max(16px, env(safe-area-inset-left, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-right, 0px));
+  height: 58px;
+  padding: 4px 16px;
   border-top: 1px solid var(--w-line);
   background: color-mix(in srgb, var(--w-paper) 96%, transparent);
   backdrop-filter: blur(20px);
@@ -390,7 +397,6 @@ button {
 
 /* ---------- Vant 组件向「纸面」收敛 ---------- */
 .van-nav-bar {
-  padding-top: env(safe-area-inset-top, 0px);
   background: color-mix(in srgb, var(--w-canvas) 94%, transparent);
 }
 

@@ -31,17 +31,18 @@ function goBack() {
 
 <template>
   <div class="font-page">
-    <header class="w-head font-head">
+    <header class="w-head">
       <div class="w-head__row">
         <button type="button" class="w-icon-btn" aria-label="返回" @click="goBack">
           <van-icon name="arrow-left" />
         </button>
         <div class="w-head__titles">
-          <span class="w-head__kicker">编辑</span>
           <h1 class="w-head__title">字体</h1>
         </div>
       </div>
-      <p class="w-head__meta">只影响正文，不改变应用界面</p>
+      <div class="w-head__sub">
+        <p class="w-head__meta">只影响正文，不改变应用界面</p>
+      </div>
     </header>
 
     <div class="font-preview-card">
@@ -95,16 +96,8 @@ function goBack() {
 .font-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 28px;
   background: var(--w-paper);
-}
-
-.font-head .w-head__titles {
-  padding-left: 2px;
-}
-
-.font-head .w-icon-btn {
-  margin-left: -4px;
 }
 
 .font-preview-card {

@@ -142,11 +142,9 @@ async function beforePwdClose(action: string) {
     <header class="w-head">
       <div class="w-head__row">
         <div class="w-head__titles">
-          <span class="w-head__kicker">无我笔记</span>
           <h1 class="w-head__title">我的</h1>
         </div>
       </div>
-      <p class="w-head__meta">Woo v{{ appVersion }}</p>
     </header>
 
     <!-- WebDAV 同步 -->
@@ -388,7 +386,7 @@ async function beforePwdClose(action: string) {
 .shortcut-sheet {
   max-height: 82vh;
   overflow-y: auto;
-  padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px));
+  padding: 14px 14px 18px;
 }
 
 .shortcut-sheet-header {
