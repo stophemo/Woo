@@ -112,6 +112,21 @@ function normalizedVersion(tag) {
   return tag.startsWith("v") ? tag : `v${tag}`;
 }
 
+function versionParts(tag) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(tag || ""));
+  return match ? match.slice(1, 4).map(Number) : null;
+}
+
+function compareVersions(left, right) {
+  const a = versionParts(left);
+  const b = versionParts(right);
+  if (!a || !b) return 0;
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
 function formatReleaseDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -146,6 +161,13 @@ fetch(RELEASE_API, {
   })
   .then((release) => {
     const version = normalizedVersion(release.tag_name);
+    // 静态 HTML 已指向尚未发布的新版本时，不让旧的 latest Release 把页面降级。
+    const staticVersion = normalizedVersion(
+      document.querySelector("[data-version]")?.textContent?.trim(),
+    );
+    if (staticVersion && version && compareVersions(version, staticVersion) < 0) {
+      return;
+    }
     if (version) {
       document.querySelectorAll("[data-version]").forEach((element) => {
         element.textContent = version;
