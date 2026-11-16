@@ -375,15 +375,22 @@ pub fn run() {
                 Err(e) => log::warn!("[App] Version compaction on startup failed: {}", e),
             }
 
-            // Start periodic sync timer with event emission
+            // Start periodic sync timer with event emission.
+            // 局域网是本机 HTTP，轮询便宜；WebDAV 受网盘请求配额约束，取 30 秒。
+            // 前端在本地保存、回到前台时还会主动触发一轮，因此用户感知到的延迟
+            // 主要来自这里的兜底轮询，而不是最长 60 秒的等待。
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-                // Tokio 的首次 tick 会立即返回；先消费它，避免前端监听器注册前完成同步并丢失刷新事件。
-                interval.tick().await;
                 let mut last_error: Option<String> = None;
                 loop {
-                    interval.tick().await;
+                    let wait_seconds = if services::lan_sync::is_enabled() {
+                        10
+                    } else if services::webdav_sync::is_enabled() {
+                        30
+                    } else {
+                        60
+                    };
+                    tokio::time::sleep(tokio::time::Duration::from_secs(wait_seconds)).await;
                     // WebDAV 不依赖 Supabase 登录；启用后即使未登录也要跑。
                     let lan_enabled = services::lan_sync::is_enabled();
                     let webdav_enabled = services::webdav_sync::is_enabled();
@@ -417,19 +424,9 @@ pub fn run() {
                                     + sr.tombstone_count
                                     > 0;
                                 if changed {
+                                    // 自动同步/兜底轮询不弹成功提示：保存后几乎每轮都有变化，
+                                    // 每轮弹“同步完成”会打断写作。手动同步由调用方自己提示。
                                     app_handle.emit("sync-data-changed", &sr).ok();
-                                    app_handle
-                                        .emit(
-                                            "sync:toast",
-                                            serde_json::json!({
-                                                "message": format!(
-                                                    "同步完成 ↑{} ↓{}",
-                                                    sr.pushed_count, sr.pulled_count
-                                                ),
-                                                "type": "success",
-                                            }),
-                                        )
-                                        .ok();
                                 }
                             }
                             Err(e) => {

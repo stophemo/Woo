@@ -30,8 +30,19 @@ export const useSyncStore = defineStore('sync', () => {
   })
 
   /**
-   * 监听主进程推送的同步状态
+   * 监听主进程推送的同步状态，并接管「什么时候该补一轮同步」：
+   * - 本地保存/目录变更：1.5 秒防抖后触发，连续输入不会每键同步；
+   * - 回到前台（手机切回、桌面窗口重新可见/聚焦）：立即补一轮，
+   *   这样另一台设备的最新修改不必等兜底轮询；
+   * - 自动触发之间至少间隔 6 秒（局域网）/ 15 秒（WebDAV），
+   *   避免短时间反复请求网盘配额。
    */
+  let autoTimer: ReturnType<typeof setTimeout> | null = null
+  let lastAutoTriggerAt = 0
+  const AUTO_SYNC_DEBOUNCE_MS = 1500
+  const AUTO_SYNC_MIN_GAP_LAN_MS = 6000
+  const AUTO_SYNC_MIN_GAP_WEBDAV_MS = 15000
+
   function listen() {
     if (listening) return
     listening = true
@@ -42,6 +53,39 @@ export const useSyncStore = defineStore('sync', () => {
       pendingChanges.value = status.pendingChanges ?? 0
       backend.value = status.backend ?? 'off'
     }) as EventListener)
+
+    window.addEventListener('woo:local-change', () => scheduleSync())
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return
+      void refreshStatus().then(() => scheduleSync(0))
+    })
+    window.addEventListener('focus', () => {
+      if (backend.value !== 'off') scheduleSync(0)
+    })
+  }
+
+  /**
+   * 安排一轮自动同步。0 表示尽快，但仍受最小间隔约束。
+   */
+  function scheduleSync(delay = AUTO_SYNC_DEBOUNCE_MS) {
+    if (backend.value === 'off') return
+    if (autoTimer) clearTimeout(autoTimer)
+    const minGap = backend.value === 'lan' ? AUTO_SYNC_MIN_GAP_LAN_MS : AUTO_SYNC_MIN_GAP_WEBDAV_MS
+    const sinceLast = Date.now() - lastAutoTriggerAt
+    const wait = Math.max(delay, minGap - sinceLast)
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      if (backend.value === 'off') return
+      if (isSyncing.value) {
+        scheduleSync(3000)
+        return
+      }
+      lastAutoTriggerAt = Date.now()
+      void triggerSync().then((ok) => {
+        // 极小概率与兜底轮询撞车：等这一轮结束后再补一次。
+        if (!ok && errorMsg.value.includes('正在进行')) scheduleSync(3000)
+      })
+    }, wait)
   }
 
   /**
@@ -92,6 +136,7 @@ export const useSyncStore = defineStore('sync', () => {
     backend,
     errorMsg,
     listen,
+    scheduleSync,
     triggerSync,
     refreshStatus
   }

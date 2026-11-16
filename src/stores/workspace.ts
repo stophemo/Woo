@@ -129,6 +129,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const loading = ref(false)
   const error = ref<string>('')
 
+  /**
+   * 本地数据落库后通知同步调度器。
+   * 这里只负责发事件，防抖、节流和“当前是否启用同步”由 sync store 判断，
+   * 避免 workspace 直接依赖同步配置。
+   */
+  function notifySyncChange() {
+    window.dispatchEvent(new CustomEvent('woo:local-change'))
+  }
+
   // ============ 计算属性 ============
   const currentFolderDocuments = computed<Document[]>(() => folderDocuments.value)
   const currentDocument = computed<Document | null>(() => currentDocumentData.value)
@@ -277,6 +286,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     folder.name = trimmed // 乐观更新
     try {
       await folderApi.rename(folder.id, trimmed)
+      notifySyncChange()
     } catch (e: any) {
       folder.name = oldName
       error.value = e?.message || '重命名失败'
@@ -287,6 +297,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       const name = generateUniqueName('新建目录', folders.value)
       const id = await folderApi.create({ name, parentId: null })
+      notifySyncChange()
       folders.value.push({
         id,
         name,
@@ -305,6 +316,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const siblings = getSiblings(target.parentId, null)
       const name = generateUniqueName('新建目录', siblings)
       const id = await folderApi.create({ name, parentId: target.parentId })
+      notifySyncChange()
       const sibling: FolderNode = {
         id,
         name,
@@ -327,6 +339,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       const name = generateUniqueName('新建子目录', parent.children)
       const id = await folderApi.create({ name, parentId: parent.id })
+      notifySyncChange()
       parent.children.push({
         id,
         name,
@@ -348,6 +361,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function deleteFolder(folder: FolderNode) {
     try {
       await folderApi.remove(folder.id)
+      notifySyncChange()
       if (folder.parentId === null) {
         const idx = folders.value.findIndex(f => f.id === folder.id)
         if (idx !== -1) folders.value.splice(idx, 1)
@@ -560,6 +574,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       try {
         await documentApi.updateContent(documentId, content)
         saveErrors.delete(documentId)
+        notifySyncChange()
       } catch (e: any) {
         const saveError = e instanceof Error ? e : new Error(e?.message || '保存失败')
         // 没有更新内容等待保存时保留失败任务，让下一次 flush 能重试原内容。
@@ -705,6 +720,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const finalTitle = title || generateUniqueDocTitle('新建文稿', folderDocuments.value)
     try {
       const dto = await documentApi.create({ title: finalTitle, folderId })
+      notifySyncChange()
       const doc = mapDocument(dto)
       folderDocuments.value.unshift(doc)
       selectedDocumentId.value = doc.id
@@ -995,6 +1011,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       try {
         const dto = await documentApi.create({ title: draft.title, folderId: targetFolderId })
         if (draft.content) await documentApi.updateContent(dto.id, draft.content)
+        notifySyncChange()
 
         // 继续保持外部文件写回：把映射键从草稿 id 换成新文稿 id
         const externalPath = externalFilePathMap.value[documentId]
@@ -1026,6 +1043,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     try {
       await documentApi.moveToFolder(documentId, targetFolderId)
+      notifySyncChange()
       const meta = folderDocuments.value.find(d => d.id === documentId)
       if (meta) meta.folderId = targetFolderId
       if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
@@ -1041,6 +1059,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function renameDocument(documentId: string, title: string) {
     try {
       await documentApi.rename(documentId, title)
+      notifySyncChange()
       const meta = folderDocuments.value.find(d => d.id === documentId)
       if (meta) meta.title = title
       if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
@@ -1094,6 +1113,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       await flushPendingSave(documentId)
       if (saveErrors.size === 0) error.value = ''
       await documentApi.remove(documentId)
+      notifySyncChange()
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
       await removeDocFromListAndAdvance(documentId)
@@ -1121,6 +1141,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     try {
       await documentApi.restore(documentId)
+      notifySyncChange()
       deletingDocumentIds.delete(documentId)
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
@@ -1153,6 +1174,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       await discardPendingSave(documentId)
       if (saveErrors.size === 0) error.value = ''
       await documentApi.hardDelete(documentId)
+      notifySyncChange()
       const idx = folderDocuments.value.findIndex(d => d.id === documentId)
       if (idx !== -1) folderDocuments.value.splice(idx, 1)
       await removeDocFromListAndAdvance(documentId)
@@ -1170,6 +1192,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       await Promise.all(persistedIds.map(discardPendingSave))
       if (saveErrors.size === 0) error.value = ''
       await documentApi.emptyTrash()
+      notifySyncChange()
       // 同时清空废纸篓中的本地草稿
       trashDrafts.value = []
       persistTrashDrafts(trashDrafts.value)
@@ -1487,6 +1510,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const items = orderedIds.map((id, idx) => ({ id, sortOrder: idx }))
     try {
       await folderApi.reorderFolders(parentId, items)
+      notifySyncChange()
     } catch (e: any) {
       error.value = e?.message || '保存排序失败'
     }
@@ -1566,6 +1590,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
       // 后端会在一个事务里更新父级和新旧两边的 sort_order。
       await folderApi.moveFolder(dragId, newParentId, insertAt)
+      notifySyncChange()
     }
 
     try {
@@ -1584,6 +1609,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const items = orderedIds.map((id, idx) => ({ id, sortOrder: idx }))
     try {
       await documentApi.reorderDocuments(fid, items)
+      notifySyncChange()
     } catch (e: any) {
       error.value = e?.message || '保存排序失败'
     }

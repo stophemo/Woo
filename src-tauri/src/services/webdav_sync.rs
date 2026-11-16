@@ -36,10 +36,10 @@ const META_LAST_SYNC: &str = "webdav_last_sync_time";
 const META_BACKOFF_UNTIL: &str = "webdav_backoff_until";
 const META_DIRS_READY: &str = "webdav_dirs_ready";
 const TOMBSTONE_KEEP_DAYS: i64 = 90;
-/// 坚果云免费版限制 600 请求 / 30 分钟。按每分钟一轮计算，一轮最多
-/// 12 次文件读写再加 1 次清单 HEAD，留足余量给 PROPFIND/重试和其他应用。
-/// 剩下的变更留给 60 秒后的下一轮。
-const MAX_FILE_OPERATIONS_PER_SYNC: usize = 12;
+/// 坚果云免费版限制 600 请求 / 30 分钟。轮询间隔已缩短到 30 秒，因此一轮
+/// 最多 5 次文件读写，加上清单 HEAD/GET 和提交，30 分钟最多约 480 次请求，
+/// 留出余量给 PROPFIND、重试和其他使用同一网盘的应用。剩下的变更留给下一轮。
+const MAX_FILE_OPERATIONS_PER_SYNC: usize = 5;
 
 struct Entity {
     table: &'static str,
