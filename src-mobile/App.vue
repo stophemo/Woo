@@ -3,7 +3,6 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { listen } from '@tauri-apps/api/event'
-import { useAuthStore } from '../src/stores/auth'
 import { useSyncStore } from '../src/stores/sync'
 import { useWorkspaceStore } from '../src/stores/workspace'
 import { useLockStore } from '../src/stores/lock'
@@ -13,7 +12,6 @@ import MIcon from './components/MIcon.vue'
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
@@ -52,22 +50,11 @@ const active = ref(TAB_ROUTES.indexOf(route.path) >= 0 ? TAB_ROUTES.indexOf(rout
 const showTabbar = computed(() => TAB_ROUTES.includes(route.path))
 const appReady = ref(false)
 
-async function refreshSessionAndSync() {
-  const sessionValid = await authStore.refreshSession()
-  if (!sessionValid) {
-    workspaceStore.reset()
-    if (route.path === '/') {
-      await workspaceStore.bootstrap().catch(() => {})
-      await workspaceStore.openAllDocuments()
-    }
-    await lockStore.bootstrap().catch(() => {})
-    return
-  }
-
+async function startSyncIfConfigured() {
+  await syncStore.refreshStatus()
+  if (syncStore.backend !== 'webdav' && syncStore.backend !== 'lan') return
   const synced = await syncStore.triggerSync()
-  if (!synced && syncStore.errorMsg) {
-    showToast(syncStore.errorMsg)
-  }
+  if (!synced && syncStore.errorMsg) showToast(syncStore.errorMsg)
 }
 
 watch(() => route.path, (path) => {
@@ -107,17 +94,16 @@ onMounted(async () => {
     }
   })
 
-  // 本地会话立即恢复；联网校验和首次同步转入后台，不阻塞本地文稿。
-  await authStore.bootstrap()
+  // 单用户数据模式：直接打开本地 woo.db，不存在账号切换。
   appReady.value = true
   void lockStore.bootstrap().catch(() => {})
-  void syncStore.refreshStatus()
-  if (authStore.isLoggedIn) void refreshSessionAndSync()
+  // WebDAV/局域网启用时后台补一轮同步，不阻塞本地文稿。
+  void startSyncIfConfigured()
 })
 </script>
 
 <template>
-  <van-config-provider :theme="vantTheme" :theme-vars="mobileThemeVars">
+  <van-config-provider :theme="vantTheme" :theme-vars="mobileThemeVars" theme-vars-scope="global">
     <div class="mobile-app">
       <div class="page-content" :class="{ 'has-tabbar': showTabbar }">
         <router-view v-if="appReady" />

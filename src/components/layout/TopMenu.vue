@@ -44,12 +44,6 @@
           <path d="M2.5 14.5V11.5H5.5"/>
         </svg>
       </button>
-      <button class="window-control-btn" :title="isLoggedIn ? '账户信息' : '登录账户'" @click="$emit('open-login')">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="5" r="2.5"/>
-          <path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/>
-        </svg>
-      </button>
       <div v-if="!isMac" class="menu-divider"></div>
       <button v-if="!isMac" class="window-control-btn minimize-btn" @click="minimizeWindow" title="最小化">
         <IconMinimize />
@@ -77,12 +71,6 @@
           <path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/>
           <path d="M13.5 1.5V4.5H10.5"/>
           <path d="M2.5 14.5V11.5H5.5"/>
-        </svg>
-      </button>
-      <button class="window-control-btn" :title="isLoggedIn ? '账户信息' : '登录账户'" @click="$emit('open-login')">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="5" r="2.5"/>
-          <path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/>
         </svg>
       </button>
     </div>
@@ -181,13 +169,11 @@ const activeMenuIndex = ref<number | null>(null)
 interface Props {
   isOpen?: boolean
   isFullscreen?: boolean
-  isLoggedIn?: boolean
   isMobile?: boolean
 }
 const props = withDefaults(defineProps<Props>(), {
   isOpen: true,
   isFullscreen: false,
-  isLoggedIn: false,
   isMobile: false
 })
 
@@ -224,7 +210,6 @@ const emit = defineEmits<{
   'open-settings': []
   'toggle-top-menu': []
   'toggle-status-bar': []
-  'open-login': []
   'menu-action': [action: string]
 }>()
 

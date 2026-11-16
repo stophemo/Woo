@@ -1447,7 +1447,7 @@ const menuActionHandler = (e: Event) => {
 .scroll-nav-btn:hover { background: color-mix(in srgb, var(--accent, #409eff) 20%, var(--bg-toolbar, #2a2a2a)); color: var(--accent, #409eff); }
 .scroll-nav-btn:active { transform: scale(0.95); }
 .editor-scale-wrap { flex: 1; min-width: 0; min-height: 0; }
-.editor-content { width: 100%; min-width: 0; height: 100%; }
+.editor-content { width: 100%; min-width: 0; height: 100%; font-family: var(--editor-font-family, "LXGW WenKai", "PingFang SC", serif); }
 .table-edit-toolbar { position: sticky; top: 10px; z-index: 8; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 24px); margin: 8px auto -42px; padding: 5px; border: 1px solid var(--border-primary); border-radius: 5px; background: color-mix(in srgb, var(--bg-elevated) 94%, transparent); box-shadow: var(--shadow-dropdown); }
 .table-edit-toolbar button { border: 0; border-radius: 3px; background: transparent; color: var(--text-secondary); padding: 4px 7px; cursor: pointer; font-size: 12px; white-space: nowrap; }
 .table-edit-toolbar button:hover { background: var(--bg-hover); color: var(--text-primary); }

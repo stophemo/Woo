@@ -1,6 +1,8 @@
 use crate::db;
 use crate::services::auth_service;
+use crate::services::lan_sync;
 use crate::services::utils::now_str;
+use crate::services::webdav_sync;
 use crate::supabase;
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
@@ -78,10 +80,6 @@ fn try_get_sync_meta(key: &str) -> Result<Option<String>, String> {
     })
 }
 
-pub fn get_sync_meta(key: &str) -> Option<String> {
-    try_get_sync_meta(key).ok().flatten()
-}
-
 fn try_set_sync_meta(key: &str, value: &str) -> Result<(), String> {
     db::with_db(|conn| {
         conn.execute(
@@ -91,10 +89,6 @@ fn try_set_sync_meta(key: &str, value: &str) -> Result<(), String> {
         .map(|_| ())
         .map_err(|e| format!("写入同步元数据失败: {}", e))
     })
-}
-
-pub fn get_last_sync_time() -> Option<String> {
-    get_sync_meta("last_sync_time")
 }
 
 #[derive(Debug, PartialEq)]
@@ -261,23 +255,124 @@ async fn push_changes(
 // ===================== Pull Logic =====================
 
 /// Get the set of column names that exist in the local table.
-fn get_local_columns(table: &str) -> Result<HashSet<String>, String> {
-    db::with_db(|conn| {
-        let sql = format!("PRAGMA table_info({})", table);
+fn get_local_columns_conn(conn: &rusqlite::Connection, table: &str) -> Result<HashSet<String>, String> {
+    let sql = format!("PRAGMA table_info({})", table);
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))?;
+    rows.collect::<Result<HashSet<_>, _>>()
+        .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))
+}
+
+fn merge_rows_with_conn(
+    conn: &rusqlite::Connection,
+    table: &str,
+    id_field: &str,
+    local_cols: &HashSet<String>,
+    remote_rows: &[serde_json::Value],
+) -> Result<(i32, i32, Vec<String>), String> {
+    let mut pulled = 0i32;
+    let mut conflicts = 0i32;
+    let mut pulled_ids = Vec::new();
+
+    // Prepare check statement
+    let check_sql = format!("SELECT update_time FROM {} WHERE {} = ?", table, id_field);
+    let mut check_stmt = conn
+        .prepare(&check_sql)
+        .map_err(|e| format!("检查本地记录失败 [{}]: {}", table, e))?;
+
+    for row in remote_rows {
+        let obj = row
+            .as_object()
+            .ok_or_else(|| format!("远端记录格式无效 [{}]", table))?;
+
+        let id = obj
+            .get(id_field)
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("远端记录缺少主键 [{}]", table))?
+            .to_string();
+
+        let remote_update_time = obj
+            .get("update_time")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("远端记录缺少更新时间 [{}:{}]", table, id))?;
+
+        // Check local record
+        let local_wins = check_stmt
+            .query_row([&id], |r| {
+                let local_time: String = r.get(0)?;
+                Ok(local_time)
+            })
+            .optional()
+            .map_err(|e| format!("检查本地记录失败 [{}:{}]: {}", table, id, e))?
+            .map_or(false, |local_time| {
+                local_time.as_str() >= remote_update_time
+            });
+
+        if local_wins {
+            conflicts += 1;
+            continue;
+        }
+
+        // Build INSERT OR REPLACE with only locally-existing columns, excluding user_id
+        let mut keys = Vec::new();
+        let mut vals: Vec<rusqlite::types::Value> = Vec::new();
+
+        for (k, v) in obj {
+            if k == "user_id" || !local_cols.contains(k) {
+                continue;
+            }
+            keys.push(k.clone());
+            let val = match v {
+                serde_json::Value::Null => rusqlite::types::Value::Null,
+                serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        rusqlite::types::Value::Integer(i)
+                    } else if let Some(f) = n.as_f64() {
+                        rusqlite::types::Value::Real(f)
+                    } else {
+                        rusqlite::types::Value::Text(n.to_string())
+                    }
+                }
+                serde_json::Value::Bool(b) => {
+                    rusqlite::types::Value::Integer(if *b { 1 } else { 0 })
+                }
+                _ => rusqlite::types::Value::Text(v.to_string()),
+            };
+            vals.push(val);
+        }
+
+        if keys.is_empty() {
+            return Err(format!("远端记录没有可写入字段 [{}:{}]", table, id));
+        }
+
+        let placeholders: Vec<String> = keys.iter().map(|_| "?".to_string()).collect();
+        let insert_sql = format!(
+            "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+            table,
+            keys.join(", "),
+            placeholders.join(", ")
+        );
+
         let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))?;
-        rows.collect::<Result<HashSet<_>, _>>()
-            .map_err(|e| format!("读取本地表结构失败 [{}]: {}", table, e))
-    })
+            .prepare(&insert_sql)
+            .map_err(|e| format!("准备合并远端记录失败 [{}:{}]: {}", table, id, e))?;
+        stmt.execute(rusqlite::params_from_iter(vals.iter()))
+            .map_err(|e| format!("合并远端记录失败 [{}:{}]: {}", table, id, e))?;
+        pulled += 1;
+        pulled_ids.push(id);
+    }
+
+    Ok((pulled, conflicts, pulled_ids))
 }
 
 /// Merge remote rows into local SQLite (last-write-wins).
 /// Returns (pulled_count, conflict_count, pulled_ids).
-fn merge_into_local(
+pub(crate) fn merge_into_local(
     table: &str,
     id_field: &str,
     remote_rows: &[serde_json::Value],
@@ -285,105 +380,27 @@ fn merge_into_local(
     if remote_rows.is_empty() {
         return Ok((0, 0, Vec::new()));
     }
-
-    let local_cols = get_local_columns(table)?;
-
     db::with_db(|conn| {
-        let mut pulled = 0i32;
-        let mut conflicts = 0i32;
-        let mut pulled_ids = Vec::new();
-
-        // Prepare check statement
-        let check_sql = format!("SELECT update_time FROM {} WHERE {} = ?", table, id_field);
-        let mut check_stmt = conn
-            .prepare(&check_sql)
-            .map_err(|e| format!("检查本地记录失败 [{}]: {}", table, e))?;
-
-        for row in remote_rows {
-            let obj = row
-                .as_object()
-                .ok_or_else(|| format!("远端记录格式无效 [{}]", table))?;
-
-            let id = obj
-                .get(id_field)
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| format!("远端记录缺少主键 [{}]", table))?
-                .to_string();
-
-            let remote_update_time = obj
-                .get("update_time")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| format!("远端记录缺少更新时间 [{}:{}]", table, id))?;
-
-            // Check local record
-            let local_wins = check_stmt
-                .query_row([&id], |r| {
-                    let local_time: String = r.get(0)?;
-                    Ok(local_time)
-                })
-                .optional()
-                .map_err(|e| format!("检查本地记录失败 [{}:{}]: {}", table, id, e))?
-                .map_or(false, |local_time| {
-                    local_time.as_str() >= remote_update_time
-                });
-
-            if local_wins {
-                conflicts += 1;
-                continue;
-            }
-
-            // Build INSERT OR REPLACE with only locally-existing columns, excluding user_id
-            let mut keys = Vec::new();
-            let mut vals: Vec<rusqlite::types::Value> = Vec::new();
-
-            for (k, v) in obj {
-                if k == "user_id" || !local_cols.contains(k) {
-                    continue;
-                }
-                keys.push(k.clone());
-                let val = match v {
-                    serde_json::Value::Null => rusqlite::types::Value::Null,
-                    serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
-                    serde_json::Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            rusqlite::types::Value::Integer(i)
-                        } else if let Some(f) = n.as_f64() {
-                            rusqlite::types::Value::Real(f)
-                        } else {
-                            rusqlite::types::Value::Text(n.to_string())
-                        }
-                    }
-                    serde_json::Value::Bool(b) => {
-                        rusqlite::types::Value::Integer(if *b { 1 } else { 0 })
-                    }
-                    _ => rusqlite::types::Value::Text(v.to_string()),
-                };
-                vals.push(val);
-            }
-
-            if keys.is_empty() {
-                return Err(format!("远端记录没有可写入字段 [{}:{}]", table, id));
-            }
-
-            let placeholders: Vec<String> = keys.iter().map(|_| "?".to_string()).collect();
-            let insert_sql = format!(
-                "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
-                table,
-                keys.join(", "),
-                placeholders.join(", ")
-            );
-
-            let mut stmt = conn
-                .prepare(&insert_sql)
-                .map_err(|e| format!("准备合并远端记录失败 [{}:{}]: {}", table, id, e))?;
-            stmt.execute(rusqlite::params_from_iter(vals.iter()))
-                .map_err(|e| format!("合并远端记录失败 [{}:{}]: {}", table, id, e))?;
-            pulled += 1;
-            pulled_ids.push(id);
-        }
-
-        Ok((pulled, conflicts, pulled_ids))
+        let local_cols = get_local_columns_conn(conn, table)?;
+        merge_rows_with_conn(conn, table, id_field, &local_cols, remote_rows)
     })
+}
+
+/// 与 `merge_into_local` 相同，但在持锁期间复核账号，避免同步等待网络时
+/// 登录/退出切库，把 A 的远端数据写进 B 的数据库。
+pub(crate) fn merge_into_local_for_user(
+    table: &str,
+    id_field: &str,
+    remote_rows: &[serde_json::Value],
+    expected_user: Option<&str>,
+) -> Result<(i32, i32, Vec<String>), String> {
+    if remote_rows.is_empty() {
+        return Ok((0, 0, Vec::new()));
+    }
+    db::with_db_for_user(expected_user, |conn| {
+        let local_cols = get_local_columns_conn(conn, table)?;
+        merge_rows_with_conn(conn, table, id_field, &local_cols, remote_rows)
+    })?
 }
 
 /// Pull remote changes from Supabase and merge into local.
@@ -489,7 +506,7 @@ async fn pull_tombstones(user_id: &str, access_token: &str) -> Result<i32, Strin
 
 // ===================== Cleanup Logic =====================
 
-fn parse_cleanup_seconds() -> i64 {
+pub(crate) fn parse_cleanup_seconds() -> i64 {
     match std::env::var("SYNC_CLEANUP_SECONDS") {
         Ok(expr) => {
             if expr
@@ -627,7 +644,8 @@ fn promote_empty_folders_to_deleted2() {
 
 // ===================== Orchestration =====================
 
-/// Execute a full sync cycle: tombstone pull → remote pull → local push → cleanup.
+/// 旧的 Supabase 同步循环。运行时已不再调用，仅保留代码以便迁移/回滚。
+#[allow(dead_code)]
 async fn do_sync() -> Result<SyncResult, String> {
     let session = auth_service::ensure_fresh_session().await?;
     let user_id = session.user.id.clone();
@@ -687,39 +705,46 @@ async fn do_sync() -> Result<SyncResult, String> {
 }
 
 /// Run a full sync cycle (async, with concurrency guard).
+///
+/// WebDAV 是独立后端：启用后优先使用它，Supabase 登录态保留但不参与本轮同步。
 pub async fn sync_now_async() -> Result<SyncResult, String> {
     let _guard = SyncGuard::acquire()?;
-    do_sync().await
+    if lan_sync::is_enabled() {
+        return lan_sync::sync_now().await;
+    }
+    if webdav_sync::is_enabled() {
+        return webdav_sync::sync_now().await;
+    }
+    Err("未配置同步方式：请在「WebDAV 同步」中填写服务地址".to_string())
+}
+
+/// 当前实际生效的同步后端，供前端显示与决定是否触发同步。
+pub fn active_backend() -> &'static str {
+    if lan_sync::is_enabled() {
+        "lan"
+    } else if webdav_sync::is_enabled() {
+        "webdav"
+    } else {
+        "off"
+    }
 }
 
 /// Get current sync status.
 pub fn get_status() -> SyncStatus {
     let is_syncing = *IS_SYNCING.lock().unwrap();
+    if lan_sync::is_enabled() || webdav_sync::is_enabled() {
+        return SyncStatus {
+            is_syncing,
+            last_sync_time: webdav_sync::last_sync_time(),
+            pending_changes: webdav_sync::count_pending_changes(),
+        };
+    }
+    // Supabase 同步已从运行时移除；未配置 WebDAV 时不做任何网络同步。
     SyncStatus {
         is_syncing,
-        last_sync_time: get_last_sync_time(),
-        pending_changes: count_pending_changes(),
+        last_sync_time: None,
+        pending_changes: 0,
     }
-}
-
-/// Count how many records have changed since last sync.
-pub fn count_pending_changes() -> i32 {
-    let last_sync = match get_last_sync_time() {
-        Some(t) => t,
-        None => return -1, // first sync, unknown
-    };
-
-    let mut total = 0i32;
-    for &(table, _id_field) in ENTITIES {
-        let sql = format!(
-            "SELECT COUNT(*) as cnt FROM {} WHERE update_time > ?",
-            table
-        );
-        let count: Option<i32> =
-            db::with_db(|conn| conn.query_row(&sql, [&last_sync], |row| row.get(0)).ok());
-        total += count.unwrap_or(0);
-    }
-    total
 }
 
 #[cfg(test)]

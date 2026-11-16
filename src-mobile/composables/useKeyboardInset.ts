@@ -17,7 +17,9 @@ export function useKeyboardInset() {
     const obscured = viewport
       ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
       : 0
-    inset.value = Math.round(Math.max(nativeInset, obscured > 80 ? obscured : 0))
+    // 新版 WebView 的 visualViewport 是局部坐标，优先使用；旧版看不到键盘时
+    // 才退回原生上报值。两者取 max 会在导航栏高度上多抬一截。
+    inset.value = Math.round(obscured > 80 ? obscured : nativeInset)
   }
 
   function onNativeImeInset(event: Event) {
@@ -29,12 +31,14 @@ export function useKeyboardInset() {
   onMounted(() => {
     window.addEventListener('woo:ime-inset', onNativeImeInset)
     window.visualViewport?.addEventListener('resize', apply)
+    window.visualViewport?.addEventListener('scroll', apply)
     apply()
   })
 
   onBeforeUnmount(() => {
     window.removeEventListener('woo:ime-inset', onNativeImeInset)
     window.visualViewport?.removeEventListener('resize', apply)
+    window.visualViewport?.removeEventListener('scroll', apply)
   })
 
   return { inset }

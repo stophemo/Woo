@@ -3,11 +3,10 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getVersion } from '@tauri-apps/api/app'
-import { useAuthStore } from '../../src/stores/auth'
 import { useSyncStore } from '../../src/stores/sync'
-import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
 import { useThemeStore } from '../../src/stores/theme'
+import { editorFontId, editorFontOptions } from '../../src/config/editorFonts'
 import {
   DEFAULT_EDITOR_SHORTCUTS,
   editorShortcutEntries,
@@ -21,11 +20,10 @@ import {
 
 const router = useRouter()
 const appVersion = ref(__APP_VERSION__)
-const authStore = useAuthStore()
 const syncStore = useSyncStore()
-const workspaceStore = useWorkspaceStore()
 const lockStore = useLockStore()
 const themeStore = useThemeStore()
+const currentFontLabel = computed(() => editorFontOptions.find(option => option.id === editorFontId.value)?.label ?? '文楷')
 
 const shortcutEntries = computed(() => editorShortcutEntries())
 const showShortcutSettings = ref(false)
@@ -34,6 +32,7 @@ const shortcutError = ref('')
 
 onMounted(async () => {
   window.addEventListener('keydown', captureShortcut, true)
+  void syncStore.refreshStatus()
   try {
     appVersion.value = await getVersion()
   } catch {
@@ -91,19 +90,9 @@ function resetAllShortcuts() {
   recordingAction.value = null
 }
 
-function openLogin() {
-  router.push('/login')
-}
-
-async function onLogout() {
-  await authStore.logout()
-  showToast('已退出登录')
-  await workspaceStore.bootstrap()
-}
-
 async function onSyncNow() {
-  if (!authStore.isLoggedIn) {
-    showToast('请先登录后再同步')
+  if (syncStore.backend !== 'webdav' && syncStore.backend !== 'lan') {
+    showToast('请先配置 WebDAV 同步')
     return
   }
   const ok = await syncStore.triggerSync()
@@ -160,17 +149,16 @@ async function beforePwdClose(action: string) {
       <p class="w-head__meta">Woo v{{ appVersion }}</p>
     </header>
 
-    <!-- 账户 -->
-    <van-cell-group inset title="账户">
-      <template v-if="authStore.isLoggedIn">
-        <van-cell icon="manager-o" title="账号" :value="authStore.user?.email || authStore.user?.username || '已登录'" />
-        <van-cell icon="close" title="退出登录" is-link :label="authStore.loading ? '正在退出…' : ''" @click="onLogout" />
-      </template>
-      <van-cell v-else icon="manager-o" title="登录 / 注册" is-link value="未登录" @click="openLogin" />
-    </van-cell-group>
-
-    <!-- 云同步 -->
-    <van-cell-group inset title="云同步">
+    <!-- WebDAV 同步 -->
+    <van-cell-group inset title="WebDAV 同步">
+      <van-cell
+        icon="exchange"
+        title="同步设置"
+        :label="syncStore.backend === 'webdav' || syncStore.backend === 'lan' ? '已连接，自动增量同步' : '支持坚果云、NAS、Nextcloud 或局域网'"
+        :value="syncStore.backend === 'webdav' || syncStore.backend === 'lan' ? '生效中' : '未启用'"
+        is-link
+        @click="router.push('/webdav')"
+      />
       <van-cell icon="exchange" title="同步状态">
         <template #value>
           <span>{{ syncStore.lastSyncLabel }}</span>
@@ -183,7 +171,7 @@ async function beforePwdClose(action: string) {
         icon="replay"
         title="立即同步"
         is-link
-        :label="!authStore.isLoggedIn ? '登录后可用' : ''"
+        :label="syncStore.backend === 'off' ? '配置 WebDAV 后可用' : ''"
         @click="onSyncNow"
       >
         <template #value>
@@ -199,6 +187,13 @@ async function beforePwdClose(action: string) {
 
     <!-- 编辑 -->
     <van-cell-group inset title="编辑">
+      <van-cell
+        icon="edit"
+        title="编辑字体"
+        :value="currentFontLabel"
+        is-link
+        @click="router.push('/font')"
+      />
       <van-cell
         icon="edit"
         title="编辑器快捷键"

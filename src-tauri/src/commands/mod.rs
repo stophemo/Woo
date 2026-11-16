@@ -2,11 +2,14 @@ pub mod auth;
 pub mod document;
 pub mod external_file;
 pub mod folder;
+pub mod lan_sync;
 pub mod lock;
+pub mod server;
 pub mod sync;
 pub mod system;
 pub mod update;
 pub mod version;
+pub mod webdav;
 
 use serde::Serialize;
 use tauri::AppHandle;

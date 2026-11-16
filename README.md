@@ -26,14 +26,18 @@
 
 ## ✨ 为什么选择 Woo
 
-Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注册即可在本机离线写作；需要跨设备时，再登录并同步到 macOS、Windows 与 Android。
+Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用任意 WebDAV 或同一 Wi-Fi 局域网同步到 macOS、Windows 与 Android。
+
+> **v0.7.1**：移除账号登录，每台设备只保留一份本地 `woo.db`；同步只走 WebDAV 或局域网；新增 6 位配对码、移动编辑器重做，以及界面/正文字体分离。
 
 | | |
 |---|---|
-| 💾 **本地优先** | 正式文稿写入本机 SQLite，草稿保存在应用本地；断网也能浏览和编辑 |
-| ☁️ **可选同步** | 注册并登录后通过 Supabase 增量同步，采用最后写入胜出与冲突副本保护 |
+| 💾 **单库本地优先** | 无需登录/注册，启动直接打开本机 `woo.db`；正式文稿写入 SQLite，草稿留在本地，断网也能浏览和编辑 |
+| ☁️ **WebDAV 同步** | 任意 WebDAV（坚果云/NAS/Nextcloud/自建），增量同步、最后写入胜出，不经过 Woo 中转服务器 |
+| 📡 **局域网同步** | 桌面端内嵌 WebDAV；手机输入 6 位配对码自动发现并连接；同一 Wi-Fi 完全离线，与 WebDAV 二选一 |
+| 🔤 **字体系统** | 界面统一使用内置「霞鹜新晰黑 Screen」；正文可选文楷（内置霞鹜文楷）、黑体、宋体、等宽；移动端 Aa 面板可调字号 |
 | 📝 **桌面编辑** | Tiptap 所见即所得编辑器，支持 Markdown 输入与粘贴、表格、大纲和思维导图 |
-| 📱 **移动编辑** | Android 采用层级目录导航，进入文稿即可编辑、自动保存，支持搜索、归档到目录、分享、回收站与版本回溯 |
+| 📱 **移动编辑** | Android 层级目录 + 草稿箱；浮动格式条与 Aa 面板，自动保存，支持搜索、移动到目录、分享、回收站与版本回溯 |
 | ⏱️ **版本历史** | 桌面端与 Android 均自动记录版本，也可手动建立和恢复正式文稿版本 |
 | 📤 **文件与导出** | 桌面端可读写 Markdown / TXT 文件，并将文稿导出为 Markdown、纯文本或 PNG |
 | 🔒 **应用内访问锁** | 可锁定文件夹或文稿；用于限制应用内查看，不等同于磁盘加密 |
@@ -57,7 +61,7 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注�
 
 ## 🩺 排查问题
 
-应用会把运行日志写入数据目录下的 `logs/woo.log`（超过 2MB 自动轮转为 `woo.1.log`）。登录、同步、数据库打开等关键步骤均有记录，反馈问题时可只提供这个文件。
+应用会把运行日志写入数据目录下的 `logs/woo.log`（超过 2MB 自动轮转为 `woo.log.1`）。同步、数据库打开等关键步骤均有记录，反馈问题时可只提供这个文件。
 
 | 平台 | 日志路径 |
 |------|----------|
@@ -65,7 +69,7 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注�
 | Windows | `%APPDATA%\Woo\logs\woo.log`（开发环境为 `woo-dev`） |
 | Android | 应用私有目录下的 `logs/woo.log` |
 
-日志不会记录密码、令牌等敏感内容；登录失败时只会记录 HTTP 状态码与错误描述。
+日志不会记录密码、令牌等敏感内容；WebDAV 失败时只会记录 HTTP 状态码与错误描述。
 
 ---
 
@@ -73,8 +77,8 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注�
 
 1. 前往 [Releases](https://github.com/stophemo/Woo/releases/latest) 下载对应平台安装包
 2. 安装并启动
-3. 开始写作，文稿会优先保存在当前设备
-4. （可选）注册或登录 Woo 账号，启用跨设备云同步
+3. 开始写作，文稿保存在本机 `woo.db`，无需登录
+4. （可选）桌面端「设置 → WebDAV 同步」或移动端「我的 → WebDAV 同步」接入 WebDAV；同一 Wi-Fi 时可在桌面端「设置 → 局域网同步」启用，手机输入 6 位配对码自动连接
 
 ---
 
@@ -88,7 +92,7 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注�
 | 前端 | Vue 3 + Pinia + Vite + TypeScript |
 | 编辑器 | Tiptap (ProseMirror) |
 | 数据库 | SQLite (rusqlite, bundled) |
-| 云服务 | Supabase (Auth + REST API) |
+| 同步 | 任意 WebDAV（含桌面端内置局域网 WebDAV） |
 | 移动端 | Tauri Mobile (Android；iOS 计划中) |
 
 ### 项目结构
@@ -96,7 +100,7 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需注�
 ```
 Woo/
 ├── src/                    # 桌面端前端 (Vue 3, ESM)
-│   ├── stores/             # Pinia 状态管理 (workspace, auth, sync, lock…)
+│   ├── stores/             # Pinia 状态管理 (workspace, sync, lock, theme…)
 │   ├── services/           # IPC 客户端、更新、Markdown 转换与导出
 │   ├── components/         # 桌面端 UI 组件 (layout/, settings/)
 │   └── types/              # TypeScript 类型定义
@@ -108,7 +112,7 @@ Woo/
 │   │   ├── commands/       # Tauri IPC 命令入口
 │   │   ├── services/       # 业务逻辑 (folder, document, sync_engine…)
 │   │   ├── db/             # SQLite 连接管理 + Schema 迁移
-│   │   ├── supabase/       # Supabase REST API 客户端
+│   │   ├── supabase/       # 旧 Supabase 模块（运行时未启用）
 │   │   └── models/         # 数据模型
 │   └── gen/android/        # Android 项目骨架
 ├── landing/                # 官网落地页 (部署于 Vercel)
@@ -139,7 +143,7 @@ npm run tauri:android:build  # Android 生产构建
 ```
 Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
                     ↓                                             ↓
-              自动拆包 { ok, data }                          Supabase (同步时)
+              自动拆包 { ok, data }                          WebDAV (同步时)
 ```
 
 - 所有 Rust 命令返回 `CommandResult<T> { ok, data?, message? }`
@@ -150,7 +154,7 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 数据库
 
-未登录 → `woo.db`，登录后 → `woo-{user-id}.db`（首次登录会从旧用户名数据库自动迁移）。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与云同步和版本历史。
+应用始终使用单用户本地库 `woo.db`；启动不再恢复云端会话，也不会切换到 `woo-{user}.db`。旧版遗留的用户库文件仍保留在数据目录，但不会被自动打开。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与 WebDAV 同步和版本历史。
 
 | 表 | 说明 |
 |---|---|
@@ -163,13 +167,21 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 同步引擎
 
-登录后，同步引擎以 60 秒间隔在后台运行，也支持手动触发。流程：拉墓碑 → 拉远端 → 推本地 → 清理 → 墓碑 GC。采用最后写入胜出 + 增量同步 + 冲突副本保护策略。
+同步引擎以 60 秒间隔在后台运行，也支持手动触发。
+
+- **双向同步**：每轮同时拉取与推送；每条记录按 `update_time` 最新胜出，时间相同用内容哈希决定，删除通过墓碑向所有设备传播。
+- **WebDAV 模式**：以 `manifest.json` 为提交点，按哈希只传变化的文稿/目录，墓碑保留 90 天；支持坚果云、NAS、Nextcloud、自建服务。
+- **局域网模式**：桌面端内置 WebDAV 服务；桌面端设置显示 6 位配对码，手机在 WebDAV 页「电脑配对」输入后通过 UDP 广播自动发现 Mac，填入地址、令牌与目录并开始双向同步。手动地址仍可用，同一 Wi-Fi 不经过互联网。
+- 版本历史、知识库分块与加锁密码只保留在本机，不参与同步。
+- Supabase 登录/中转不参与运行时同步；仅保留旧数据兼容代码。
+  详见 [docs/domestic-sync.md](docs/domestic-sync.md)。
 
 ---
 
 ## 🗺️ 路线图
 
-- [x] 云同步 (Supabase Auth + Sync Engine)
+- [x] WebDAV 同步（含局域网）
+- [x] 局域网 6 位配对码自动连接
 - [ ] macOS 原生菜单 + 完整快捷键
 - [ ] Homebrew Cask 分发
 - [ ] iOS 支持 (Tauri Mobile)

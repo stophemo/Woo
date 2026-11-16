@@ -45,7 +45,7 @@ fn lock_data_dir() -> MutexGuard<'static, Option<PathBuf>> {
 }
 
 /// 数据目录是叶子锁：只在不需要其它锁时短暂持有，返回后立即释放。
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     lock_data_dir()
         .clone()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -54,6 +54,11 @@ fn data_dir() -> PathBuf {
 /// Set the app data directory (called once at startup)
 pub fn set_data_dir(path: PathBuf) {
     *lock_data_dir() = Some(path);
+}
+
+/// 当前数据库对应的账号 key；`None` 表示未登录的本地库。
+pub(crate) fn current_user_key() -> Option<String> {
+    lock_state().user.clone()
 }
 
 /// Switch to a specific user's database using an immutable account key.
@@ -139,24 +144,45 @@ pub fn prepare_user_db_on_first_login(
             source_db
         );
         std::fs::copy(source_db, &user_db).map_err(|e| format!("复制数据库失败: {}", e))?;
-        // 清除 last_sync_time，让首次同步不传 update_time 过滤条件，拉取全部远端数据
+        // 清除同步游标，让首次同步不传 update_time 过滤条件，拉取全部远端数据。
+        // WebDAV 的已知 ID / 水位也不能跨账号沿用，否则新用户库会误判本地硬删除。
         if let Ok(conn) = rusqlite::Connection::open(&user_db) {
-            conn.execute("DELETE FROM sync_meta WHERE key = 'last_sync_time'", [])
-                .ok();
+            conn.execute(
+                "DELETE FROM sync_meta WHERE key IN (
+                    'last_sync_time',
+                    'webdav_last_sync_time',
+                    'webdav_known_documents',
+                    'webdav_known_folders',
+                    'webdav_backoff_until'
+                )",
+                [],
+            )
+            .ok();
         }
     }
     Ok(())
 }
 
-/// Execute a closure with the current database connection. Auto-opens the database
-/// on first call and after a user switch.
-///
-/// 注意：闭包内**不得**再调用任何会走到 `with_db` 的函数（本函数持锁且不可重入）。
-/// 需要连接时请把 `&Connection` 传给 `*_inner(conn, ...)` 形式的内部函数。
-pub fn with_db<F, T>(f: F) -> T
-where
-    F: FnOnce(&Connection) -> T,
-{
+fn ensure_db_open(state: &mut DbState, dir: &std::path::Path) {
+    let target = match state.user.as_ref() {
+        Some(name) => user_db_path(dir, name),
+        None => dir.join("woo.db"),
+    };
+
+    // Open if not yet open or path changed
+    if state.db.as_ref().map(|d| &d.path) != Some(&target) {
+        state.db = None; // drop old connection first
+        log::info!("[DB] Opening database: {:?}", target);
+        let conn = Connection::open(&target)
+            .unwrap_or_else(|e| panic!("无法打开数据库 {:?}: {}", target, e));
+        conn.pragma_update(None, "journal_mode", "WAL").ok();
+        conn.pragma_update(None, "foreign_keys", "ON").ok();
+        init_schema(&conn).unwrap_or_else(|e| panic!("初始化数据库结构失败: {}", e));
+        state.db = Some(Database { conn, path: target });
+    }
+}
+
+fn enter_with_db_guard() -> impl Drop {
     struct DepthGuard;
     impl Drop for DepthGuard {
         fn drop(&mut self) {
@@ -172,29 +198,44 @@ where
         );
         depth.set(current + 1);
     });
-    let _depth_guard = DepthGuard;
+    DepthGuard
+}
 
+/// Execute a closure with the current database connection. Auto-opens the database
+/// on first call and after a user switch.
+///
+/// 注意：闭包内**不得**再调用任何会走到 `with_db` 的函数（本函数持锁且不可重入）。
+/// 需要连接时请把 `&Connection` 传给 `*_inner(conn, ...)` 形式的内部函数。
+pub fn with_db<F, T>(f: F) -> T
+where
+    F: FnOnce(&Connection) -> T,
+{
+    let _depth_guard = enter_with_db_guard();
     let mut state = lock_state();
-    let dir = data_dir();
-    let target = match state.user.as_ref() {
-        Some(name) => user_db_path(&dir, name),
-        None => dir.join("woo.db"),
-    };
-
-    // Open if not yet open or path changed
-    if state.db.as_ref().map(|d| &d.path) != Some(&target) {
-        state.db = None; // drop old connection first
-        log::info!("[DB] Opening database: {:?}", target);
-        let conn = Connection::open(&target)
-            .unwrap_or_else(|e| panic!("无法打开数据库 {:?}: {}", target, e));
-        conn.pragma_update(None, "journal_mode", "WAL").ok();
-        conn.pragma_update(None, "foreign_keys", "ON").ok();
-        init_schema(&conn).unwrap_or_else(|e| panic!("初始化数据库结构失败: {}", e));
-        state.db = Some(Database { conn, path: target });
-    }
-
+    ensure_db_open(&mut state, &data_dir());
     let db = state.db.as_ref().expect("DB not initialized");
     f(&db.conn)
+}
+
+/// 与 `with_db` 相同，但在持锁期间复核当前账号。
+///
+/// 同步在等待网络时可能遇到登录/退出并切换数据库；用这个入口把
+/// 「检查账号 + 打开对应数据库 + 执行写入」合成一个原子操作。
+pub(crate) fn with_db_for_user<F, T>(
+    expected_user: Option<&str>,
+    f: F,
+) -> Result<T, String>
+where
+    F: FnOnce(&Connection) -> T,
+{
+    let _depth_guard = enter_with_db_guard();
+    let mut state = lock_state();
+    if state.user.as_deref() != expected_user {
+        return Err("登录状态已切换，已取消本次操作".to_string());
+    }
+    ensure_db_open(&mut state, &data_dir());
+    let db = state.db.as_ref().expect("DB not initialized");
+    Ok(f(&db.conn))
 }
 
 /// Close the current database connection

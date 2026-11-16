@@ -4,7 +4,6 @@
     <TopMenu
       :is-open="topMenuOpen"
       :is-fullscreen="isFullscreen"
-      :is-logged-in="authStore.isLoggedIn"
       :is-mobile="isMobile"
       @toggle-left-sidebar="toggleLeftSidebar"
       @toggle-thumbnail-sidebar="toggleThumbnailSidebar"
@@ -12,7 +11,6 @@
       @open-settings="openSettings"
       @toggle-top-menu="toggleTopMenu"
       @toggle-status-bar="toggleStatusBar"
-      @open-login="openLoginDialog"
       @menu-action="handleMenuAction"
     />
     
@@ -45,14 +43,6 @@
       @check-update="handleManualUpdateCheck"
     />
 
-    <!-- 登录/账户弹窗 -->
-    <LoginDialog
-      :visible="showLoginDialog"
-      @close="showLoginDialog = false"
-      @login-success="onLoginSuccess"
-      @logout="onLogout"
-    />
-
     <!-- 同步提示 -->
     <transition name="toast-fade">
       <div v-if="syncToast.visible" class="sync-toast" :class="syncToast.type">
@@ -73,11 +63,9 @@ import LeftSidebar from './components/layout/LeftSidebar.vue'
 import ThumbnailColumn from './components/layout/ThumbnailColumn.vue'
 import EditArea from './components/layout/EditArea.vue'
 import SettingsDialog from './components/layout/SettingsDialog.vue'
-import LoginDialog from './components/layout/LoginDialog.vue'
 import UpdateNotification from './components/ui/UpdateNotification.vue'
 import MobileDocumentDrawer from './components/layout/MobileDocumentDrawer.vue'
 import { useThemeStore } from './stores/theme'
-import { useAuthStore } from './stores/auth'
 import { useWorkspaceStore } from './stores/workspace'
 import { useSyncStore } from './stores/sync'
 import { isModKey } from './config/shortcutUtils'
@@ -91,7 +79,6 @@ import { popPendingOpenFiles } from './services/externalFileApi'
 useThemeStore()
 
 const workspaceStore = useWorkspaceStore()
-const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const appVersion = ref(__APP_VERSION__)
 
@@ -169,7 +156,6 @@ const leftSidebarOpen = ref(false)
 const thumbnailSidebarOpen = ref(false)
 const mobileDocDrawerOpen = ref(false)
 const showSettings = ref(false)
-const showLoginDialog = ref(false)
 const settingsMode = ref<'file'>('file')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
@@ -187,61 +173,13 @@ async function handleManualUpdateCheck() {
   await updateNotificationRef.value?.check(false)
 }
 
-function openLoginDialog() {
-  showLoginDialog.value = true
-}
-
-async function onLoginSuccess() {
-  showLoginDialog.value = false
-  const synced = await syncStore.triggerSync()
-  if (!synced && syncStore.errorMsg) {
-    showToast(syncStore.errorMsg, 'error')
-  }
-  // 同步完成后再读取用户库，确保首次登录能直接显示远端数据。
-  await Promise.all([
-    useLockStore().bootstrap().catch(() => {}),
-    workspaceStore.bootstrap().catch(() => {})
-  ])
-}
-
-async function onLogout() {
-  // 登出后后端已切回本地库（woo.db），必须重新加载本地工作区，
-  // 否则界面会继续显示上一个账号的目录与文稿。
-  workspaceStore.reset()
-  await Promise.all([
-    workspaceStore.bootstrap().catch(() => {}),
-    useLockStore().bootstrap().catch(() => {})
-  ])
-}
-
-async function refreshSessionAndSync() {
-  const sessionValid = await authStore.refreshSession()
-  if (!sessionValid) {
-    // 服务端确认 session 已失效后，切回未登录数据库并刷新界面。
-    workspaceStore.reset()
-    await Promise.all([
-      workspaceStore.bootstrap()
-        .then(() => workspaceStore.restoreLastView())
-        .catch(() => {}),
-      useLockStore().bootstrap().catch(() => {})
-    ])
-    return
-  }
-
-  const synced = await syncStore.triggerSync()
-  if (!synced && syncStore.errorMsg) {
-    showToast(syncStore.errorMsg, 'error')
-  }
-}
-
-// 启动流程：本地认证与工作区优先，云端校验和同步不阻塞首屏。
+// 启动流程：本地工作区优先，WebDAV/局域网同步不阻塞首屏。
 async function initApp() {
   // 先注册监听，避免后台首次同步事件早于前端监听器。
   syncStore.listen()
   setupSyncToast()
   setupSyncDataRefresh()
 
-  await authStore.bootstrap()
   await Promise.all([
     workspaceStore.bootstrap()
       .then(() => workspaceStore.restoreLastView())
@@ -249,8 +187,12 @@ async function initApp() {
     useLockStore().bootstrap().catch(() => {})
   ])
 
-  void syncStore.refreshStatus()
-  if (authStore.isLoggedIn) void refreshSessionAndSync()
+  void syncStore.refreshStatus().then(() => {
+    if (syncStore.backend === 'lan' || syncStore.backend === 'webdav') {
+      // WebDAV / 局域网同步不依赖账号，启动后直接补一轮。
+      void syncStore.triggerSync()
+    }
+  })
 }
 
 const syncToast = ref({ visible: false, message: '', type: 'success' })

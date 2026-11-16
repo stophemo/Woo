@@ -49,6 +49,7 @@ function pick(folder: FlatFolder) {
     :show="props.show"
     position="bottom"
     round
+    close-on-popstate
     :style="{ maxHeight: '72vh' }"
     @update:show="emit('update:show', $event)"
   >

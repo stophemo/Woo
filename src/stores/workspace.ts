@@ -406,6 +406,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const externalFileSaveErrors = new Map<string, Error>()
   // 软删除成功后保持标记，直到恢复；删除过程中不得再排入该文稿的保存任务。
   const deletingDocumentIds = new Set<string>()
+  // 草稿每次按键都解析首行标题并整体 JSON.stringify 写 localStorage，长文会很卡。
+  // 合并到一次 300ms 的提交里，标题最多滞后 300ms，体感不可见。
+  let draftCommitTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingDraftCommitId: string | null = null
 
   // 版本列表刷新信号：每次成功提交版本后自增，供版本面板 watch 实时重载
   const versionRefreshTick = ref(0)
@@ -509,17 +513,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (draft) {
         draft.content = content
         draft.updatedAt = new Date().toISOString()
-        // 草稿不走后端 update_content，标题必须在前端同步推导，
-        // 否则草稿列表永远显示创建时的“新建文稿”。
-        const derivedTitle = deriveTitleFromContent(content)
-        if (derivedTitle) {
-          draft.title = derivedTitle
-          if (meta) meta.title = derivedTitle
-          if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
-            currentDocumentData.value.title = derivedTitle
+        pendingDraftCommitId = documentId
+        // 草稿不走后端 update_content，标题必须在前端推导；合并到防抖提交里，
+        // 避免每次按键都解析整篇 HTML 并序列化全部草稿。
+        if (draftCommitTimer) clearTimeout(draftCommitTimer)
+        draftCommitTimer = setTimeout(() => {
+          draftCommitTimer = null
+          pendingDraftCommitId = null
+          const derivedTitle = deriveTitleFromContent(draft.content || '')
+          if (derivedTitle) {
+            draft.title = derivedTitle
+            if (meta) meta.title = derivedTitle
+            if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
+              currentDocumentData.value.title = derivedTitle
+            }
           }
-        }
-        persistDrafts(drafts.value)
+          persistDrafts(drafts.value)
+        }, 300)
         // 若该草稿关联了外部文件，异步写回源文件
         const filePath = externalFilePathMap.value[documentId]
         if (filePath) {
@@ -605,7 +615,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (saveError) throw saveError
   }
 
+  /** 把草稿的防抖提交立刻落盘（切后台、离开编辑器、进程可能被回收时调用）。 */
+  function flushDraftCommit(): void {
+    const documentId = pendingDraftCommitId
+    if (!documentId) return
+    if (draftCommitTimer) {
+      clearTimeout(draftCommitTimer)
+      draftCommitTimer = null
+    }
+    pendingDraftCommitId = null
+    const draft = drafts.value.find(d => d.id === documentId)
+    if (!draft) return
+    const derivedTitle = deriveTitleFromContent(draft.content || '')
+    if (derivedTitle) {
+      draft.title = derivedTitle
+      const meta = folderDocuments.value.find(d => d.id === documentId)
+      if (meta) meta.title = derivedTitle
+      if (currentDocumentData.value && currentDocumentData.value.id === documentId) {
+        currentDocumentData.value.title = derivedTitle
+      }
+    }
+    persistDrafts(drafts.value)
+  }
+
   async function flushPendingSave(documentId?: string): Promise<void> {
+    flushDraftCommit()
     if (documentId) {
       await flushDocumentSave(documentId)
       await flushExternalFileSave(documentId)

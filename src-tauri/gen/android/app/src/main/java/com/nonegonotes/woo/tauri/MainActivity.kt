@@ -69,7 +69,11 @@ class MainActivity : TauriActivity() {
       } else {
         0
       }
-      publishImeInset(imeBottom)
+      // IME 是相对窗口底部的；contentView 已经加了导航栏底部 padding，
+      // WebView 的视口底边比窗口底边高一个导航栏。直接上报会让工具坞/
+      // 弹层比键盘多抬一个导航栏高度，这里换算成 WebView 局部坐标。
+      val navBottom = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+      publishImeInset((imeBottom - navBottom).coerceAtLeast(0))
 
       // 避让出来的状态栏区域显示的是窗口背景，必须与当前主题一致，
       // 否则浅色主题下会留一条黑边。

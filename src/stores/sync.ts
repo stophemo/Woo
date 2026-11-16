@@ -6,10 +6,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '../services/api'
 
+export type SyncBackend = 'webdav' | 'lan' | 'off'
+
 export const useSyncStore = defineStore('sync', () => {
   const isSyncing = ref(false)
   const lastSyncTime = ref<string | null>(null)
   const pendingChanges = ref(0)
+  const backend = ref<SyncBackend>('off')
   const errorMsg = ref<string>('')
   let listening = false
 
@@ -37,6 +40,7 @@ export const useSyncStore = defineStore('sync', () => {
       isSyncing.value = status.isSyncing ?? false
       lastSyncTime.value = status.lastSyncTime ?? null
       pendingChanges.value = status.pendingChanges ?? 0
+      backend.value = status.backend ?? 'off'
     }) as EventListener)
   }
 
@@ -52,7 +56,7 @@ export const useSyncStore = defineStore('sync', () => {
       if (result) {
         lastSyncTime.value = result.syncTime || new Date().toISOString()
         pendingChanges.value = 0
-        // 手动同步和登录后同步也走统一的数据刷新事件。
+        // 手动同步和启动同步都走统一的数据刷新事件。
         window.dispatchEvent(new CustomEvent('sync-data-changed', { detail: result }))
         return true
       }
@@ -75,6 +79,7 @@ export const useSyncStore = defineStore('sync', () => {
         isSyncing.value = status.isSyncing ?? false
         lastSyncTime.value = status.lastSyncTime ?? null
         pendingChanges.value = status.pendingChanges ?? 0
+        backend.value = status.backend ?? 'off'
       }
     } catch { /* ignore */ }
   }
@@ -84,6 +89,7 @@ export const useSyncStore = defineStore('sync', () => {
     lastSyncTime,
     lastSyncLabel,
     pendingChanges,
+    backend,
     errorMsg,
     listen,
     triggerSync,

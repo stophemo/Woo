@@ -12,7 +12,7 @@
             v-model="password"
             type="password"
             class="lock-input"
-            :placeholder="loggedIn ? '输入加锁密码（至少4位）' : '创建加锁密码（至少4位）'"
+            placeholder="创建加锁密码（至少4位）"
             @keydown.enter="handleConfirm"
           />
           <input
@@ -22,12 +22,6 @@
             placeholder="再次确认密码"
             @keydown.enter="handleConfirm"
           />
-        </div>
-        <div v-if="loggedIn && !lockStore.hasPassword" class="lock-option">
-          <label class="lock-checkbox">
-            <input v-model="useAccountPw" type="checkbox" />
-            <span>使用账号密码加解锁</span>
-          </label>
         </div>
       </template>
 
@@ -43,23 +37,6 @@
             @keydown.enter="handleConfirm"
           />
         </div>
-        <p v-if="loggedIn && !lockStore.hasPassword && !showCustomOption" class="lock-hint">
-          当前使用账号密码加解锁
-        </p>
-        <button v-if="loggedIn && !lockStore.hasPassword && !showCustomOption" class="lock-link-btn" @click="showCustomOption = true">
-          使用独立加锁密码
-        </button>
-        <template v-if="showCustomOption">
-          <div class="lock-input-group">
-            <input
-              v-model="newCustomPw"
-              type="password"
-              class="lock-input"
-              placeholder="设置独立加锁密码"
-              @keydown.enter="handleConfirm"
-            />
-          </div>
-        </template>
       </template>
 
       <p v-if="errorMsg" class="lock-error">{{ errorMsg }}</p>
@@ -77,7 +54,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { useLockStore } from '../../stores/lock'
-import { useAuthStore } from '../../stores/auth'
 
 type DialogMode = 'set' | 'verify'
 
@@ -101,14 +77,9 @@ const emit = defineEmits<{
 }>()
 
 const lockStore = useLockStore()
-const authStore = useAuthStore()
 
-const loggedIn = computed(() => authStore.isLoggedIn)
 const password = ref('')
 const confirmPassword = ref('')
-const newCustomPw = ref('')
-const useAccountPw = ref(false)
-const showCustomOption = ref(false)
 const errorMsg = ref('')
 const loading = ref(false)
 const pwInput = ref<HTMLInputElement | null>(null)
@@ -140,14 +111,7 @@ async function handleConfirm() {
   errorMsg.value = ''
 
   if (props.mode === 'set') {
-    // 设置密码模式
-    if (useAccountPw.value && loggedIn.value) {
-      // 使用账号密码 → 不需要存储，直接标记 account 模式
-      await lockStore.setPassword(password.value)
-      emit('confirm', '')
-      return
-    }
-
+    // 设置密码模式：始终使用独立的本地加锁密码
     const pw = password.value
     if (!pw || pw.length < 4) {
       errorMsg.value = '密码长度不能少于 4 位'
@@ -178,26 +142,6 @@ async function handleConfirm() {
 
   loading.value = true
   try {
-    // 如果已登录且没有自定义密码 → 用账号密码
-    if (loggedIn.value && !lockStore.hasPassword) {
-      // 直接验证通过（IPC 端会检查账号密码）
-      const ok = await lockStore.verify(pw)
-      if (ok) {
-        emit('confirm', pw)
-      } else {
-        errorMsg.value = '密码错误'
-      }
-      return
-    }
-
-    // 如果用户正在设置独立密码（验证模式下切换）
-    if (showCustomOption.value && newCustomPw.value) {
-      await lockStore.setPassword(newCustomPw.value)
-      emit('confirm', newCustomPw.value)
-      return
-    }
-
-    // 普通验证
     const ok = await lockStore.verify(pw)
     if (ok) {
       emit('confirm', pw)

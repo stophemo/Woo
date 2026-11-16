@@ -9,7 +9,7 @@
  * - 版本提交沿用桌面端策略（30s 冷却），内容去重由后端 hash 完成。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
 import { useLockStore } from '../../src/stores/lock'
@@ -25,6 +25,7 @@ const noteId = route.params.id as string
 const isDraft = noteId.startsWith('draft_')
 
 const loading = ref(true)
+const loadError = ref(false)
 const html = ref('')
 const saveState = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
 const showMore = ref(false)
@@ -35,11 +36,11 @@ const document = computed(() => store.currentDocument)
 const isLocked = computed(() => !!document.value?.isLocked)
 const savedLabel = computed(() => {
   switch (saveState.value) {
-    case 'pending': return '未保存'
-    case 'saving': return '保存中…'
+    case 'pending': return '编辑中'
+    case 'saving': return '保存中'
     case 'saved': return '已保存'
     case 'error': return '保存失败'
-    default: return isDraft ? '本地草稿' : '自动保存'
+    default: return isDraft ? '本地草稿' : ''
   }
 })
 
@@ -61,21 +62,32 @@ function htmlToLines(source: string): string[] {
 }
 
 /** 标题由正文首行推导（与后端 extract_first_line_as_title 保持一致） */
-const liveTitle = computed(() => {
-  const source = html.value
+function deriveLiveTitle(source: string): string {
   if (!source.trim()) return '无标题'
   const line = htmlToLines(source)
     .map((item) => item.trim())
     .find((item) => item.length > 0)
   if (!line) return '无标题'
   return line.length > 20 ? `${line.slice(0, 20)}…` : line
-})
+}
+
+// 标题解析要遍历整篇 HTML，按键时不必逐字执行；节流到 220ms 后仍然足够实时。
+const liveTitle = ref(deriveLiveTitle(''))
+let titleTimer: ReturnType<typeof setTimeout> | null = null
+watch(html, (value) => {
+  if (titleTimer) clearTimeout(titleTimer)
+  titleTimer = setTimeout(() => {
+    titleTimer = null
+    liveTitle.value = deriveLiveTitle(value)
+  }, 220)
+}, { immediate: true })
 
 // ------- 保存 -------
 const SAVE_DELAY_MS = 900
 const VERSION_COOLDOWN_MS = 30_000
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let savedResetTimer: ReturnType<typeof setTimeout> | null = null
 let lastVersionAt = 0
 let dirty = false
 
@@ -89,6 +101,19 @@ function onEditorUpdate(value: string) {
   saveTimer = setTimeout(() => { void persist() }, SAVE_DELAY_MS)
 }
 
+function markSaved() {
+  saveState.value = 'saved'
+  if (savedResetTimer) clearTimeout(savedResetTimer)
+  savedResetTimer = setTimeout(() => {
+    if (saveState.value === 'saved') saveState.value = 'idle'
+  }, 1600)
+}
+
+function onSaveStateTap() {
+  // 保存失败后点状态文字即可重试；dirty 在失败时保持 true。
+  if (saveState.value === 'error') void persist()
+}
+
 async function persist() {
   if (saveTimer) {
     clearTimeout(saveTimer)
@@ -99,7 +124,7 @@ async function persist() {
   try {
     await store.flushPendingSave(noteId)
     dirty = false
-    saveState.value = 'saved'
+    markSaved()
     await maybeCommitVersion()
   } catch {
     saveState.value = 'error'
@@ -116,24 +141,51 @@ async function maybeCommitVersion() {
   } catch { /* 版本提交失败不影响正文已保存 */ }
 }
 
+// Android 物理返回键走 WebView 的历史后退，不会经过 goBack()；路由守卫是
+// 唯一能同时覆盖「顶栏返回」和「物理返回」的落盘点。
+onBeforeRouteLeave(async () => {
+  try {
+    await persist()
+  } catch {
+    // 落盘失败也允许离开：内容仍在内存与本地存储里，下次进入会继续保存。
+  }
+  return true
+})
+
 // ------- 生命周期 -------
-onMounted(async () => {
+async function loadDocument() {
+  loading.value = true
+  loadError.value = false
   try {
     await store.selectDocument(noteId)
     html.value = store.currentDocument?.content || ''
     lastVersionAt = Date.now()
   } catch {
-    showToast('加载失败')
+    // 加载失败时不能渲染空编辑器：用户一输入就会把原正文覆盖成空稿。
+    loadError.value = true
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(loadDocument)
 
 // 切换文稿（例如从版本历史恢复后重新进入）时同步正文
 watch(() => store.currentDocument?.id, () => {
   if (store.currentDocument?.id === noteId) {
     html.value = store.currentDocument?.content || ''
   }
+})
+
+// 同步把云端更新合并进当前文稿时，store 会替换 currentDocumentData；
+// 只监听 id 会让编辑器继续显示旧正文，用户一输入就会反向覆盖刚拉下来的版本。
+watch(() => store.currentDocument?.content, (content) => {
+  if (store.currentDocument?.id !== noteId) return
+  if (typeof content !== 'string') return
+  if (content === html.value) return
+  // 本地还有未落盘的修改时，以本地为准，避免同步刷新打断输入。
+  if (dirty) return
+  html.value = content
 })
 
 // 页面被系统回收 / 切后台时立即落盘
@@ -147,6 +199,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.document.removeEventListener('visibilitychange', onVisibilityChange)
+  if (savedResetTimer) clearTimeout(savedResetTimer)
+  if (titleTimer) clearTimeout(titleTimer)
   // 物理返回键可能直接退栈，这里兜底保证内容与版本都落盘。
   if (dirty) {
     void store.flushPendingSave(noteId).catch(() => {})
@@ -300,24 +354,33 @@ async function doUnlock() {
 
 <template>
   <div class="edit-page">
-    <van-nav-bar class="edit-nav">
-      <template #left>
-        <button type="button" class="nav-back" aria-label="返回" @click="goBack">
-          <van-icon name="arrow-left" />
-        </button>
-      </template>
-      <template #title>
-        <span class="nav-title">{{ liveTitle }}</span>
-      </template>
-      <template #right>
-        <span class="save-state" :class="`is-${saveState}`">{{ savedLabel }}</span>
-        <button type="button" class="nav-action" aria-label="更多" @click="showMore = true">
-          <van-icon name="ellipsis" />
-        </button>
-      </template>
-    </van-nav-bar>
+    <header class="edit-top">
+      <button type="button" class="edit-top__btn" aria-label="返回" @click="goBack">
+        <van-icon name="arrow-left" />
+      </button>
+      <span class="edit-top__title">{{ liveTitle }}</span>
+      <span
+        v-if="savedLabel"
+        class="edit-top__state"
+        :class="`is-${saveState}`"
+        :role="saveState === 'error' ? 'button' : undefined"
+        @click="onSaveStateTap"
+      >
+        <span class="edit-top__dot"></span>{{ savedLabel }}
+      </span>
+      <button type="button" class="edit-top__btn" aria-label="更多" @click="showMore = true">
+        <van-icon name="ellipsis" />
+      </button>
+    </header>
 
     <van-loading v-if="loading" class="edit-loading" />
+
+    <div v-else-if="loadError" class="locked-box">
+      <span class="locked-icon"><van-icon name="info-o" /></span>
+      <h2 class="locked-title">文稿加载失败</h2>
+      <p class="locked-copy">为避免覆盖原稿，编辑已暂停。请检查后重试。</p>
+      <button type="button" class="locked-submit" @click="loadDocument">重新加载</button>
+    </div>
 
     <div v-else-if="isLocked" class="locked-box">
       <span class="locked-icon"><van-icon name="lock" /></span>
@@ -346,6 +409,7 @@ async function doUnlock() {
       :actions="moreActions()"
       cancel-text="取消"
       close-on-click-action
+      close-on-popstate
       @select="onMoreAction"
     />
   </div>
@@ -354,70 +418,99 @@ async function doUnlock() {
 <style scoped>
 .edit-page {
   display: flex;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   flex-direction: column;
   background: var(--w-canvas);
 }
 
-.edit-nav {
-  position: sticky;
-  top: 0;
-  z-index: 6;
+/* 顶部只留「返回 / 标题 / 保存状态 / 更多」，不抢正文的注意力。 */
+.edit-top {
+  position: relative;
+  z-index: 35;
+  display: flex;
+  flex: 0 0 auto;
+  height: 50px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
   background: color-mix(in srgb, var(--w-canvas) 92%, transparent);
   backdrop-filter: blur(20px);
 }
 
-.edit-nav :deep(.van-nav-bar__content) {
-  height: 50px;
+.edit-top::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--w-line) 65%, transparent);
+  content: '';
 }
 
-.nav-back,
-.nav-action {
+.edit-top__btn {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--w-ink-2);
   font-size: 19px;
 }
 
-.nav-back:active,
-.nav-action:active {
+.edit-top__btn:active {
+  background: var(--w-rise);
   color: var(--w-accent);
 }
 
-.nav-title {
-  display: block;
+.edit-top__title {
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
+  padding: 0 4px;
   color: var(--w-ink-2);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 保存状态只用文字表达，不用胶囊底色 */
-.save-state {
-  margin-right: 2px;
+.edit-top__state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding-right: 2px;
   color: var(--w-ink-3);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
-.save-state.is-pending,
-.save-state.is-saving {
+.edit-top__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.edit-top__state.is-pending,
+.edit-top__state.is-saving {
   color: var(--w-accent);
 }
 
-.save-state.is-error {
+.edit-top__state.is-saved {
+  color: var(--w-ink-3);
+}
+
+.edit-top__state.is-error {
   color: var(--van-danger-color);
 }
 
@@ -431,6 +524,9 @@ async function doUnlock() {
 .edit-stage {
   min-height: 0;
   flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ---------- 锁定态 ---------- */

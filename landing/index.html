@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>无我笔记 Woo | 本地优先、支持 Markdown 的跨平台笔记应用</title>
-  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需注册即可离线写作，支持所见即所得编辑、自动保存、版本历史与可选云同步，提供 macOS、Windows 和 Android 客户端。">
+  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需账号即可离线写作，支持所见即所得编辑、自动保存与版本历史，并可通过 WebDAV 或同一 Wi-Fi 局域网同步，提供 macOS、Windows 和 Android 客户端。">
   <meta name="author" content="Woo Notes">
   <meta name="theme-color" content="#171a19">
   <meta name="color-scheme" content="light">
@@ -13,7 +13,7 @@
   <meta property="og:locale" content="zh_CN">
   <meta property="og:url" content="https://woo-notes.vercel.app/">
   <meta property="og:title" content="无我笔记 Woo | 本地优先、支持 Markdown 的跨平台笔记应用">
-  <meta property="og:description" content="无需注册，打开就能离线写作。文稿默认保存在本机；需要跨设备时，再登录开启同步。">
+  <meta property="og:description" content="无需账号，打开就能离线写作。文稿默认保存在本机；需要跨设备时，用 WebDAV 或同一 Wi-Fi 同步。">
   <meta name="twitter:card" content="summary">
   <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -38,7 +38,7 @@
       </nav>
 
       <a class="header-download" href="#download">
-        下载 <span data-version>v0.6.10</span>
+        下载 <span data-version>v0.7.1</span>
       </a>
 
       <button class="nav-toggle" type="button" aria-label="打开导航" aria-controls="primary-nav" aria-expanded="false" data-nav-toggle>
@@ -59,12 +59,12 @@
       <div class="hero-inner">
         <div class="hero-copy">
           <p class="release-line">
-            <span data-version>v0.6.10</span>
+            <span data-version>v0.7.1</span>
             <b>macOS · Windows · Android</b>
           </p>
           <h1 id="hero-title">无我笔记</h1>
           <p class="hero-tagline"><span class="heading-fragment">先写在本地，</span><span class="heading-fragment">需要时再同步。</span></p>
-          <p class="hero-support">一款支持 Markdown 的本地优先笔记应用。无需注册也能离线写作；登录后，再在三端之间同步正式文稿。</p>
+          <p class="hero-support">一款支持 Markdown 的本地优先笔记应用。无需账号也能离线写作；需要跨设备时，用 WebDAV 或同一 Wi-Fi 同步正式文稿。</p>
           <div class="hero-actions" aria-label="客户端下载安装">
             <details class="download-menu" data-download-menu>
               <summary class="button button-primary">
@@ -86,7 +86,7 @@
               下载 Android
             </a>
           </div>
-          <p class="hero-meta">免费使用 · MIT 开源 · 本地写作无需注册</p>
+          <p class="hero-meta">免费使用 · MIT 开源 · 本地写作无需账号</p>
         </div>
 
         <div class="hero-scene" role="region" aria-label="无我笔记桌面端界面演示">
@@ -177,7 +177,7 @@
                 </div>
                 <footer class="editor-status">
                   <span>Markdown</span>
-                  <span class="status-local"><span data-editor-count>428 words</span><span>12 lines</span><span>100%</span><span class="demo-version">v0.6.10</span></span>
+                  <span class="status-local"><span data-editor-count>428 words</span><span>12 lines</span><span>100%</span><span class="demo-version">v0.7.1</span></span>
                 </footer>
               </article>
             </div>
@@ -203,21 +203,21 @@
         <div class="workflow-grid">
           <article class="workflow-step">
             <span class="step-number">01</span>
-            <p class="step-context">无需注册 · 离线可用</p>
+            <p class="step-context">无需账号 · 离线可用</p>
             <h3>打开就写</h3>
-            <p>不用先创建账号，也不用等待网络。正式文稿和临时草稿都优先保存在当前设备，断网时仍可浏览和编辑。</p>
+            <p>不用登录，也不用等待网络。正式文稿和临时草稿都写入当前设备的本地数据库，断网时仍可浏览和编辑。</p>
           </article>
           <article class="workflow-step">
             <span class="step-number">02</span>
             <p class="step-context">自动保存 · 版本记录</p>
             <h3>每次修改，都有回头路</h3>
-            <p>桌面端持续自动保存，并为正式文稿记录版本；Android 在确认保存时也会留下版本。需要回看时，当前内容不会被直接覆盖。</p>
+            <p>桌面端与 Android 都会在输入时自动保存，并按节奏为正式文稿记录版本。需要回看时，当前内容不会被直接覆盖。</p>
           </article>
           <article class="workflow-step">
             <span class="step-number">03</span>
-            <p class="step-context">登录后开启 · 增量同步</p>
+            <p class="step-context">WebDAV / 局域网 · 增量同步</p>
             <h3>换台设备，接着写</h3>
-            <p>登录后可同步文件夹、正式文稿与版本历史。检测到跨设备内容冲突时，Woo 会尝试把当前内容另存为副本，方便核对。</p>
+            <p>在设置中接入任意 WebDAV（坚果云、NAS、Nextcloud、自建），或让手机与电脑连上同一 Wi-Fi，输入电脑上的 6 位配对码直接连接。同步会同时拉取和推送，最新修改胜出；版本历史不参与同步。</p>
           </article>
         </div>
       </div>
@@ -264,6 +264,14 @@
             </div>
             <span class="feature-tag tag-yellow">清晰组织</span>
           </article>
+          <article class="feature-row">
+            <span class="feature-index">E</span>
+            <div>
+              <h3>为长时间阅读挑的字体</h3>
+              <p>界面采用霞鹜新晰黑 Screen，正文默认霞鹜文楷；桌面端与移动端都可切换文楷、黑体、宋体与等宽，移动端还能调整字号。</p>
+            </div>
+            <span class="feature-tag tag-green">舒适排版</span>
+          </article>
         </div>
       </div>
     </section>
@@ -275,7 +283,7 @@
             <p class="section-kicker">桌面与移动端</p>
             <h2 id="platforms-title"><span class="heading-fragment">桌面深入写，</span><span class="heading-fragment">手机随时接上</span></h2>
           </div>
-          <p>macOS 与 Windows 提供三栏工作区、所见即所得编辑与大纲；Android 采用层级目录导航，进入即可编辑、自动保存，并支持搜索、归档到目录、版本回溯与分享，让小屏操作更直接。</p>
+          <p>macOS 与 Windows 提供三栏工作区、所见即所得编辑与大纲；Android 采用重新设计的编辑器与层级目录导航，进入即可编辑、自动保存，并支持搜索、移动到目录、字体字号调整、版本回溯与分享，让小屏操作更直接。</p>
         </div>
 
         <div class="device-showcase">
@@ -304,7 +312,7 @@
                 <blockquote>不追求一次成稿，先让每个想法都有落下来的地方。</blockquote>
                 <span class="text-line line-long"></span>
                 <span class="text-line line-short"></span>
-                <footer><span>Markdown</span><span>428 words　12 lines　100%　v0.6.10</span></footer>
+                <footer><span>Markdown</span><span>428 words　12 lines　100%　v0.7.1</span></footer>
               </article>
             </div>
           </div>
@@ -316,7 +324,7 @@
             <div class="phone-note is-active"><strong><i class="dot-blue"></i>七月写作计划</strong><small>这个月只做一件事：把三个零散主题写完整。</small><time><b>写作</b>刚刚</time></div>
             <div class="phone-note"><strong><i class="dot-orange"></i>产品复盘：减少中断</strong><small>真正影响效率的，是每次切换都要重新找回上下文。</small><time><b>项目</b>10:24</time></div>
             <div class="phone-note"><strong><i class="dot-green"></i>七月阅读手记</strong><small>真正留下来的，是重新想过什么。</small><time><b>阅读</b>昨天</time></div>
-            <div class="phone-bottom"><span>文稿</span><span>草稿</span><span>设置</span></div>
+            <div class="phone-bottom"><span>文稿</span><span>草稿</span><span>我的</span></div>
           </div>
         </div>
 
@@ -329,7 +337,7 @@
           <div class="platform-row" role="row">
             <span role="cell">写作</span>
             <strong role="cell">所见即所得、Markdown 快捷输入、表格与大纲</strong>
-            <strong role="cell">Markdown 编辑、预览与分享</strong>
+            <strong role="cell">所见即所得、表格、Aa 字体与分享</strong>
           </div>
           <div class="platform-row" role="row">
             <span role="cell">整理</span>
@@ -339,7 +347,7 @@
           <div class="platform-row" role="row">
             <span role="cell">回溯</span>
             <strong role="cell">自动保存、版本记录与恢复</strong>
-            <strong role="cell">确认保存、版本查看与恢复</strong>
+            <strong role="cell">自动保存、版本查看与恢复</strong>
           </div>
         </div>
       </div>
@@ -350,7 +358,7 @@
         <div class="data-copy">
           <p class="section-kicker">数据与同步</p>
           <h2 id="data-title"><span class="heading-fragment">本地保存是默认，</span><span class="heading-fragment">同步是选择</span></h2>
-          <p>不登录时，Woo 不会启用云同步，文稿默认保存在当前设备。登录后，你可以同步文件夹、正式文稿和版本历史；临时草稿仍留在设备本地。</p>
+          <p>每台设备一份本地数据库，文稿默认只保存在当前设备。需要跨设备时，可接入任意 WebDAV（坚果云、NAS、Nextcloud、自建），或让手机与电脑在同一 Wi-Fi 下输入 6 位配对码直接同步文件夹与正式文稿，不经过 Woo 的中转服务器。临时草稿仍留在设备本地。</p>
           <a href="https://github.com/stophemo/Woo#数据库" target="_blank" rel="noreferrer">了解本地存储与同步机制</a>
           <p class="data-note">应用内访问锁用于限制查看，不等同于磁盘加密。</p>
         </div>
@@ -359,19 +367,19 @@
           <div class="sync-node node-device">
             <span>01</span>
             <strong>本机文稿</strong>
-            <small>SQLite · 本地草稿</small>
+            <small>SQLite · 每台设备一份</small>
           </div>
           <div class="sync-link"><b aria-hidden="true">↔</b><small>读取 · 合并</small></div>
           <div class="sync-node node-engine">
             <span>02</span>
             <strong>同步引擎</strong>
-            <small>登录后运行</small>
+            <small>WebDAV · 局域网</small>
           </div>
           <div class="sync-link"><b aria-hidden="true">↔</b><small>拉取 · 推送</small></div>
           <div class="sync-node node-cloud">
             <span>03</span>
-            <strong>云端文稿</strong>
-            <small>用于跨设备同步</small>
+            <strong>其他设备</strong>
+            <small>Mac · Windows · Android</small>
           </div>
         </div>
       </div>
@@ -381,10 +389,10 @@
       <div class="section-inner">
         <div class="download-heading">
           <div>
-            <p class="section-kicker"><span data-version>v0.6.10</span> · <span data-release-date>2026-07-28</span></p>
+            <p class="section-kicker"><span data-version>v0.7.1</span> · <span data-release-date>2026-11-16</span></p>
             <h2 id="download-title"><span class="heading-fragment">下载 Woo，</span><span class="heading-fragment">打开就写</span></h2>
           </div>
-          <p>macOS、Windows 和 Android 安装包统一发布在 GitHub Releases。安装后无需登录，即可使用本地写作功能。</p>
+          <p>macOS、Windows 和 Android 安装包统一发布在 GitHub Releases。安装后无需账号，打开即可本地写作。</p>
         </div>
 
         <div class="download-grid">

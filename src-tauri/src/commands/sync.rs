@@ -8,6 +8,8 @@ pub struct SyncStatusResponse {
     pub is_syncing: bool,
     pub last_sync_time: Option<String>,
     pub pending_changes: i32,
+    /// supabase | webdav | off
+    pub backend: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +33,7 @@ pub async fn sync_status() -> CommandResult<SyncStatusResponse> {
             is_syncing: s.is_syncing,
             last_sync_time: s.last_sync_time,
             pending_changes: s.pending_changes,
+            backend: sync_engine::active_backend().to_string(),
         }),
         Err(error) => CommandResult::error(&format!("读取同步状态失败: {}", error)),
     }

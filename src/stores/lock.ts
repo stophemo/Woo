@@ -9,8 +9,7 @@ export const useLockStore = defineStore('lock', () => {
 
   async function bootstrap() {
     try {
-      // 尝试从云端拉取锁密码（仅已登录用户有效）
-      await lockApi.cloudPullSettings().catch(() => {})
+      // 锁密码只保存在本机；WebDAV 同步不搬运密码哈希。
       const status = await lockApi.getStatus()
       hasPassword.value = status.hasPassword
       passwordMode.value = status.mode
@@ -23,10 +22,7 @@ export const useLockStore = defineStore('lock', () => {
   async function verify(password: string): Promise<boolean> {
     verifying.value = true
     try {
-      const ok = await lockApi.verifyPassword(password)
-      // 旧版本没有同步锁设置；一次成功验证可安全确认本机哈希可信并补种云端。
-      if (ok) await lockApi.cloudPushSettings().catch(() => {})
-      return ok
+      return await lockApi.verifyPassword(password)
     } catch {
       return false
     } finally {
@@ -36,8 +32,6 @@ export const useLockStore = defineStore('lock', () => {
 
   async function setPassword(password: string): Promise<void> {
     await lockApi.setPassword(password)
-    // 已登录用户同步锁密码到云端
-    await lockApi.cloudPushSettings().catch(() => {})
     hasPassword.value = true
     passwordMode.value = 'custom'
   }

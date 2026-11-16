@@ -1,3 +1,4 @@
+@import '../../src/styles/editor-fonts.css';
 /* ============================================================
  * 移动端设计体系（参考 Effie 的视觉语言）
  *
@@ -9,9 +10,16 @@
 
 :root {
   color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-synthesis: none;
+  font-family: "LXGW Neo XiHei Screen", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+  font-synthesis: weight;
   text-rendering: optimizeLegibility;
+}
+
+body,
+#app,
+.van-config-provider,
+.mobile-app {
+  font-family: "LXGW Neo XiHei Screen", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
 }
 
 * {
@@ -58,6 +66,20 @@ button {
 }
 
 /* ---------- 设计 token ---------- */
+/* 同时挂到 :root：Vant 的弹出层会 teleport 到 body，需要能继承同一套纸面颜色。 */
+:root {
+  --w-paper: var(--van-background);
+  --w-canvas: var(--van-background-2);
+  --w-ink: var(--van-text-color);
+  --w-ink-2: var(--van-text-color-2);
+  --w-ink-3: color-mix(in srgb, var(--van-text-color-2) 58%, var(--van-background));
+  --w-accent: var(--van-primary-color);
+  --w-line: color-mix(in srgb, var(--van-text-color) 8%, transparent);
+  --w-line-strong: color-mix(in srgb, var(--van-text-color) 13%, transparent);
+  --w-rise: color-mix(in srgb, var(--van-text-color) 4%, transparent);
+  --w-shadow: 0 1px 2px color-mix(in srgb, var(--van-text-color) 6%, transparent);
+}
+
 .mobile-app {
   --w-paper: var(--van-background);
   --w-canvas: var(--van-background-2);
@@ -406,7 +428,6 @@ button {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .van-cell {

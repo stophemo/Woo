@@ -40,9 +40,14 @@ const router = createRouter({
       component: () => import('../views/Settings.vue'),
     },
     {
-      path: '/login',
-      name: 'login',
-      component: () => import('../views/Login.vue'),
+      path: '/webdav',
+      name: 'webdav',
+      component: () => import('../views/Webdav.vue'),
+    },
+    {
+      path: '/font',
+      name: 'font-settings',
+      component: () => import('../views/FontSettings.vue'),
     },
   ],
 })

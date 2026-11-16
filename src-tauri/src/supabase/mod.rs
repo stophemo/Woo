@@ -11,9 +11,173 @@ use std::sync::Mutex;
 
 const FALLBACK_URL: &str = "https://urgpunxxupufmygmutxa.supabase.co";
 const FALLBACK_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyZ3B1bnh4dXB1Zm15Z211dHhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MTA1OTYsImV4cCI6MjA5NTA4NjU5Nn0.Ezs2uFwgrxkwCpLVfdByFC8m5PNjjP92i26Sg0YX-RI";
+const SERVER_CONFIG_FILE: &str = "server-config.json";
+
+/// 国内用户可以把请求指向自建/免费中转地址（如 Cloudflare Worker），
+/// 它必须转发到同一个 Supabase 项目，anon key 与 RLS 策略保持不变。
+static REMOTE_BASE_URL: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerConfigFile {
+    base_url: String,
+}
+
+fn normalize_base_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("服务器地址不能为空".to_string());
+    }
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| "服务器地址格式不正确".to_string())?;
+    let is_loopback = parsed
+        .host_str()
+        .map(|host| host == "localhost" || host == "127.0.0.1" || host == "::1")
+        .unwrap_or(false);
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && is_loopback) {
+        // 登录凭据和 access token 会经过这个地址，明文 http 等于裸奔。
+        return Err("服务器地址必须使用 https（仅本机调试允许 http）".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("服务器地址不能包含用户名或密码".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("服务器地址不能带查询参数或片段".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err("服务器地址缺少主机名".to_string());
+    }
+    let path = parsed.path().trim_end_matches('/');
+    if !path.is_empty() {
+        return Err("服务器地址只填域名根地址，例如 https://api.example.com".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn server_config_path() -> Option<PathBuf> {
+    get_data_dir().map(|dir| dir.join(SERVER_CONFIG_FILE))
+}
+
+/// 启动时调用一次：把自定义地址读进内存，后续所有请求直接复用。
+pub fn load_server_config() {
+    let Some(path) = server_config_path() else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(config) = serde_json::from_str::<ServerConfigFile>(&text) else {
+        log::warn!("[Supabase] 服务器配置无法解析，忽略: {:?}", path);
+        return;
+    };
+    match normalize_base_url(&config.base_url) {
+        Ok(url) => {
+            log::info!("[Supabase] 使用自定义服务器地址: {}", url);
+            set_remote_base_url(Some(url));
+        }
+        Err(error) => log::warn!("[Supabase] 自定义服务器地址无效: {}", error),
+    }
+}
+
+fn set_remote_base_url(url: Option<String>) {
+    if let Ok(mut guard) = REMOTE_BASE_URL.lock() {
+        *guard = url;
+    }
+}
+
+fn configured_base_url() -> Option<String> {
+    if let Ok(guard) = REMOTE_BASE_URL.lock() {
+        if let Some(url) = guard.as_ref() {
+            return Some(url.clone());
+        }
+    }
+    let path = server_config_path()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let config = serde_json::from_str::<ServerConfigFile>(&text).ok()?;
+    let url = normalize_base_url(&config.base_url).ok()?;
+    set_remote_base_url(Some(url.clone()));
+    Some(url)
+}
 
 pub fn supabase_url() -> String {
-    std::env::var("SUPABASE_URL").unwrap_or_else(|_| FALLBACK_URL.to_string())
+    std::env::var("SUPABASE_URL")
+        .ok()
+        .and_then(|value| normalize_base_url(&value).ok())
+        .or_else(configured_base_url)
+        .unwrap_or_else(|| FALLBACK_URL.to_string())
+}
+
+pub fn default_supabase_url() -> &'static str {
+    FALLBACK_URL
+}
+
+pub fn is_custom_server_url() -> bool {
+    supabase_url() != FALLBACK_URL
+}
+
+pub fn save_server_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    let normalized = if trimmed.is_empty() || trimmed == FALLBACK_URL {
+        None
+    } else {
+        Some(normalize_base_url(trimmed)?)
+    };
+
+    let path = server_config_path().ok_or_else(|| "数据目录未初始化".to_string())?;
+    match normalized {
+        Some(url) => {
+            let content = serde_json::to_string_pretty(&ServerConfigFile {
+                base_url: url.clone(),
+            })
+            .map_err(|e| format!("序列化服务器配置失败: {}", e))?;
+            let temp = path.with_extension("json.tmp");
+            std::fs::write(&temp, content).map_err(|e| format!("保存服务器配置失败: {}", e))?;
+            std::fs::rename(&temp, &path).map_err(|e| {
+                let _ = std::fs::remove_file(&temp);
+                format!("保存服务器配置失败: {}", e)
+            })?;
+            set_remote_base_url(Some(url.clone()));
+            log::info!("[Supabase] 已切换服务器地址: {}", url);
+            Ok(url)
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+            set_remote_base_url(None);
+            log::info!("[Supabase] 已恢复默认服务器地址");
+            Ok(FALLBACK_URL.to_string())
+        }
+    }
+}
+
+/// 测试中转地址是否可达。只请求 GoTrue 的公开健康检查端点，不会泄露用户数据。
+pub async fn test_server_connection(base_url: Option<String>) -> Result<String, String> {
+    let base = match base_url {
+        Some(value) if !value.trim().is_empty() => normalize_base_url(&value)?,
+        _ => supabase_url(),
+    };
+    let url = format!("{}/auth/v1/health", base);
+    let started = std::time::Instant::now();
+    let response = HTTP
+        .get(&url)
+        .header("apikey", supabase_anon_key())
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status();
+    if status.is_success() {
+        Ok(format!("连接成功（{} ms）", started.elapsed().as_millis()))
+    } else {
+        let text = response.text().await.unwrap_or_default();
+        let detail: String = text.trim().chars().take(160).collect();
+        Err(format!(
+            "连接失败：HTTP {}{}",
+            status.as_u16(),
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", detail)
+            }
+        ))
+    }
 }
 
 pub fn supabase_anon_key() -> String {
@@ -122,7 +286,9 @@ pub struct SupabaseSession {
 }
 
 fn session_file_key() -> String {
-    format!("{}-auth-token", supabase_url())
+    // 键名不再包含服务器地址：切换中转地址不会让已登录会话“消失”。
+    // 旧版本按 `<url>-auth-token` 写入，读取时会回退兼容。
+    "woo-auth-token".to_string()
 }
 
 fn session_file_path() -> Option<PathBuf> {
@@ -182,7 +348,16 @@ pub fn read_persisted_session() -> Option<SupabaseSession> {
         }
     };
     let key = session_file_key();
-    let Some(session_str) = map.get(&key).and_then(|value| value.as_str()) else {
+    // 新键优先；旧版本写的是 `<supabase_url>-auth-token`，按后缀兼容读取。
+    let session_str = map
+        .get(&key)
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            map.iter()
+                .find(|(name, _)| name.ends_with("-auth-token"))
+                .and_then(|(_, value)| value.as_str())
+        });
+    let Some(session_str) = session_str else {
         return None;
     };
     match serde_json::from_str::<SupabaseSession>(session_str) {
@@ -477,22 +652,58 @@ pub async fn upsert(table: &str, rows: &[serde_json::Value], access_token: &str)
     }
     let url = format!("{}/rest/v1/{}", supabase_url(), table);
 
-    let resp = HTTP
-        .post(&url)
-        .header("apikey", supabase_anon_key())
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Content-Type", "application/json")
-        .header("Prefer", "resolution=merge-duplicates")
-        .json(rows)
-        .send()
-        .await
-        .map_err(network_error)?;
+    // PostgREST / Cloudflare 对单个请求体有上限；按 200 行分批，避免大库首传失败。
+    for chunk in rows.chunks(200) {
+        let resp = HTTP
+            .post(&url)
+            .header("apikey", supabase_anon_key())
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .header("Prefer", "resolution=merge-duplicates")
+            .json(chunk)
+            .send()
+            .await
+            .map_err(network_error)?;
 
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("上传失败 [{}]: {}", table, extract_data_error(&text)));
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("上传失败 [{}]: {}", table, extract_data_error(&text)));
+        }
     }
     Ok(())
+}
+
+/// 按 (update_time, id) keyset 分页拉取。
+///
+/// PostgREST 默认单次最多返回 1000 行；旧实现只发一次请求，超过 1000 行的
+/// 变更会被静默截断，随后同步游标仍会推进，剩余数据可能永久漏掉。
+fn build_select_url(
+    table: &str,
+    user_id: &str,
+    last_sync: Option<&str>,
+    cursor: Option<(&str, &str)>,
+) -> Result<reqwest::Url, String> {
+    let mut url = reqwest::Url::parse(&format!("{}/rest/v1/{}", supabase_url(), table))
+        .map_err(|e| format!("构造拉取地址失败: {}", e))?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("user_id", &format!("eq.{}", user_id));
+        query.append_pair("order", "update_time.asc,id.asc");
+        query.append_pair("limit", "1000");
+        if let Some(sync_time) = last_sync {
+            query.append_pair("update_time", &format!("gt.{}", sync_time));
+        }
+        if let Some((update_time, id)) = cursor {
+            query.append_pair(
+                "or",
+                &format!(
+                    "(update_time.gt.{},and(update_time.eq.{},id.gt.{}))",
+                    update_time, update_time, id
+                ),
+            );
+        }
+    }
+    Ok(url)
 }
 
 pub async fn select(
@@ -501,37 +712,75 @@ pub async fn select(
     last_sync: Option<&str>,
     access_token: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let mut url = format!(
-        "{}/rest/v1/{}?user_id=eq.{}&order=update_time.asc",
-        supabase_url(),
-        table,
-        user_id
-    );
+    const MAX_PAGES: usize = 100;
 
-    if let Some(sync_time) = last_sync {
-        url.push_str(&format!("&update_time=gt.{}", sync_time));
-    }
+    let mut all = Vec::new();
+    let mut cursor: Option<(String, String)> = None;
+    let mut pages = 0usize;
 
-    let resp = HTTP
-        .get(&url)
-        .header("apikey", supabase_anon_key())
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(network_error)?;
+    loop {
+        let url = build_select_url(
+            table,
+            user_id,
+            last_sync,
+            cursor.as_ref().map(|(update_time, id)| (update_time.as_str(), id.as_str())),
+        )?;
 
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
+        let resp = HTTP
+            .get(url)
+            .header("apikey", supabase_anon_key())
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(network_error)?;
 
-    if status.is_success() {
-        if text.trim().is_empty() || text.trim() == "[]" {
-            return Ok(Vec::new());
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(format!("拉取失败 [{}]: {}", table, extract_data_error(&text)));
         }
-        serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))
-    } else {
-        Err(format!("拉取失败 [{}]: {}", table, extract_data_error(&text)))
+        let mut rows: Vec<serde_json::Value> = if text.trim().is_empty() || text.trim() == "[]" {
+            Vec::new()
+        } else {
+            serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))?
+        };
+        let count = rows.len();
+        if let Some(last) = rows.last() {
+            let update_time = last
+                .get("update_time")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let id = last
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if update_time.is_empty() || id.is_empty() {
+                return Err(format!("拉取结果缺少排序字段 [{}]", table));
+            }
+            cursor = Some((update_time, id));
+        }
+        all.append(&mut rows);
+        pages += 1;
+
+        // 不能因为「本页不足 1000 行」就断定结束：分页期间有行被删除时也会
+        // 出现短页。以「下一页为空」为准，最多多一次请求。
+        if count == 0 {
+            break;
+        }
+        if pages >= MAX_PAGES {
+            log::warn!(
+                "[Supabase] {} 拉取达到 {} 页上限，剩余变更将在下一轮继续",
+                table,
+                MAX_PAGES
+            );
+            break;
+        }
     }
+
+    Ok(all)
 }
 
 pub async fn delete(table: &str, id_field: &str, ids: &[&str], access_token: &str) -> Result<(), String> {
@@ -717,4 +966,36 @@ fn extract_data_error(response_body: &str) -> String {
         }
     }
     response_body.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn select_url_uses_keyset_pagination_and_encodes_values() {
+        let url = build_select_url(
+            "note_document",
+            "user-1",
+            Some("2026-01-01T00:00:00"),
+            Some(("2026-01-01T00:00:00", "id-2")),
+        )
+        .unwrap();
+        let query = url.query().unwrap();
+        assert!(query.contains("user_id=eq.user-1"));
+        assert!(query.contains("limit=1000"));
+        assert!(query.contains("order=update_time.asc%2Cid.asc"));
+        assert!(query.contains("update_time=gt.2026-01-01T00%3A00%3A00"));
+        assert!(query.contains("or=%28update_time.gt."));
+        assert!(query.contains("and%28update_time.eq."));
+    }
+
+    #[test]
+    fn select_url_omits_cursor_on_first_page() {
+        let url = build_select_url("note_document", "user-1", None, None).unwrap();
+        let query = url.query().unwrap();
+        assert!(query.contains("limit=1000"));
+        assert!(!query.contains("or="));
+        assert!(!query.contains("update_time=gt."));
+    }
 }

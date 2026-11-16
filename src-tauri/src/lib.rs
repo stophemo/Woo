@@ -348,18 +348,17 @@ pub fn run() {
             std::fs::create_dir_all(&db_path).ok();
             db::set_data_dir(db_path.clone());
             supabase::set_data_dir(db_path.clone());
+            supabase::load_server_config();
             logging::set_log_dir(&db_path);
             log::info!("[App] Data directory: {:?}", db_path);
             if let Some(log_path) = logging::log_file_path() {
                 log::info!("[App] Log file: {:?}", log_path);
             }
 
-            // Restore session from supabase-auth.json
-            if let Some(user_id) = services::auth_service::try_restore_session() {
-                log::info!("[App] Restored session for user id: {}", user_id);
-            } else {
-                log::info!("[App] No persisted session, starting in local mode");
-            }
+            // 单用户数据模式：始终使用 woo.db，不再恢复任何云端会话。
+            log::info!("[App] Single local dataset mode (woo.db)");
+            // 上次启用的局域网同步服务随应用恢复。
+            services::lan_sync::restore_on_startup();
 
             // Lazy-init database
             db::with_db(|_conn| {
@@ -382,24 +381,27 @@ pub fn run() {
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
                 // Tokio 的首次 tick 会立即返回；先消费它，避免前端监听器注册前完成同步并丢失刷新事件。
                 interval.tick().await;
+                let mut last_error: Option<String> = None;
                 loop {
                     interval.tick().await;
-                    // Only sync if logged in
-                    let has_session = supabase::CURRENT_SESSION
-                        .lock()
-                        .ok()
-                        .and_then(|s| s.is_some().then_some(()));
-                    if has_session.is_some() {
-                        log::debug!("[Sync] Periodic sync tick");
+                    // WebDAV 不依赖 Supabase 登录；启用后即使未登录也要跑。
+                    let lan_enabled = services::lan_sync::is_enabled();
+                    let webdav_enabled = services::webdav_sync::is_enabled();
+                    if lan_enabled || webdav_enabled {
+                        log::debug!(
+                            "[Sync] Periodic sync tick (lan={}, webdav={})",
+                            lan_enabled,
+                            webdav_enabled
+                        );
                         let result = services::sync_engine::sync_now_async().await;
 
                         // Emit sync status event to frontend
                         let status = services::sync_engine::get_status();
                         app_handle.emit("sync-status", &status).ok();
 
-                        // Emit toast for sync feedback
-                        let (toast_message, toast_type): (String, &str) = match &result {
+                        match &result {
                             Ok(sr) => {
+                                last_error = None;
                                 log::info!(
                                     "[Sync] ⇄ push={} pull={} conflict={} cleanup={} tombstone={}",
                                     sr.pushed_count,
@@ -408,27 +410,47 @@ pub fn run() {
                                     sr.cleanup_count,
                                     sr.tombstone_count,
                                 );
-                                // Emit data-changed event → triggers workspaceStore.syncRefresh()
-                                app_handle.emit("sync-data-changed", &sr).ok();
-                                (
-                                    format!("同步完成 ↑{} ↓{}", sr.pushed_count, sr.pulled_count),
-                                    "success",
-                                )
+                                // 没有实际变化时保持安静，避免每分钟弹一次“同步完成”。
+                                let changed = sr.pushed_count
+                                    + sr.pulled_count
+                                    + sr.cleanup_count
+                                    + sr.tombstone_count
+                                    > 0;
+                                if changed {
+                                    app_handle.emit("sync-data-changed", &sr).ok();
+                                    app_handle
+                                        .emit(
+                                            "sync:toast",
+                                            serde_json::json!({
+                                                "message": format!(
+                                                    "同步完成 ↑{} ↓{}",
+                                                    sr.pushed_count, sr.pulled_count
+                                                ),
+                                                "type": "success",
+                                            }),
+                                        )
+                                        .ok();
+                                }
                             }
                             Err(e) => {
                                 log::warn!("[Sync] Periodic sync failed: {}", e);
-                                (format!("同步失败: {}", e), "error")
+                                // 退出登录会让进行中的 WebDAV 同步安全中止，这不是用户需要处理的错误。
+                                let is_session_abort = e.contains("登录状态已切换");
+                                // 同一个错误只提示一次，直到恢复或错误内容变化。
+                                if !is_session_abort && last_error.as_deref() != Some(e.as_str()) {
+                                    last_error = Some(e.clone());
+                                    app_handle
+                                        .emit(
+                                            "sync:toast",
+                                            serde_json::json!({
+                                                "message": format!("同步失败: {}", e),
+                                                "type": "error",
+                                            }),
+                                        )
+                                        .ok();
+                                }
                             }
-                        };
-                        app_handle
-                            .emit(
-                                "sync:toast",
-                                serde_json::json!({
-                                    "message": toast_message,
-                                    "type": toast_type,
-                                }),
-                            )
-                            .ok();
+                        }
                     }
                 }
             });
@@ -509,6 +531,18 @@ pub fn run() {
             // Sync
             commands::sync::sync_status,
             commands::sync::sync_trigger,
+            // WebDAV 同步
+            commands::webdav::webdav_get_config,
+            commands::webdav::webdav_save_config,
+            commands::webdav::webdav_test,
+            // 局域网同步（桌面端内嵌 WebDAV）
+            commands::lan_sync::lan_sync_get_config,
+            commands::lan_sync::lan_sync_set_enabled,
+            commands::lan_sync::lan_pair_discover,
+            // 自定义 Supabase 中转地址
+            commands::server::server_get_config,
+            commands::server::server_save_config,
+            commands::server::server_test,
             // System (dialogs, file IO, export)
             commands::system::dialog_save_image,
             commands::system::dialog_open_image,

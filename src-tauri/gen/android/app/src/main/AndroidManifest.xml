@@ -6,7 +6,10 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- 本地数据库与 WebDAV 应用密码不交给系统云备份；
+         需要备份时用应用内的同步功能。 -->
     <application
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.woo_tauri"
