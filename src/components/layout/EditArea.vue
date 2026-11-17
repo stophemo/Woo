@@ -1511,7 +1511,7 @@ const menuActionHandler = (e: Event) => {
   min-height: 100%;
   outline: none;
   color: var(--editor-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--editor-font-family, "LXGW WenKai", "PingFang SC", serif);
   font-size: 15px;
   line-height: 1.88;
   caret-color: var(--editor-caret);
