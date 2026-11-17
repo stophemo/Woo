@@ -347,71 +347,6 @@ strong {
   white-space: nowrap;
 }
 
-.download-menu {
-  position: relative;
-  min-width: 0;
-}
-
-.download-menu summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.download-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.download-menu-caret {
-  flex: 0 0 auto;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 160ms ease;
-}
-
-.download-menu[open] .download-menu-caret {
-  transform: rotate(180deg);
-}
-
-.download-menu-panel {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 8px);
-  left: 0;
-  display: grid;
-  width: 100%;
-  min-width: 180px;
-  padding: 6px;
-  border: 1px solid #5b625d;
-  border-radius: 6px;
-  background: #252a27;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
-}
-
-.download-menu-panel a {
-  display: flex;
-  min-height: 39px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 10px;
-  border-radius: 4px;
-  color: var(--white);
-  font-size: 13px;
-  font-weight: 680;
-  transition: background-color 160ms ease;
-}
-
-.download-menu-panel a:hover {
-  background: #333a36;
-}
-
-.download-menu-panel small {
-  color: #929b94;
-  font-size: 9px;
-  font-weight: 720;
-  letter-spacing: 0.05em;
-}
-
 .button {
   display: inline-flex;
   align-items: center;
@@ -1613,7 +1548,7 @@ strong {
 
 .download-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 15px;
 }
 
@@ -1642,10 +1577,6 @@ strong {
   font-size: 10px;
 }
 
-.download-windows .platform-badge {
-  background: #3a675c;
-}
-
 .download-android .platform-badge {
   background: #8a5d2c;
 }
@@ -1662,6 +1593,21 @@ strong {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.75;
+}
+
+.download-note {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid #cbd0c9;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.download-note strong {
+  color: var(--ink);
 }
 
 .button-dark {
@@ -1877,14 +1823,6 @@ strong {
     background: #2b312e;
   }
 
-  .download-menu-panel {
-    top: calc(100% + 6px);
-    width: 310px;
-    min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 3px;
-  }
-
   .nav-toggle {
     display: block;
   }
@@ -1984,14 +1922,6 @@ strong {
     max-width: 720px;
   }
 
-  .download-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .download-android {
-    grid-column: 1 / -1;
-  }
-
   .download-card p {
     min-height: 52px;
   }
@@ -2066,10 +1996,6 @@ strong {
 
   .hero-actions {
     width: 100%;
-  }
-
-  .download-menu-panel {
-    width: min(calc(200% + 8px), calc(100vw - 32px));
   }
 
   .button {
@@ -2281,10 +2207,6 @@ strong {
 
   .download-grid {
     grid-template-columns: 1fr;
-  }
-
-  .download-android {
-    grid-column: auto;
   }
 
   .download-card {

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/github/v/release/stophemo/Woo?color=%235a9acf" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
-  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Android-blue" alt="Platform"></a>
+  <a href="https://github.com/stophemo/Woo/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android-blue" alt="Platform"></a>
   <a href="https://github.com/stophemo/Woo/stargazers"><img src="https://img.shields.io/github/stars/stophemo/Woo?style=social" alt="Stars"></a>
 </p>
 
@@ -26,7 +26,7 @@
 
 ## ✨ 为什么选择 Woo
 
-Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用任意 WebDAV 或同一 Wi-Fi 局域网同步到 macOS、Windows 与 Android。
+Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用任意 WebDAV 或同一 Wi-Fi 局域网同步到 macOS 与 Android。
 
 > **v0.7.2**：移动端页头重做，目录路径与计数合并为一行；编辑器顶部不再重复正文标题；界面字体换成内置 Noto Sans SC（真实 400–700 字重）；同步改为保存后自动触发，局域网约 10 秒、WebDAV 约 30 秒兜底轮询。
 
@@ -50,12 +50,11 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账�
 | 平台 | 下载 | 说明 |
 |------|------|------|
 | 🍎 macOS | [DMG (Apple Silicon)](https://github.com/stophemo/Woo/releases/latest) | 适用于 M 系列 Mac；签名与公证状态以对应 Release 说明为准 |
-| 🪟 Windows | [NSIS 安装包 (x64)](https://github.com/stophemo/Woo/releases/latest) | 双击安装 |
 | 🤖 Android | [已签名 APK (ARM64)](https://github.com/stophemo/Woo/releases/latest) | 支持 `arm64-v8a`，安装时允许来自此来源的应用 |
 
 > **macOS 用户**：安装前请阅读对应 Release 说明。若版本未完成 Apple 公证，首次启动请在 Finder 中右键 Woo.app 并选择“打开”，或前往“系统设置 → 隐私与安全”选择“仍要打开”。无需、也不要安装任何第三方根证书。
 
-> **Windows 用户**：当前安装包未做代码签名，首次运行可能出现 SmartScreen 提示，请只从官方 Release 下载。
+> **Windows 用户**：Windows 版暂停维护，暂不提供新的安装包与自动更新；已安装的旧版本仍可继续使用，但不再跟进新功能与修复。
 
 ---
 
@@ -66,7 +65,7 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账�
 | 平台 | 日志路径 |
 |------|----------|
 | macOS | `~/Library/Application Support/Woo/logs/woo.log`（开发环境为 `woo-dev`） |
-| Windows | `%APPDATA%\Woo\logs\woo.log`（开发环境为 `woo-dev`） |
+| Windows（旧版本） | `%APPDATA%\Woo\logs\woo.log`（开发环境为 `woo-dev`） |
 | Android | 应用私有目录下的 `logs/woo.log` |
 
 日志不会记录密码、令牌等敏感内容；WebDAV 失败时只会记录 HTTP 状态码与错误描述。
@@ -185,8 +184,7 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 - [ ] macOS 原生菜单 + 完整快捷键
 - [ ] Homebrew Cask 分发
 - [ ] iOS 支持 (Tauri Mobile)
-- [ ] Windows 代码签名
-- [x] 跨平台基础框架 (macOS + Windows + Android)
+- [x] 跨平台基础框架 (macOS + Android)
 - [ ] 完成 macOS Developer ID 签名与 Apple 公证
 - [x] 移动端响应式 UI 适配
 - [ ] AI 辅助写作与 Agent 框架

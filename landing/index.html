@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>无我笔记 Woo | 本地优先、支持 Markdown 的跨平台笔记应用</title>
-  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需账号即可离线写作，支持所见即所得编辑、自动保存与版本历史，并可通过 WebDAV 或同一 Wi-Fi 局域网同步，提供 macOS、Windows 和 Android 客户端。">
+  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需账号即可离线写作，支持所见即所得编辑、自动保存与版本历史，并可通过 WebDAV 或同一 Wi-Fi 局域网同步，提供 macOS 和 Android 客户端。">
   <meta name="author" content="Woo Notes">
   <meta name="theme-color" content="#171a19">
   <meta name="color-scheme" content="light">
@@ -60,28 +60,15 @@
         <div class="hero-copy">
           <p class="release-line">
             <span data-version>v0.7.2</span>
-            <b>macOS · Windows · Android</b>
+            <b>macOS · Android</b>
           </p>
           <h1 id="hero-title">无我笔记</h1>
           <p class="hero-tagline"><span class="heading-fragment">先写在本地，</span><span class="heading-fragment">需要时再同步。</span></p>
           <p class="hero-support">一款支持 Markdown 的本地优先笔记应用。无需账号也能离线写作；需要跨设备时，用 WebDAV 或同一 Wi-Fi 同步正式文稿。</p>
           <div class="hero-actions" aria-label="客户端下载安装">
-            <details class="download-menu" data-download-menu>
-              <summary class="button button-primary">
-                下载桌面端
-                <svg class="download-menu-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>
-              </summary>
-              <div class="download-menu-panel" role="group" aria-label="选择桌面系统">
-                <a data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
-                  <span>macOS</span>
-                  <small>Apple 芯片</small>
-                </a>
-                <a data-download="windows" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe">
-                  <span>Windows</span>
-                  <small>x64</small>
-                </a>
-              </div>
-            </details>
+            <a class="button button-primary" data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
+              下载 macOS
+            </a>
             <a class="button button-secondary" data-download="android" aria-label="下载 Android 移动端" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_android-arm64-v8a.apk">
               下载 Android
             </a>
@@ -283,7 +270,7 @@
             <p class="section-kicker">桌面与移动端</p>
             <h2 id="platforms-title"><span class="heading-fragment">桌面深入写，</span><span class="heading-fragment">手机随时接上</span></h2>
           </div>
-          <p>macOS 与 Windows 提供三栏工作区、所见即所得编辑与大纲；Android 采用重新设计的编辑器与层级目录导航，进入即可编辑、自动保存，并支持搜索、移动到目录、字体字号调整、版本回溯与分享，让小屏操作更直接。</p>
+          <p>macOS 提供三栏工作区、所见即所得编辑与大纲；Android 采用重新设计的编辑器与层级目录导航，进入即可编辑、自动保存，并支持搜索、移动到目录、字体字号调整、版本回溯与分享，让小屏操作更直接。</p>
         </div>
 
         <div class="device-showcase">
@@ -379,7 +366,7 @@
           <div class="sync-node node-cloud">
             <span>03</span>
             <strong>其他设备</strong>
-            <small>Mac · Windows · Android</small>
+            <small>Mac · Android</small>
           </div>
         </div>
       </div>
@@ -392,7 +379,7 @@
             <p class="section-kicker"><span data-version>v0.7.2</span> · <span data-release-date>2026-11-16</span></p>
             <h2 id="download-title"><span class="heading-fragment">下载 Woo，</span><span class="heading-fragment">打开就写</span></h2>
           </div>
-          <p>macOS、Windows 和 Android 安装包统一发布在 GitHub Releases。安装后无需账号，打开即可本地写作。</p>
+          <p>macOS 和 Android 安装包统一发布在 GitHub Releases。安装后无需账号，打开即可本地写作。</p>
         </div>
 
         <div class="download-grid">
@@ -409,19 +396,6 @@
             </a>
           </article>
 
-          <article class="download-card download-windows">
-            <div class="download-card-top">
-              <span class="platform-badge">Windows</span>
-              <span>x64 · NSIS</span>
-            </div>
-            <h3>Windows 桌面版</h3>
-            <p>适用于 64 位 Windows。当前安装包未完成代码签名，首次运行可能出现 SmartScreen 提示，请只从官方 Release 下载。</p>
-            <a class="button button-dark" data-download="windows" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_windows-x64-setup.exe">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"></path></svg>
-              下载 EXE
-            </a>
-          </article>
-
           <article class="download-card download-android">
             <div class="download-card-top">
               <span class="platform-badge">Android</span>
@@ -435,6 +409,10 @@
             </a>
           </article>
         </div>
+
+        <p class="download-note">
+          <strong>Windows 版暂停维护</strong>：暂不提供新的安装包与自动更新；已安装的旧版本仍可继续使用。
+        </p>
 
         <div class="release-bar">
           <div>

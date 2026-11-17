@@ -69,7 +69,6 @@ noteButtons.forEach((button) => {
 
 const nav = document.querySelector("[data-nav]");
 const navToggle = document.querySelector("[data-nav-toggle]");
-const downloadMenu = document.querySelector("[data-download-menu]");
 
 function setNavOpen(open) {
   if (!nav || !navToggle) return;
@@ -89,16 +88,12 @@ nav?.querySelectorAll("a").forEach((link) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   setNavOpen(false);
-  downloadMenu?.removeAttribute("open");
 });
 
 document.addEventListener("click", (event) => {
   if (event.target instanceof Node === false) return;
   if (nav && navToggle && !nav.contains(event.target) && !navToggle.contains(event.target)) {
     setNavOpen(false);
-  }
-  if (downloadMenu && !downloadMenu.contains(event.target)) {
-    downloadMenu.removeAttribute("open");
   }
 });
 
@@ -141,7 +136,6 @@ function formatReleaseDate(value) {
 function findAsset(assets, platform) {
   const rules = {
     macos: [/^Woo_macos-arm64\.dmg$/i, /macos-arm64.*\.dmg$/i],
-    windows: [/^Woo_windows-x64-setup\.exe$/i, /windows-x64-setup\.exe$/i],
     android: [/^Woo_android-arm64-v8a\.apk$/i, /android-arm64-v8a\.apk$/i],
   };
 
@@ -188,7 +182,7 @@ fetch(RELEASE_API, {
     }
 
     const assets = Array.isArray(release.assets) ? release.assets : [];
-    ["macos", "windows", "android"].forEach((platform) => {
+    ["macos", "android"].forEach((platform) => {
       const asset = findAsset(assets, platform);
       if (!asset || typeof asset.browser_download_url !== "string") return;
       document.querySelectorAll(`[data-download="${platform}"]`).forEach((link) => {
