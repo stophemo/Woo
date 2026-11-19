@@ -188,6 +188,7 @@ import { DOMParser, DOMSerializer } from '@tiptap/pm/model'
 import TurndownService from 'turndown'
 import { tables as gfmTable, strikethrough as gfmStrikethrough } from 'turndown-plugin-gfm'
 import { useWorkspaceStore } from '../../stores/workspace'
+import { setMcpEditorPresence } from '../../services/mcpApi'
 import { registerScrollHandler, useEditorNavigation } from '../../config/editorNavigation'
 import type { TreeNode } from '../../types/mindmap'
 import IconLock from '../icons/IconLock.vue'
@@ -953,6 +954,48 @@ watch(() => store.currentDocument, async (newDoc, oldDoc) => {
   })
 }, { immediate: true })
 
+// Tell the local MCP service when the open note has unsaved edits, so an
+// external AI tool cannot silently overwrite the user's in-progress text.
+// Dirty=true uses a leading edge: continuous typing must not keep resetting a
+// tail timer and leave the server thinking the note is clean.
+let mcpPresenceTimer: ReturnType<typeof setTimeout> | null = null
+let mcpPresenceState: { documentId: string | null; dirty: boolean } = {
+  documentId: null,
+  dirty: false,
+}
+watch(
+  () => {
+    // saveActivity changes whenever a save is scheduled or settles; the dirty
+    // maps themselves are not reactive.
+    void store.saveActivity
+    const documentId = store.currentDocument?.id ?? null
+    return [documentId, store.isDocumentDirty(documentId)] as const
+  },
+  ([documentId, dirty]) => {
+    if (dirty) {
+      if (mcpPresenceTimer) {
+        clearTimeout(mcpPresenceTimer)
+        mcpPresenceTimer = null
+      }
+      if (mcpPresenceState.documentId !== documentId || !mcpPresenceState.dirty) {
+        mcpPresenceState = { documentId, dirty: true }
+        void setMcpEditorPresence(documentId, true).catch(() => {})
+      }
+      return
+    }
+    if (mcpPresenceState.documentId === documentId && !mcpPresenceState.dirty) {
+      return
+    }
+    if (mcpPresenceTimer) clearTimeout(mcpPresenceTimer)
+    mcpPresenceTimer = setTimeout(() => {
+      mcpPresenceTimer = null
+      mcpPresenceState = { documentId, dirty: false }
+      void setMcpEditorPresence(documentId, false).catch(() => {})
+    }, 300)
+  },
+  { immediate: true },
+)
+
 function scrollToHeading(headingIndex: number) {
   const ed = editor.value
   if (!ed) return
@@ -1180,6 +1223,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('woo-editor-command', menuActionHandler)
+  if (mcpPresenceTimer) clearTimeout(mcpPresenceTimer)
+  mcpPresenceState = { documentId: null, dirty: false }
+  void setMcpEditorPresence(null, false).catch(() => {})
   if (dirtyAfterBaseline && baselineDocId) void store.commitDocumentVersion(baselineDocId, 'auto')
   clearTimers()
   window.removeEventListener('keydown', handleGlobalKeydown, true)

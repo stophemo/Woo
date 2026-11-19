@@ -62,9 +62,11 @@ fn read_current_doc(document_id: &str) -> Result<(Option<String>, Option<String>
 
 fn find_max_version_no(document_id: &str) -> Result<i32, String> {
     with_db(|db| {
+        // 唯一约束覆盖 deleted = 2 的已压缩版本，因此取所有行的最大值，
+        // 避免压缩后再次提交时复用已存在的 version_no。
         let max_no: i32 = db
             .query_row(
-                "SELECT COALESCE(MAX(version_no), 0) FROM note_document_version WHERE document_id = ?1 AND deleted = 0",
+                "SELECT COALESCE(MAX(version_no), 0) FROM note_document_version WHERE document_id = ?1",
                 params![document_id],
                 |row| row.get(0),
             )
@@ -107,6 +109,70 @@ fn insert_version(
     })
 }
 
+/// Insert a version snapshot using an existing connection.
+///
+/// Used by the MCP write path so the pre-image snapshot and the document
+/// update share the same `with_db` lock. The latest active version is used
+/// for de-duplication; the version number is the max across all rows to avoid
+/// colliding with compacted (`deleted = 2`) versions.
+#[cfg(desktop)]
+pub(crate) fn insert_snapshot(
+    conn: &rusqlite::Connection,
+    document_id: &str,
+    title: &str,
+    content: &str,
+    change_type: &str,
+) -> Result<(), String> {
+    let hash = sha256(content);
+    let latest_hash: Option<String> = conn
+        .query_row(
+            "SELECT content_hash FROM note_document_version
+             WHERE document_id = ?1 AND deleted = 0
+             ORDER BY version_no DESC LIMIT 1",
+            params![document_id],
+            |row| row.get(0),
+        )
+        .ok();
+    if latest_hash.as_deref() == Some(hash.as_str()) {
+        return Ok(());
+    }
+
+    let max_no: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version_no), 0)
+             FROM note_document_version WHERE document_id = ?1",
+            params![document_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let normalized = if change_type.eq_ignore_ascii_case("manual") {
+        "manual"
+    } else {
+        "auto"
+    };
+    let id = new_id();
+    let now = now_str();
+    conn.execute(
+        "INSERT INTO note_document_version
+         (id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            id,
+            document_id,
+            max_no + 1,
+            title,
+            content,
+            hash,
+            normalized,
+            "mcp",
+            now,
+            now
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn build_dto(
     id: String,
     document_id: String,
@@ -135,39 +201,52 @@ fn build_dto(
 }
 
 pub fn list_versions(document_id: &str) -> Result<Vec<VersionDTO>, String> {
-    with_db(|db| {
-        let mut stmt = db
-            .prepare(
-                "SELECT id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time \
-                 FROM note_document_version WHERE document_id = ?1 AND deleted = 0 \
-                 ORDER BY version_no DESC",
-            )
-            .map_err(|e| e.to_string())?;
+    with_db(|db| list_versions_inner(db, document_id))
+}
 
-        let rows = stmt
-            .query_map(params![document_id], map_version_row)
-            .map_err(|e| e.to_string())?;
+/// Account-bound version listing used by the MCP server; the caller holds the
+/// `with_db_for_user` guard.
+pub(crate) fn list_versions_inner(
+    db: &rusqlite::Connection,
+    document_id: &str,
+) -> Result<Vec<VersionDTO>, String> {
+    let mut stmt = db
+        .prepare(
+            "SELECT id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time \
+             FROM note_document_version WHERE document_id = ?1 AND deleted = 0 \
+             ORDER BY version_no DESC",
+        )
+        .map_err(|e| e.to_string())?;
 
-        let mut versions = Vec::new();
-        for row in rows {
-            versions.push(row.map_err(|e| e.to_string())?);
-        }
-        Ok(versions)
-    })
+    let rows = stmt
+        .query_map(params![document_id], map_version_row)
+        .map_err(|e| e.to_string())?;
+
+    let mut versions = Vec::new();
+    for row in rows {
+        versions.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(versions)
 }
 
 pub fn get_version(document_id: &str, version_no: i32) -> Result<VersionDTO, String> {
-    with_db(|db| {
-        let r = db
-            .query_row(
-                "SELECT id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time \
-                 FROM note_document_version WHERE document_id = ?1 AND version_no = ?2 AND deleted = 0",
-                params![document_id, version_no],
-                map_version_row,
-            )
-            .map_err(|_| "版本不存在".to_string())?;
-        Ok(r)
-    })
+    with_db(|db| get_version_inner(db, document_id, version_no))
+}
+
+/// Account-bound version read used by the MCP server; the caller holds the
+/// `with_db_for_user` guard.
+pub(crate) fn get_version_inner(
+    db: &rusqlite::Connection,
+    document_id: &str,
+    version_no: i32,
+) -> Result<VersionDTO, String> {
+    db.query_row(
+        "SELECT id, document_id, version_no, title, content, content_hash, change_type, operator_id, create_time, update_time \
+         FROM note_document_version WHERE document_id = ?1 AND version_no = ?2 AND deleted = 0",
+        params![document_id, version_no],
+        map_version_row,
+    )
+    .map_err(|_| "版本不存在".to_string())
 }
 
 pub fn save_manual(document_id: &str) -> Result<VersionDTO, String> {

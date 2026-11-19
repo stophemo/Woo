@@ -41,7 +41,7 @@ fn doc_from_row_joined(row: &rusqlite::Row) -> rusqlite::Result<DocumentDTO> {
     Ok(dto)
 }
 
-fn extract_first_line_as_title(content: &str) -> String {
+pub(crate) fn extract_first_line_as_title(content: &str) -> String {
     if content.is_empty() {
         return "新文稿".to_string();
     }
@@ -260,6 +260,17 @@ pub fn get_by_id(id: &str) -> Result<DocumentDTO, String> {
 }
 
 pub fn create(folder_id: &str, title: &str, content: Option<&str>) -> Result<DocumentDTO, String> {
+    db::with_db(|conn| create_inner(conn, folder_id, title, content))
+}
+
+/// Account-bound create used by the MCP server; the caller already holds the
+/// `with_db_for_user` guard, so this must not call `with_db` again.
+pub(crate) fn create_inner(
+    conn: &Connection,
+    folder_id: &str,
+    title: &str,
+    content: Option<&str>,
+) -> Result<DocumentDTO, String> {
     let title = title.trim();
     if title.is_empty() {
         return Err("标题不能为空".to_string());
@@ -268,48 +279,46 @@ pub fn create(folder_id: &str, title: &str, content: Option<&str>) -> Result<Doc
         return Err("目录不能为空".to_string());
     }
 
-    db::with_db(|conn| {
-        let folder = conn
+    let folder = conn
+        .query_row(
+            "SELECT name, parent_id FROM note_folder WHERE id = ? AND deleted = 0",
+            params![folder_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .map_err(|_| "目录不存在".to_string())?;
+    let (folder_name, folder_parent_id) = folder;
+
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(sanitize(&folder_name));
+    let mut cur_parent = folder_parent_id;
+    while let Some(pid) = cur_parent {
+        let (name, parent) = conn
             .query_row(
-                "SELECT name, parent_id FROM note_folder WHERE id = ? AND deleted = 0",
-                params![folder_id],
+                "SELECT name, parent_id FROM note_folder WHERE id = ?",
+                params![pid],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
             )
             .map_err(|_| "目录不存在".to_string())?;
-        let (folder_name, folder_parent_id) = folder;
+        parts.insert(0, sanitize(&name));
+        cur_parent = parent;
+    }
+    parts.push(sanitize(title));
+    let branch_name = parts.join("-");
 
-        let mut parts: Vec<String> = Vec::new();
-        parts.push(sanitize(&folder_name));
-        let mut cur_parent = folder_parent_id;
-        while let Some(pid) = cur_parent {
-            let (name, parent) = conn
-                .query_row(
-                    "SELECT name, parent_id FROM note_folder WHERE id = ?",
-                    params![pid],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-                )
-                .map_err(|_| "目录不存在".to_string())?;
-            parts.insert(0, sanitize(&name));
-            cur_parent = parent;
-        }
-        parts.push(sanitize(title));
-        let branch_name = parts.join("-");
+    let doc_id = new_id();
+    let now = now_str();
+    let content_val = content.unwrap_or("");
+    conn.execute(
+        "INSERT INTO note_document (id, folder_id, title, content, branch_name, sort_order, create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        params![doc_id, folder_id, title, content_val, branch_name, now, now],
+    )
+    .map_err(|e| e.to_string())?;
 
-        let doc_id = new_id();
-        let now = now_str();
-        let content_val = content.unwrap_or("");
-        conn.execute(
-            "INSERT INTO note_document (id, folder_id, title, content, branch_name, sort_order, create_time, update_time)
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-            params![doc_id, folder_id, title, content_val, branch_name, now, now],
-        )
+    let doc = conn
+        .query_row("SELECT * FROM note_document WHERE id = ?", params![doc_id], doc_from_row)
         .map_err(|e| e.to_string())?;
-
-        let doc = conn
-            .query_row("SELECT * FROM note_document WHERE id = ?", params![doc_id], doc_from_row)
-            .map_err(|e| e.to_string())?;
-        Ok(doc)
-    })
+    Ok(doc)
 }
 
 pub fn rename(id: &str, title: &str) -> Result<(), String> {
@@ -425,26 +434,30 @@ pub fn remove(id: &str) -> Result<(), String> {
 }
 
 pub fn restore(id: &str) -> Result<(), String> {
-    db::with_db(|conn| {
-        conn.query_row("SELECT id FROM note_document WHERE id = ?", params![id], |_| Ok(true))
-            .map_err(|_| "文稿不存在".to_string())?;
+    db::with_db(|conn| restore_inner(conn, id))
+}
 
-        let now = now_str();
-        let folder_id: Option<String> = conn
-            .query_row("SELECT folder_id FROM note_document WHERE id = ?", params![id], |row| {
-                row.get(0)
-            })
-            .map_err(|e| e.to_string())?;
+/// Account-bound restore used by the MCP server; the caller holds the
+/// `with_db_for_user` guard.
+pub(crate) fn restore_inner(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.query_row("SELECT id FROM note_document WHERE id = ?", params![id], |_| Ok(true))
+        .map_err(|_| "文稿不存在".to_string())?;
 
-        restore_folder_chain(conn, &now, folder_id.as_deref())?;
-
-        conn.execute(
-            "UPDATE note_document SET deleted = 0, update_time = ? WHERE id = ?",
-            params![now, id],
-        )
+    let now = now_str();
+    let folder_id: Option<String> = conn
+        .query_row("SELECT folder_id FROM note_document WHERE id = ?", params![id], |row| {
+            row.get(0)
+        })
         .map_err(|e| e.to_string())?;
-        Ok(())
-    })
+
+    restore_folder_chain(conn, &now, folder_id.as_deref())?;
+
+    conn.execute(
+        "UPDATE note_document SET deleted = 0, update_time = ? WHERE id = ?",
+        params![now, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn hard_delete_inner(conn: &Connection, id: &str, now: &str) -> Result<(), String> {

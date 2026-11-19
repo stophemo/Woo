@@ -39,6 +39,7 @@
     <SettingsDialog
       :visible="showSettings"
       :app-version="appVersion"
+      :section="settingsSection"
       @close="showSettings = false"
       @check-update="handleManualUpdateCheck"
     />
@@ -69,6 +70,7 @@ import { useThemeStore } from './stores/theme'
 import { useWorkspaceStore } from './stores/workspace'
 import { useSyncStore } from './stores/sync'
 import { isModKey } from './config/shortcutUtils'
+import type { SettingsSection } from './config/menus'
 import { useLockStore } from './stores/lock'
 import { log } from './services/logger'
 import { listen } from '@tauri-apps/api/event'
@@ -106,7 +108,28 @@ function handleMenuAction(action: string) {
       topMenuOpen.value = topMenuOpenBeforeFullscreen
       break
     case 'settings':
-      openSettings('file')
+      openSettings('all')
+      break
+    case 'open-sync-settings':
+      openSettings('sync')
+      break
+    case 'open-mcp-settings':
+      openSettings('mcp')
+      break
+    case 'open-shortcuts-settings':
+      openSettings('editor')
+      break
+    case 'open-asset-settings':
+      openSettings('editor')
+      break
+    case 'open-appearance-settings':
+      openSettings('view')
+      break
+    case 'open-font-settings':
+      openSettings('view')
+      break
+    case 'open-about':
+      openSettings('about')
       break
     case 'new-document':
       workspaceStore.createNewDocument()
@@ -124,7 +147,7 @@ function handleMenuAction(action: string) {
       toggleThumbnailSidebar()
       break
     case 'theme':
-      openSettings('file')
+      openSettings('view')
       break
     case 'language':
       showToast('当前版本使用简体中文')
@@ -156,14 +179,14 @@ const leftSidebarOpen = ref(false)
 const thumbnailSidebarOpen = ref(false)
 const mobileDocDrawerOpen = ref(false)
 const showSettings = ref(false)
-const settingsMode = ref<'file'>('file')
+const settingsSection = ref<SettingsSection>('all')
 const topMenuOpen = ref(true)
 const statusBarOpen = ref(true)
 const isFullscreen = ref(false)
 let topMenuOpenBeforeFullscreen = true
 
-function openSettings(mode: 'file' = 'file') {
-  settingsMode.value = mode
+function openSettings(section: SettingsSection = 'all') {
+  settingsSection.value = section
   showSettings.value = true
 }
 
@@ -275,7 +298,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
       break
     case ',':
       event.preventDefault()
-      openSettings('file')
+      openSettings('all')
       break
     case 'f':
     case 'F':

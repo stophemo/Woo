@@ -3,6 +3,8 @@ pub mod document;
 pub mod external_file;
 pub mod folder;
 pub mod lan_sync;
+#[cfg(desktop)]
+pub mod mcp;
 pub mod lock;
 pub mod server;
 pub mod sync;

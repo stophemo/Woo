@@ -1,6 +1,6 @@
 use crate::db;
 use crate::services::utils::{new_id, now_str};
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -70,50 +70,40 @@ fn build_tree(flat: &[FolderDTO], parent_id: Option<&str>) -> Vec<FolderTreeNode
 
 /// Create a new folder (matches folderService.createFolder)
 pub fn create_folder(name: &str, parent_id: Option<&str>) -> Result<String, String> {
+    db::with_db(|conn| create_folder_inner(conn, name, parent_id))
+}
+
+/// Account-bound folder create used by the MCP server; the caller holds the
+/// `with_db_for_user` guard.
+pub(crate) fn create_folder_inner(
+    conn: &Connection,
+    name: &str,
+    parent_id: Option<&str>,
+) -> Result<String, String> {
     if name.trim().is_empty() {
         return Err("目录名不能为空".to_string());
     }
     let name = name.trim();
 
-    db::with_db(|conn| {
-        // Check for existing folder with same name under same parent
-        let mut existing = conn
-            .prepare("SELECT id, deleted FROM note_folder WHERE parent_id IS ? AND name = ?")
-            .unwrap();
-        let rows: Vec<(String, i32)> = existing
-            .query_map(params![parent_id, name], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
+    // Check for existing folder with same name under same parent
+    let mut existing = conn
+        .prepare("SELECT id, deleted FROM note_folder WHERE parent_id IS ? AND name = ?")
+        .unwrap();
+    let rows: Vec<(String, i32)> = existing
+        .query_map(params![parent_id, name], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
 
-        // Active folder with same name → error
-        if rows.iter().any(|(_, d)| *d == 0) {
-            return Err("同级目录名不能重复".to_string());
-        }
+    // Active folder with same name → error
+    if rows.iter().any(|(_, d)| *d == 0) {
+        return Err("同级目录名不能重复".to_string());
+    }
 
-        // Soft-deleted folder → restore
-        if let Some((id, _)) = rows.iter().find(|(_, d)| *d == 1) {
-            let now = now_str();
-            let next_order: i32 = conn
-                .query_row(
-                    "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM note_folder
-                     WHERE parent_id IS ? AND deleted = 0",
-                    params![parent_id],
-                    |row| row.get(0),
-                )
-                .unwrap_or(0);
-            conn.execute(
-                "UPDATE note_folder SET deleted = 0, sort_order = ?, update_time = ? WHERE id = ?",
-                params![next_order, now, id],
-            )
-            .unwrap();
-            return Ok(id.clone());
-        }
-
-        // Create new：排到同级末尾，与前端「新建后追加到列表尾部」保持一致
-        let id = new_id();
+    // Soft-deleted folder → restore
+    if let Some((id, _)) = rows.iter().find(|(_, d)| *d == 1) {
         let now = now_str();
         let next_order: i32 = conn
             .query_row(
@@ -124,54 +114,80 @@ pub fn create_folder(name: &str, parent_id: Option<&str>) -> Result<String, Stri
             )
             .unwrap_or(0);
         conn.execute(
-            "INSERT INTO note_folder (id, parent_id, name, sort_order, create_time, update_time)
-             VALUES (?, ?, ?, ?, ?, ?)",
-            params![id, parent_id, name, next_order, now, now],
+            "UPDATE note_folder SET deleted = 0, sort_order = ?, update_time = ? WHERE id = ?",
+            params![next_order, now, id],
         )
         .unwrap();
-        Ok(id)
-    })
+        return Ok(id.clone());
+    }
+
+    // Create new：排到同级末尾，与前端「新建后追加到列表尾部」保持一致
+    let id = new_id();
+    let now = now_str();
+    let next_order: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM note_folder
+             WHERE parent_id IS ? AND deleted = 0",
+            params![parent_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO note_folder (id, parent_id, name, sort_order, create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![id, parent_id, name, next_order, now, now],
+    )
+    .unwrap();
+    Ok(id)
 }
 
 /// Rename a folder (matches folderService.renameFolder)
 pub fn rename_folder(folder_id: &str, new_name: &str) -> Result<(), String> {
+    db::with_db(|conn| rename_folder_inner(conn, folder_id, new_name))
+}
+
+/// Account-bound folder rename used by the MCP server; the caller holds the
+/// `with_db_for_user` guard.
+pub(crate) fn rename_folder_inner(
+    conn: &Connection,
+    folder_id: &str,
+    new_name: &str,
+) -> Result<(), String> {
     let new_name = new_name.trim().to_string();
     if new_name.is_empty() {
         return Err("目录名不能为空".to_string());
     }
 
-    db::with_db(|conn| {
-        let parent_id: Option<String> = conn
-            .query_row(
-                "SELECT parent_id FROM note_folder WHERE id = ? AND deleted = 0",
-                params![folder_id],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .map_err(|_| "目录不存在".to_string())?;
-
-        // Check for duplicates
-        let dup: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM note_folder WHERE parent_id IS ? AND name = ? AND deleted = 0 AND id != ?",
-                params![parent_id, new_name, folder_id],
-                |row| row.get::<_, i32>(0),
-            )
-            .map(|c| c > 0)
-            .unwrap_or(false);
-
-        if dup {
-            return Err("同级目录名不能重复".to_string());
-        }
-
-        let now = now_str();
-        conn.execute(
-            "UPDATE note_folder SET name = ?, update_time = ? WHERE id = ?",
-            params![new_name, now, folder_id],
+    let parent_id: Option<String> = conn
+        .query_row(
+            "SELECT parent_id FROM note_folder WHERE id = ? AND deleted = 0",
+            params![folder_id],
+            |row| row.get::<_, Option<String>>(0),
         )
-        .map_err(|_| "更新失败".to_string())?;
+        .map_err(|_| "目录不存在".to_string())?;
 
-        Ok(())
-    })
+    // Check for duplicates
+    let dup: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM note_folder WHERE parent_id IS ? AND name = ? AND deleted = 0 AND id != ?",
+            params![parent_id, new_name, folder_id],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if dup {
+        return Err("同级目录名不能重复".to_string());
+    }
+
+    let now = now_str();
+    conn.execute(
+        "UPDATE note_folder SET name = ?, update_time = ? WHERE id = ?",
+        params![new_name, now, folder_id],
+    )
+    .map_err(|_| "更新失败".to_string())?;
+
+    Ok(())
 }
 
 /// Delete a folder (soft-delete with cascade, matches folderService.deleteFolder)

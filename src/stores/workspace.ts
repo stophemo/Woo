@@ -415,6 +415,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const pendingSaves = new Map<string, string>()
   const savingPromises = new Map<string, Promise<void>>()
   const saveErrors = new Map<string, Error>()
+  // 保存状态是 Map（非响应式）；用计数器让 MCP 脏状态 watcher 能在每次调度/完成时重新求值。
+  const saveActivity = ref(0)
   const pendingExternalFileWrites = new Map<string, { filePath: string; content: string }>()
   const externalFileWritingPromises = new Map<string, Promise<void>>()
   const externalFileSaveErrors = new Map<string, Error>()
@@ -562,6 +564,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       void runPendingSave(documentId).catch(() => {})
     }, 800)
     saveTimers.set(documentId, timer)
+    saveActivity.value += 1
   }
 
   async function drainPendingSaves(documentId: string): Promise<void> {
@@ -596,9 +599,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     void run.then(
       () => {
         if (savingPromises.get(documentId) === run) savingPromises.delete(documentId)
+        saveActivity.value += 1
       },
       () => {
         if (savingPromises.get(documentId) === run) savingPromises.delete(documentId)
+        saveActivity.value += 1
       }
     )
     return run
@@ -614,8 +619,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const inFlight = savingPromises.get(documentId)
     if (inFlight) await inFlight
     if (pendingSaves.has(documentId)) await runPendingSave(documentId)
+    saveActivity.value += 1
     const saveError = saveErrors.get(documentId)
     if (saveError) throw saveError
+  }
+
+  /** 文稿是否有未落库的本地修改（防抖计时、待写、写入中或写入失败）。 */
+  function isDocumentDirty(documentId: string | null): boolean {
+    if (!documentId) return false
+    return saveTimers.has(documentId)
+      || pendingSaves.has(documentId)
+      || savingPromises.has(documentId)
+      || saveErrors.has(documentId)
   }
 
   async function flushExternalFileSave(documentId: string): Promise<void> {
@@ -1331,6 +1346,35 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         // 用 splice 整体替换，Vue 能识别最小变动
         folderDocuments.value.splice(0, folderDocuments.value.length, ...merged)
 
+        // MCP/同步可能把当前文稿移出本目录或移入回收站。先确认文稿是否仍存在：
+        // 只是移动到别的目录时保持当前编辑，只有真正删除/回收后才跳到下一篇。
+        if (
+          selectedDocumentId.value
+          && !isDraftId(selectedDocumentId.value)
+          && !newIds.has(selectedDocumentId.value)
+        ) {
+          try {
+            const moved = mapDocument(await documentApi.getById(selectedDocumentId.value))
+            if (currentDocumentData.value && currentDocumentData.value.id === selectedDocumentId.value) {
+              currentDocumentData.value.folderId = moved.folderId
+              currentDocumentData.value.folderName = moved.folderName
+              currentDocumentData.value.updatedAt = moved.updatedAt
+              if (moved.isLocked) {
+                currentDocumentData.value.isLocked = true
+                currentDocumentData.value.content = ''
+              }
+            }
+          } catch {
+            const next = folderDocuments.value[0]
+            if (next) {
+              await selectDocument(next.id)
+            } else {
+              selectedDocumentId.value = null
+              currentDocumentData.value = null
+            }
+          }
+        }
+
                 // 3. 冲突检测：当前正在编辑的文稿
         if (selectedDocumentId.value && !isDraftId(selectedDocumentId.value)) {
           const cloudDoc = newDocs.find(d => d.id === selectedDocumentId.value)
@@ -1675,6 +1719,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     reorderDocumentItems,
     // 辅助
     findFolderById,
-    getDocumentPreview
+    getDocumentPreview,
+    isDocumentDirty,
+    saveActivity
   }
 })

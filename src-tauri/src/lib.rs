@@ -365,6 +365,10 @@ pub fn run() {
                 log::info!("[DB] Database ready");
             });
 
+            // Restore the local MCP service if it was enabled.
+            #[cfg(desktop)]
+            services::mcp::restore_on_startup();
+
             // Compact version history on startup (keep latest 50 per document)
             match services::version_service::compact_all_documents(50) {
                 Ok(n) => {
@@ -464,6 +468,8 @@ pub fn run() {
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
+                    #[cfg(desktop)]
+                    services::mcp::shutdown();
                     db::close_db();
                 }
             }
@@ -536,6 +542,19 @@ pub fn run() {
             commands::lan_sync::lan_sync_get_config,
             commands::lan_sync::lan_sync_set_enabled,
             commands::lan_sync::lan_pair_discover,
+            // 本地 MCP 服务（桌面端）
+            #[cfg(desktop)]
+            commands::mcp::mcp_get_config,
+            #[cfg(desktop)]
+            commands::mcp::mcp_set_enabled,
+            #[cfg(desktop)]
+            commands::mcp::mcp_set_allow_writes,
+            #[cfg(desktop)]
+            commands::mcp::mcp_set_port,
+            #[cfg(desktop)]
+            commands::mcp::mcp_regenerate_token,
+            #[cfg(desktop)]
+            commands::mcp::mcp_set_editor_presence,
             // 自定义 Supabase 中转地址
             commands::server::server_get_config,
             commands::server::server_save_config,
@@ -555,6 +574,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            #[cfg(desktop)]
+            match &event {
+                tauri::RunEvent::ExitRequested { .. } => services::mcp::shutdown(),
+                tauri::RunEvent::Exit => services::mcp::shutdown(),
+                _ => {}
+            }
+
             #[cfg(target_os = "macos")]
             match event {
                 tauri::RunEvent::Ready => {

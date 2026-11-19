@@ -101,6 +101,8 @@ import {
   editMenuItems,
   markMenuItems,
   viewMenuItems,
+  syncMenuItems,
+  mcpMenuItems,
   helpMenuItems
 } from '../../config/menus'
 import { editorShortcuts, EDITOR_SHORTCUT_LABELS, getEditorShortcut } from '../../config/editorShortcuts'
@@ -160,6 +162,8 @@ const menus = computed(() => {
     { label: '编辑', items: normalizeItems(editMenuItems) },
     { label: '标记', items: normalizeItems(markMenuItems) },
     { label: '查看', items: normalizeItems(viewMenuItems) },
+    { label: '同步', items: normalizeItems(syncMenuItems) },
+    { label: 'MCP', items: normalizeItems(mcpMenuItems) },
     { label: '帮助', items: normalizeItems(helpMenuItems) },
   ]
 })
@@ -298,6 +302,10 @@ const handleMenuAction = (action: string) => {
   }
   if (action === 'settings') {
     emit('open-settings')
+    return
+  }
+  if (action === 'sync-now') {
+    void handleSync()
     return
   }
   // 导出（作用于当前打开的文稿）

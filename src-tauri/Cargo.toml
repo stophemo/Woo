@@ -1,6 +1,6 @@
 [package]
 name = "woo-tauri"
-version = "0.7.2"
+version = "0.8.0"
 description = "Woo Notes - Tauri v2"
 authors = ["stophemo"]
 edition = "2021"
@@ -45,6 +45,14 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 # The updater disables reqwest's default features, so opt back into OS proxy discovery.
 reqwest-updater = { package = "reqwest", version = "0.13", default-features = false, features = ["system-proxy"] }
+# Local MCP server (desktop only)
+rmcp = { version = "3", default-features = false, features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
+tokio-util = { version = "0.7", features = ["rt"] }
+subtle = "2"
+pulldown-cmark = "0.13"
+ammonia = "4"
+htmd = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

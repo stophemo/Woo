@@ -1,6 +1,9 @@
 // 菜单项类型定义
 export type MenuItemType = 'item' | 'divider' | 'submenu'
 
+/** 设置弹窗按菜单拆分后的分区。 */
+export type SettingsSection = 'all' | 'sync' | 'editor' | 'view' | 'mcp' | 'about'
+
 export interface MenuItem {
   type: MenuItemType
   label?: string
@@ -38,8 +41,6 @@ export const fileMenuItems: MenuItem[] = [
     ]
   },
   { type: 'divider' },
-  { type: 'item', label: '设置', action: 'settings', shortcut: 'Mod+,' },
-  { type: 'item', label: '检查更新', action: 'check-update' },
   { type: 'item', label: '退出', action: 'exit' }
 ]
 
@@ -49,7 +50,10 @@ export const editMenuItems: MenuItem[] = [
   { type: 'item', label: '重做', action: 'redo', shortcut: 'Mod+Shift+Z' },
   { type: 'divider' },
   { type: 'item', label: '查找', action: 'find', shortcut: 'Mod+F' },
-  { type: 'item', label: '查找并替换', action: 'find-replace', shortcut: 'Mod+H' }
+  { type: 'item', label: '查找并替换', action: 'find-replace', shortcut: 'Mod+H' },
+  { type: 'divider' },
+  { type: 'item', label: '快捷键设置…', action: 'open-shortcuts-settings' },
+  { type: 'item', label: '静态资源链接…', action: 'open-asset-settings' }
 ]
 
 // 标记菜单（Markdown 语法）
@@ -93,13 +97,28 @@ export const viewMenuItems: MenuItem[] = [
   { type: 'item', label: '缩小', action: 'zoom-out', shortcut: 'Mod+-' },
   { type: 'item', label: '重置缩放', action: 'zoom-reset', shortcut: 'Mod+Shift+0' },
   { type: 'divider' },
-  { type: 'item', label: '主题', action: 'theme' },
+  { type: 'item', label: '外观…', action: 'open-appearance-settings' },
+  { type: 'item', label: '字体…', action: 'open-font-settings' },
   { type: 'item', label: '语言', action: 'language' }
+]
+
+// 同步菜单
+export const syncMenuItems: MenuItem[] = [
+  { type: 'item', label: '同步设置…', action: 'open-sync-settings' },
+  { type: 'item', label: '立即同步', action: 'sync-now' }
+]
+
+// MCP 菜单
+export const mcpMenuItems: MenuItem[] = [
+  { type: 'item', label: 'MCP 服务设置…', action: 'open-mcp-settings' }
 ]
 
 // 帮助菜单
 export const helpMenuItems: MenuItem[] = [
   { type: 'item', label: '文档介绍', action: 'docs' },
+  { type: 'divider' },
+  { type: 'item', label: '检查更新', action: 'check-update' },
+  { type: 'item', label: '关于 Woo', action: 'open-about' },
   { type: 'divider' },
   { type: 'item', label: 'GitHub 链接', action: 'github' }
 ]
