@@ -68,7 +68,7 @@ impl ToolError {
             | Self::UserChanged(message)
             | Self::Internal(message) => message.clone(),
             Self::ReadOnly => {
-                "写入未开启：请在 Woo 设置 → MCP 服务中启用「允许 AI 修改笔记」。".to_string()
+                "写入未开启：请在 Woo 菜单 MCP → MCP 服务设置… 中启用「允许 AI 修改笔记」。".to_string()
             }
             Self::Conflict { .. } => "文稿已被其他操作修改，请重新读取后再试。".to_string(),
         }

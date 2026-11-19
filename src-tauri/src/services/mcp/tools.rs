@@ -564,7 +564,7 @@ impl ServerHandler for WooMcp {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
-                "Woo Notes 本地笔记服务。读取工具可自由调用；写工具需要用户在 Woo 设置 → MCP 服务中开启「允许 AI 修改笔记」。正文默认使用 Markdown。update_note/append_note 必须先调用 get_note 获取 contentHash 并传入 expectedContentHash。锁定文稿不可访问；删除是软删除（回收站）。",
+                "Woo Notes 本地笔记服务。读取工具可自由调用；写工具需要用户在 Woo 菜单 MCP → MCP 服务设置… 中开启「允许 AI 修改笔记」。正文默认使用 Markdown。update_note/append_note 必须先调用 get_note 获取 contentHash 并传入 expectedContentHash。锁定文稿不可访问；删除是软删除（回收站）。",
             )
     }
 }

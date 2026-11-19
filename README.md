@@ -178,7 +178,7 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### MCP 服务（桌面端）
 
-桌面端可在「设置 → MCP 服务」中开启仅本机访问的 Streamable HTTP MCP 服务，让 Claude Code、Codex、Hermes、Pi 等 AI 工具搜索、读取和写入笔记。默认只读，写入需单独开启；仅监听 `127.0.0.1`，使用 Bearer Token，并遵守锁定文稿、软删除和草稿边界。服务随 Woo 启停。
+桌面端可在「MCP → MCP 服务设置…」中开启仅本机访问的 Streamable HTTP MCP 服务，让 Claude Code、Codex、Hermes、Pi 等 AI 工具搜索、读取和写入笔记。默认只读，写入需单独开启；仅监听 `127.0.0.1`，使用 Bearer Token，并遵守锁定文稿、软删除和草稿边界。服务随 Woo 启停。
 
 客户端配置、工具清单和故障排查见 [docs/mcp.md](docs/mcp.md)。
 
