@@ -28,7 +28,7 @@
 
 Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用任意 WebDAV 或同一 Wi-Fi 局域网同步到 macOS 与 Android。
 
-> **v0.8.0**：新增本地 MCP 服务，Claude Code / Codex / Hermes / Pi 等本机 AI 工具可通过 Streamable HTTP 读写笔记，默认只读；设置菜单拆分为文件、编辑、查看、同步、MCP、帮助。
+> **v0.8.0**：新增本地 MCP 服务。Woo 不内置 AI 聊天；Claude Code、Codex、Hermes、Pi 等外部 AI 工具可以通过 MCP 直接调用 Woo，搜索、读取、新建、更新、追加和整理笔记。默认只读，写入需手动开启。设置菜单同步拆分为文件、编辑、查看、同步、MCP、帮助。
 
 | | |
 |---|---|
@@ -41,8 +41,25 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账�
 | ⏱️ **版本历史** | 桌面端与 Android 均自动记录版本，也可手动建立和恢复正式文稿版本 |
 | 📤 **文件与导出** | 桌面端可读写 Markdown / TXT 文件，并将文稿导出为 Markdown、纯文本或 PNG |
 | 🔒 **应用内访问锁** | 可锁定文件夹或文稿；用于限制应用内查看，不等同于磁盘加密 |
-| 🔌 **MCP 服务** | 桌面端可选开启；Claude Code、Codex、Hermes、Pi 等本机 AI 工具通过 Streamable HTTP 读写笔记，默认只读，写入需手动开启 |
+| 🔌 **MCP 服务** | 桌面端可选开启；让 Claude Code、Codex、Hermes、Pi 等外部 AI 直接调用 Woo 维护笔记，默认只读，写入需手动开启 |
 | 🎨 **极简设计** | 温暖柔和的日间主题 + 护眼暗色主题 |
+
+---
+
+## 🤖 v0.8.0：让外部 AI 维护你的笔记
+
+Woo 本身**不内置 AI 聊天**，也不绑定某一家模型。它把笔记能力通过 **MCP（Model Context Protocol）** 开放给外部 AI 工具：由你已经在用的 Claude Code、Codex、Hermes、Pi 等 AI 来调用 Woo，搜索、读取、新建、更新、追加、移动和整理笔记。
+
+| 关注点 | 说明 |
+|---|---|
+| **谁来调用** | Claude Code、Codex、Hermes、Pi，以及任何支持 Streamable HTTP 的 MCP 客户端 |
+| **能做什么** | 搜索、读取、新建、更新、追加、移动、整理笔记；删除进回收站，可恢复 |
+| **安全边界** | 仅监听 `127.0.0.1`，Bearer Token；默认只读，写入需在「MCP → MCP 服务设置…」中手动开启；锁定文稿/目录不可访问，草稿不暴露 |
+| **怎么开始** | Woo → MCP → MCP 服务设置… → 启用，把地址和令牌复制到 AI 工具；设置页提供 Claude Code / Codex / Hermes / Pi 的现成配置 |
+
+完整客户端配置、工具清单和故障排查见 [docs/mcp.md](docs/mcp.md)。
+
+> 换句话说：不是 Woo 内置一个 AI，而是你已经在用的 AI 可以直接调用 Woo 来维护笔记。
 
 ---
 
@@ -175,12 +192,6 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 - 版本历史、知识库分块与加锁密码只保留在本机，不参与同步。
 - Supabase 登录/中转不参与运行时同步；仅保留旧数据兼容代码。
   详见 [docs/domestic-sync.md](docs/domestic-sync.md)。
-
-### MCP 服务（桌面端）
-
-桌面端可在「MCP → MCP 服务设置…」中开启仅本机访问的 Streamable HTTP MCP 服务，让 Claude Code、Codex、Hermes、Pi 等 AI 工具搜索、读取和写入笔记。默认只读，写入需单独开启；仅监听 `127.0.0.1`，使用 Bearer Token，并遵守锁定文稿、软删除和草稿边界。服务随 Woo 启停。
-
-客户端配置、工具清单和故障排查见 [docs/mcp.md](docs/mcp.md)。
 
 ---
 

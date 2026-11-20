@@ -32,6 +32,7 @@
       <nav class="primary-nav" id="primary-nav" aria-label="主导航" data-nav>
         <a href="#workflow">写作流程</a>
         <a href="#features">核心能力</a>
+        <a href="#ai">AI 维护</a>
         <a href="#platforms">跨端体验</a>
         <a href="#download">下载</a>
         <a href="https://github.com/stophemo/Woo" target="_blank" rel="noreferrer">GitHub</a>
@@ -74,6 +75,7 @@
             </a>
           </div>
           <p class="hero-meta">免费使用 · MIT 开源 · 本地写作无需账号</p>
+          <a class="hero-update" href="#ai">v0.8.0 新增 MCP 服务：让外部 AI 直接维护你的笔记 →</a>
         </div>
 
         <div class="hero-scene" role="region" aria-label="无我笔记桌面端界面演示">
@@ -263,6 +265,43 @@
       </div>
     </section>
 
+    <section class="ai-section section" id="ai" aria-labelledby="ai-title">
+      <div class="section-inner ai-layout">
+        <div class="ai-copy">
+          <p class="section-kicker">v0.8.0 · 本地 MCP 服务</p>
+          <h2 id="ai-title"><span class="heading-fragment">让外部 AI，</span><span class="heading-fragment">直接维护你的笔记</span></h2>
+          <p>Woo 本身不内置 AI 聊天。它把笔记能力通过 MCP 开放给外部 AI 工具：由你已经在用的 Claude Code、Codex、Hermes、Pi 等 AI 来调用 Woo，搜索、读取、新建、修改和整理笔记。</p>
+          <ul class="ai-points">
+            <li><strong>不是内置聊天</strong>：Woo 不绑定某一家模型，AI 由你选择的工具提供。</li>
+            <li><strong>默认只读</strong>：写操作需在「MCP → MCP 服务设置…」中手动开启。</li>
+            <li><strong>只在本机</strong>：仅监听 127.0.0.1，Bearer Token；锁定文稿、回收站和草稿边界照常遵守。</li>
+          </ul>
+          <div class="ai-actions">
+            <a class="button button-primary" href="https://github.com/stophemo/Woo/blob/main/docs/mcp.md" target="_blank" rel="noreferrer">查看接入说明</a>
+            <a class="ai-link" href="#download">下载 v0.8.0 →</a>
+          </div>
+        </div>
+        <div class="ai-panel" aria-label="MCP 接入步骤">
+          <div class="ai-panel-head"><span>MCP 服务</span><b>仅本机 · 默认只读</b></div>
+          <div class="ai-step">
+            <span>01</span>
+            <div><strong>在 Woo 中启用</strong><small>菜单 MCP → MCP 服务设置… → 启用</small></div>
+          </div>
+          <div class="ai-step">
+            <span>02</span>
+            <div><strong>复制地址与令牌</strong><small>选择 Claude Code / Codex / Hermes / Pi 的现成配置</small></div>
+          </div>
+          <div class="ai-step">
+            <span>03</span>
+            <div><strong>让 AI 调用 Woo</strong><small>搜索、读取、新建、更新、移动和整理笔记</small></div>
+          </div>
+          <pre class="ai-code">claude mcp add --transport http woo \
+  http://127.0.0.1:47823/mcp \
+  --header "Authorization: Bearer ••••"</pre>
+        </div>
+      </div>
+    </section>
+
     <section class="platforms section" id="platforms" aria-labelledby="platforms-title">
       <div class="section-inner">
         <div class="platform-heading">
@@ -379,7 +418,7 @@
             <p class="section-kicker"><span data-version>v0.8.0</span> · <span data-release-date>2026-11-20</span></p>
             <h2 id="download-title"><span class="heading-fragment">下载 Woo，</span><span class="heading-fragment">打开就写</span></h2>
           </div>
-          <p>macOS 和 Android 安装包统一发布在 GitHub Releases。安装后无需账号，打开即可本地写作。</p>
+          <p>macOS 和 Android 安装包统一发布在 GitHub Releases。v0.8.0 新增 MCP 服务，桌面端可让 Claude Code、Codex、Hermes、Pi 等外部 AI 维护笔记。<a href="#ai">了解接入 →</a> 安装后无需账号，打开即可本地写作。</p>
         </div>
 
         <div class="download-grid">
