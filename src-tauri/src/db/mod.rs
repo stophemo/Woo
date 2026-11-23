@@ -244,10 +244,167 @@ pub fn close_db() {
 }
 
 /// Initialize the database schema (matches electron/db/schema.cjs)
-fn init_schema(db: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn init_schema(db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute_batch(SCHEMA_SQL)?;
+    db.execute_batch(VAULT_SYNC_SCHEMA_SQL)?;
     Ok(())
 }
+
+/// 同步空间（加密增量操作日志）的本地表与脏记录触发器。
+///
+/// 触发器只在 `sync_meta.vault_sync_active = 1` 时记录变更，因此未启用
+/// 同步的普通写作不会产生额外写入。远端操作应用期间会设置
+/// `vault_sync_applying = 1`，避免把刚拉下来的数据再次当作本地变更。
+const VAULT_SYNC_SCHEMA_SQL: &str = "
+CREATE TABLE IF NOT EXISTS vault_sync_state (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    vault_id TEXT NOT NULL DEFAULT '',
+    device_id TEXT NOT NULL DEFAULT '',
+    cursor INTEGER NOT NULL DEFAULT 0,
+    lamport INTEGER NOT NULL DEFAULT 0,
+    last_success_at TEXT,
+    last_error TEXT
+);
+INSERT OR IGNORE INTO vault_sync_state(singleton) VALUES(1);
+
+CREATE TABLE IF NOT EXISTS vault_sync_outbox (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_id TEXT NOT NULL UNIQUE,
+    entity_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    lamport INTEGER NOT NULL,
+    ciphertext TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vault_sync_outbox_order
+    ON vault_sync_outbox(seq);
+
+CREATE TABLE IF NOT EXISTS vault_sync_entity_versions (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    lamport INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS vault_sync_applied_ops (
+    op_id TEXT PRIMARY KEY,
+    server_seq INTEGER NOT NULL,
+    applied_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vault_sync_applied_seq
+    ON vault_sync_applied_ops(server_seq);
+
+CREATE TABLE IF NOT EXISTS vault_sync_pending_entities (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    changed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_sync_pending_deletions (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    deleted_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_sync_chunk_refs (
+    document_id TEXT PRIMARY KEY,
+    manifest_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_sync_known_chunks (
+    hash TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_sync_cleanup_doc
+    ON note_document(deleted, update_time);
+CREATE INDEX IF NOT EXISTS idx_vault_sync_cleanup_folder
+    ON note_folder(deleted, update_time);
+
+CREATE TABLE IF NOT EXISTS vault_sync_incoming_chunks (
+    hash TEXT PRIMARY KEY,
+    stored BLOB NOT NULL,
+    compressed INTEGER NOT NULL,
+    plain_bytes INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_sync_deferred_documents (
+    entity_id TEXT PRIMARY KEY,
+    op_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    lamport INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    server_seq INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_document_after_insert
+AFTER INSERT ON note_document
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
+    VALUES ('doc:' || NEW.id, 'document', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_document_after_update
+AFTER UPDATE ON note_document
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
+    VALUES ('doc:' || NEW.id, 'document', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_document_after_delete
+AFTER DELETE ON note_document
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_deletions(entity_id, entity_type, deleted_at)
+    VALUES ('doc:' || OLD.id, 'document', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_folder_after_insert
+AFTER INSERT ON note_folder
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
+    VALUES ('folder:' || NEW.id, 'folder', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_folder_after_update
+AFTER UPDATE ON note_folder
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
+    VALUES ('folder:' || NEW.id, 'folder', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS vault_sync_folder_after_delete
+AFTER DELETE ON note_folder
+WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')
+ AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_applying' AND value = '1')
+BEGIN
+    INSERT INTO vault_sync_pending_deletions(entity_id, entity_type, deleted_at)
+    VALUES ('folder:' || OLD.id, 'folder', strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    ON CONFLICT(entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+";
 
 const SCHEMA_SQL: &str = "
 CREATE TABLE IF NOT EXISTS note_folder (

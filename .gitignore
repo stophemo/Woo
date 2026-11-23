@@ -3,6 +3,8 @@ node_modules/
 dist/
 dist-mobile/
 src-tauri/target
+src-tauri/woo-sync-core/target/
+src-tauri/woo-sync-core/Cargo.lock
 
 # Logs
 *.log

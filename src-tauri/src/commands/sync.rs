@@ -33,7 +33,7 @@ pub async fn sync_status() -> CommandResult<SyncStatusResponse> {
             is_syncing: s.is_syncing,
             last_sync_time: s.last_sync_time,
             pending_changes: s.pending_changes,
-            backend: sync_engine::active_backend().to_string(),
+            backend: s.backend,
         }),
         Err(error) => CommandResult::error(&format!("读取同步状态失败: {}", error)),
     }

@@ -8,7 +8,7 @@
  *   顶部显示真实保存状态，离开页面前强制落盘。
  * - 版本提交沿用桌面端策略（30s 冷却），内容去重由后端 hash 完成。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useWorkspaceStore } from '../../src/stores/workspace'
@@ -29,8 +29,33 @@ const loadError = ref(false)
 const html = ref('')
 const saveState = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
 const showMore = ref(false)
+const showToc = ref(false)
 
 const showFolderPicker = ref(false)
+
+interface TocHeading {
+  level: number
+  text: string
+}
+
+const tocHeadings = computed<TocHeading[]>(() => {
+  if (!html.value) return []
+  const container = window.document.createElement('div')
+  container.innerHTML = html.value
+  return Array.from(container.querySelectorAll('h1,h2,h3,h4,h5,h6')).map((node) => ({
+    level: Number(node.tagName.slice(1)),
+    text: (node.textContent || '').trim() || '（空标题）'
+  }))
+})
+
+function jumpToHeading(index: number) {
+  showToc.value = false
+  void nextTick(() => {
+    const root = window.document.querySelector('.mobile-tiptap-editor')
+    const heading = root?.querySelectorAll('h1,h2,h3,h4,h5,h6')[index]
+    heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 
 const document = computed(() => store.currentDocument)
 const isLocked = computed(() => !!document.value?.isLocked)
@@ -368,6 +393,15 @@ async function doUnlock() {
       >
         <span class="edit-top__dot"></span>{{ savedLabel }}
       </span>
+      <button
+        type="button"
+        class="edit-top__btn"
+        aria-label="目录"
+        :disabled="tocHeadings.length === 0"
+        @click="showToc = true"
+      >
+        <van-icon name="bars" />
+      </button>
       <button type="button" class="edit-top__btn" aria-label="更多" @click="showMore = true">
         <van-icon name="ellipsis" />
       </button>
@@ -403,6 +437,37 @@ async function doUnlock() {
     </div>
 
     <FolderPicker v-model:show="showFolderPicker" @select="onFolderPicked" />
+
+    <van-popup
+      v-model:show="showToc"
+      position="right"
+      class="toc-popup"
+      :style="{ width: '78%', height: '100%' }"
+      close-on-popstate
+    >
+      <div class="toc-panel">
+        <div class="toc-head">
+          <strong>目录</strong>
+          <button type="button" class="edit-top__btn" aria-label="关闭目录" @click="showToc = false">
+            <van-icon name="cross" />
+          </button>
+        </div>
+        <div v-if="tocHeadings.length" class="toc-list">
+          <button
+            v-for="(heading, index) in tocHeadings"
+            :key="`${index}-${heading.text}`"
+            type="button"
+            class="toc-item"
+            :class="`is-h${heading.level}`"
+            :style="{ paddingLeft: `${14 + (heading.level - 1) * 14}px` }"
+            @click="jumpToHeading(index)"
+          >
+            {{ heading.text }}
+          </button>
+        </div>
+        <p v-else class="toc-empty">这篇文稿还没有标题</p>
+      </div>
+    </van-popup>
 
     <van-action-sheet
       v-model:show="showMore"
@@ -569,5 +634,64 @@ async function doUnlock() {
 
 .locked-submit:disabled {
   opacity: 0.6;
+}
+
+.toc-popup {
+  background: var(--w-canvas);
+}
+
+.toc-panel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  padding: max(12px, env(safe-area-inset-top)) 0 max(16px, env(safe-area-inset-bottom));
+}
+
+.toc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 10px;
+  border-bottom: 1px solid var(--w-line);
+  font-size: 16px;
+}
+
+.toc-list {
+  overflow-y: auto;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.toc-item {
+  display: block;
+  width: 100%;
+  padding-top: 10px;
+  padding-right: 14px;
+  padding-bottom: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--w-ink-2);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.toc-item.is-h1 { color: var(--w-ink); font-size: 15px; font-weight: 600; }
+.toc-item.is-h2 { color: var(--w-ink); font-size: 14px; font-weight: 500; }
+.toc-item.is-h4,
+.toc-item.is-h5,
+.toc-item.is-h6 { font-size: 13px; }
+
+.toc-item:active {
+  background: var(--w-rise);
+  color: var(--w-accent);
+}
+
+.toc-empty {
+  margin: 24px 16px;
+  color: var(--w-ink-3);
+  font-size: 13px;
+  text-align: center;
 }
 </style>

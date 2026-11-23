@@ -26,15 +26,15 @@
 
 ## ✨ 为什么选择 Woo
 
-Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用任意 WebDAV 或同一 Wi-Fi 局域网同步到 macOS 与 Android。
+Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账号即可在本机离线写作；需要跨设备时，用自托管同步空间的六位配对码把 macOS 与 Android 加入同一个端到端加密空间。旧 WebDAV 保留为一次性迁移入口。
 
-> **v0.8.0**：新增本地 MCP 服务。Woo 不内置 AI 聊天；Claude Code、Codex、Hermes、Pi 等外部 AI 工具可以通过 MCP 直接调用 Woo，搜索、读取、新建、更新、追加和整理笔记。默认只读，写入需手动开启。设置菜单同步拆分为文件、编辑、查看、同步、MCP、帮助。
+> **v0.9.0**：新的「同步空间」取代 WebDAV/局域网成为主同步方式。第一台设备创建空间，其他设备输入六位配对码加入；正文和图片按块端到端加密，服务端只保存密文。新增移动端阅读目录（按标题快速跳转）。MCP 服务保持不变。
 
 | | |
 |---|---|
 | 💾 **单库本地优先** | 无需登录/注册，启动直接打开本机 `woo.db`；正式文稿写入 SQLite，草稿留在本地，断网也能浏览和编辑 |
-| ☁️ **WebDAV 同步** | 任意 WebDAV（坚果云/NAS/Nextcloud/自建），增量同步、最后写入胜出，不经过 Woo 中转服务器 |
-| 📡 **局域网同步** | 桌面端内嵌 WebDAV；手机输入 6 位配对码自动发现并连接；同一 Wi-Fi 完全离线，与 WebDAV 二选一 |
+| 🔗 **同步空间** | 自托管 Cloudflare Worker + D1；第一台设备创建空间，其他设备输入六位配对码加入；最多 4 台设备，正文与图片端到端加密 |
+| 🧩 **大文档分块** | 长文和内嵌图片按内容定义边界分块、压缩、加密；只上传变化块，单条操作不超过 32 KiB |
 | 🔤 **字体系统** | 界面统一使用内置「Noto Sans SC / Woo Sans」（真实 400–700 可变字重）；正文可选文楷（内置霞鹜文楷）、黑体、宋体、等宽；移动端 Aa 面板可调字号 |
 | 📝 **桌面编辑** | Tiptap 所见即所得编辑器，支持 Markdown 输入与粘贴、表格、大纲和思维导图 |
 | 📱 **移动编辑** | Android 层级目录 + 草稿箱；浮动格式条与 Aa 面板，自动保存，支持搜索、移动到目录、分享、回收站与版本回溯 |
@@ -46,7 +46,20 @@ Woo（无我笔记）是一款本地优先的 Markdown 笔记应用。无需账�
 
 ---
 
-## 🤖 v0.8.0：让外部 AI 维护你的笔记
+## 🔗 v0.9.0：同步空间
+
+| 关注点 | 说明 |
+|---|---|
+| **怎么开始** | 部署 `sync-server/` → 第一台设备创建空间 → 其他设备输入六位配对码加入 |
+| **安全边界** | vault key 只在客户端；正文和图片 AES-256-GCM 加密；服务端只存密文与同步元数据 |
+| **设备管理** | 每个空间最多 4 台设备；可查看列表、撤销其他设备；配对码 5 分钟有效 |
+| **大文档** | 正文和内嵌图片按内容定义边界分块、压缩、加密；只上传变化块 |
+| **及时性** | 保存后约 1.5 秒触发；前后台切换补一轮；后台 15 秒兜底轮询 |
+| **旧数据** | 旧 WebDAV 在「旧版同步（迁移用）」中，创建空间时自动停用；建议先完成一次 WebDAV 同步再建空间 |
+
+部署与接口说明见 [sync-server/README.md](sync-server/README.md)，客户端同步规则见 [docs/domestic-sync.md](docs/domestic-sync.md)。
+
+## 🤖 MCP：让外部 AI 维护你的笔记
 
 Woo 本身**不内置 AI 聊天**，也不绑定某一家模型。它把笔记能力通过 **MCP（Model Context Protocol）** 开放给外部 AI 工具：由你已经在用的 Claude Code、Codex、Hermes、Pi 等 AI 来调用 Woo，搜索、读取、新建、更新、追加、移动和整理笔记。
 
@@ -86,7 +99,7 @@ Woo 本身**不内置 AI 聊天**，也不绑定某一家模型。它把笔记�
 | Windows（旧版本） | `%APPDATA%\Woo\logs\woo.log`（开发环境为 `woo-dev`） |
 | Android | 应用私有目录下的 `logs/woo.log` |
 
-日志不会记录密码、令牌等敏感内容；WebDAV 失败时只会记录 HTTP 状态码与错误描述。
+日志不会记录密码、令牌或 vault 密钥等敏感内容；同步失败时只会记录错误码与描述。
 
 ---
 
@@ -95,7 +108,7 @@ Woo 本身**不内置 AI 聊天**，也不绑定某一家模型。它把笔记�
 1. 前往 [Releases](https://github.com/stophemo/Woo/releases/latest) 下载对应平台安装包
 2. 安装并启动
 3. 开始写作，文稿保存在本机 `woo.db`，无需登录
-4. （可选）桌面端「设置 → WebDAV 同步」或移动端「我的 → WebDAV 同步」接入 WebDAV；同一 Wi-Fi 时可在桌面端「设置 → 局域网同步」启用，手机输入 6 位配对码自动连接
+4. （可选）部署 `sync-server/` 后，桌面端「设置 → 同步空间」或移动端「我的 → 同步空间」创建/加入空间；其他设备输入六位配对码即可同步
 
 ---
 
@@ -109,7 +122,7 @@ Woo 本身**不内置 AI 聊天**，也不绑定某一家模型。它把笔记�
 | 前端 | Vue 3 + Pinia + Vite + TypeScript |
 | 编辑器 | Tiptap (ProseMirror) |
 | 数据库 | SQLite (rusqlite, bundled) |
-| 同步 | 任意 WebDAV（含桌面端内置局域网 WebDAV） |
+| 同步 | 自托管 Worker + D1 同步空间（端到端加密、六位配对码）；旧 WebDAV 仅迁移 |
 | 移动端 | Tauri Mobile (Android；iOS 计划中) |
 
 ### 项目结构
@@ -127,11 +140,13 @@ Woo/
 ├── src-tauri/              # Rust 后端 (桌面端 + 移动端共用)
 │   ├── src/
 │   │   ├── commands/       # Tauri IPC 命令入口
-│   │   ├── services/       # 业务逻辑 (folder, document, sync_engine…)
+│   │   ├── services/       # 业务逻辑 (folder, document, sync_engine, vault_sync…)
 │   │   ├── db/             # SQLite 连接管理 + Schema 迁移
 │   │   ├── supabase/       # 旧 Supabase 模块（运行时未启用）
 │   │   └── models/         # 数据模型
+│   ├── woo-sync-core/      # 共享加密、协议与内容分块内核
 │   └── gen/android/        # Android 项目骨架
+├── sync-server/            # 自托管同步空间后端 (Cloudflare Workers + D1)
 ├── landing/                # 官网落地页 (部署于 Vercel)
 ├── index.html              # 桌面端入口
 ├── index-mobile.html       # 移动端入口
@@ -160,7 +175,7 @@ npm run tauri:android:build  # Android 生产构建
 ```
 Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
                     ↓                                             ↓
-              自动拆包 { ok, data }                          WebDAV (同步时)
+              自动拆包 { ok, data }                    同步空间 Worker (密文)
 ```
 
 - 所有 Rust 命令返回 `CommandResult<T> { ok, data?, message? }`
@@ -171,34 +186,45 @@ Vue 组件 → api.ts invoke() → Tauri Command (Rust) → Service → SQLite
 
 ### 数据库
 
-应用始终使用单用户本地库 `woo.db`；启动不再恢复云端会话，也不会切换到 `woo-{user}.db`。旧版遗留的用户库文件仍保留在数据目录，但不会被自动打开。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与 WebDAV 同步和版本历史。
+应用始终使用单用户本地库 `woo.db`；启动不再恢复云端会话，也不会切换到 `woo-{user}.db`。旧版遗留的用户库文件仍保留在数据目录，但不会被自动打开。无文件夹草稿使用 `localStorage`，不进入 SQLite，也不参与同步和版本历史。
 
 | 表 | 说明 |
 |---|---|
 | `note_folder` | 文件夹树，`parent_id` 层级结构，软删除三态 |
 | `note_document` | 文档，HTML `content`，标题从第一行自动提取 |
-| `note_document_version` | 版本历史 (auto / manual / restore) |
-| `sync_meta` | 键值存储 (last_sync_time, last_tombstone_pull) |
+| `note_document_version` | 版本历史 (auto / manual / restore)，仅本机 |
+| `sync_meta` | 键值存储与同步开关 |
+| `vault_sync_state` | 同步空间 cursor、Lamport 与上次成功时间 |
+| `vault_sync_outbox` | 待发送/确认的加密操作 |
+| `vault_sync_pending_*` | 脏文稿/目录与待删除记录（触发器维护） |
+| `vault_sync_chunk_refs` / `vault_sync_incoming_chunks` | 正文清单与内容块缓存 |
+| `vault_sync_entity_versions` / `vault_sync_applied_ops` | LWW 版本与游标幂等台账 |
 
 **软删除三态**：`deleted = 0` 正常 → `1` 回收站 → `2` 待硬删除（7 天清理窗口）
 
 ### 同步引擎
 
-同步引擎在后台运行，也支持手动触发。本地保存或目录变更后会立即安排一轮同步，回到前台时也会补一轮；局域网约 10 秒、WebDAV 约 30 秒做一次兜底轮询。清单未变化时只发一个 HEAD 请求。
+同步空间在后台运行，也支持手动触发。本地保存或目录变更后约 1.5 秒防抖触发，回到前台/窗口聚焦时补一轮；后台每 15 秒做一次兜底轮询。一次空闲同步只有一个很小的游标请求。
 
-- **双向同步**：每轮同时拉取与推送；每条记录按 `update_time` 最新胜出，时间相同用内容哈希决定，删除通过墓碑向所有设备传播。
-- **WebDAV 模式**：以 `manifest.json` 为提交点，按哈希只传变化的文稿/目录，墓碑保留 90 天；支持坚果云、NAS、Nextcloud、自建服务。
-- **局域网模式**：桌面端内置 WebDAV 服务；桌面端设置显示 6 位配对码，手机在 WebDAV 页「电脑配对」输入后通过 UDP 广播自动发现 Mac，填入地址、令牌与目录并开始双向同步。手动地址仍可用，同一 Wi-Fi 不经过互联网。
-- 版本历史、知识库分块与加锁密码只保留在本机，不参与同步。
-- Supabase 登录/中转不参与运行时同步；仅保留旧数据兼容代码。
-  详见 [docs/domestic-sync.md](docs/domestic-sync.md)。
+- **端到端加密**：客户端生成 vault key；正文按内容定义边界分块、压缩后用 AES-256-GCM 加密，服务端只保存密文。
+- **增量操作日志**：本地 outbox + 服务端 `serverSeq` 游标；push 最多 30 条、pull 最多 100 条，整页落地后才推进 cursor。
+- **六位配对码**：第一台设备创建空间，其他设备输入六位码加入；发起设备确认新设备并核对验证码，最多 4 台设备。
+- **冲突副本**：按 `(lamport, deviceId)` LWW；本地有未同步修改时先创建冲突副本，编辑器正在输入时也会先保存远端版本。
+- **删除**：回收站状态随正文同步；清空回收站后 7 天内物理删除并生成 tombstone，向所有设备传播。
+- **仅本机**：版本历史、密码锁密码哈希、知识库分块、草稿和界面偏好不参与同步。
+- 旧 WebDAV/局域网仅保留在「旧版同步（迁移用）」中；创建同步空间时会自动停用。
+  详见 [docs/domestic-sync.md](docs/domestic-sync.md) 与 [sync-server/README.md](sync-server/README.md)。
 
 ---
 
 ## 🗺️ 路线图
 
-- [x] WebDAV 同步（含局域网）
-- [x] 局域网 6 位配对码自动连接
+- [x] 同步空间（Worker + D1，端到端加密）
+- [x] 多设备六位配对码
+- [x] 正文/图片分块加密同步
+- [x] 移动端阅读目录
+- [x] 旧 WebDAV 同步（保留为迁移入口）
+- [ ] 同步空间快照压缩与恢复码
 - [ ] macOS 原生菜单 + 完整快捷键
 - [ ] Homebrew Cask 分发
 - [ ] iOS 支持 (Tauri Mobile)

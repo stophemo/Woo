@@ -6,7 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '../services/api'
 
-export type SyncBackend = 'webdav' | 'lan' | 'off'
+export type SyncBackend = 'vault' | 'webdav' | 'lan' | 'off'
 
 export const useSyncStore = defineStore('sync', () => {
   const isSyncing = ref(false)
@@ -34,12 +34,13 @@ export const useSyncStore = defineStore('sync', () => {
    * - 本地保存/目录变更：1.5 秒防抖后触发，连续输入不会每键同步；
    * - 回到前台（手机切回、桌面窗口重新可见/聚焦）：立即补一轮，
    *   这样另一台设备的最新修改不必等兜底轮询；
-   * - 自动触发之间至少间隔 6 秒（局域网）/ 15 秒（WebDAV），
-   *   避免短时间反复请求网盘配额。
+   * - 自动触发之间至少间隔 5 秒（同步空间）/ 6 秒（局域网）/
+   *   15 秒（WebDAV），避免短时间反复请求。
    */
   let autoTimer: ReturnType<typeof setTimeout> | null = null
   let lastAutoTriggerAt = 0
   const AUTO_SYNC_DEBOUNCE_MS = 1500
+  const AUTO_SYNC_MIN_GAP_VAULT_MS = 5000
   const AUTO_SYNC_MIN_GAP_LAN_MS = 6000
   const AUTO_SYNC_MIN_GAP_WEBDAV_MS = 15000
 
@@ -70,7 +71,11 @@ export const useSyncStore = defineStore('sync', () => {
   function scheduleSync(delay = AUTO_SYNC_DEBOUNCE_MS) {
     if (backend.value === 'off') return
     if (autoTimer) clearTimeout(autoTimer)
-    const minGap = backend.value === 'lan' ? AUTO_SYNC_MIN_GAP_LAN_MS : AUTO_SYNC_MIN_GAP_WEBDAV_MS
+    const minGap = backend.value === 'vault'
+      ? AUTO_SYNC_MIN_GAP_VAULT_MS
+      : backend.value === 'lan'
+        ? AUTO_SYNC_MIN_GAP_LAN_MS
+        : AUTO_SYNC_MIN_GAP_WEBDAV_MS
     const sinceLast = Date.now() - lastAutoTriggerAt
     const wait = Math.max(delay, minGap - sinceLast)
     autoTimer = setTimeout(() => {

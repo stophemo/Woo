@@ -357,8 +357,12 @@ pub fn run() {
 
             // 单用户数据模式：始终使用 woo.db，不再恢复任何云端会话。
             log::info!("[App] Single local dataset mode (woo.db)");
-            // 上次启用的局域网同步服务随应用恢复。
-            services::lan_sync::restore_on_startup();
+            // 新的同步空间优先；启用后不再恢复旧的局域网 WebDAV 服务。
+            if services::vault_sync::is_enabled() {
+                log::info!("[VaultSync] 使用同步空间，跳过局域网服务恢复");
+            } else {
+                services::lan_sync::restore_on_startup();
+            }
 
             // Lazy-init database
             db::with_db(|_conn| {
@@ -387,7 +391,11 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let mut last_error: Option<String> = None;
                 loop {
-                    let wait_seconds = if services::lan_sync::is_enabled() {
+                    // 同步空间一次请求就能判断有无变化，15 秒兜底足够；
+                    // 旧 LAN/WebDAV 继续保持原来的节奏。
+                    let wait_seconds = if services::vault_sync::is_enabled() {
+                        15
+                    } else if services::lan_sync::is_enabled() {
                         10
                     } else if services::webdav_sync::is_enabled() {
                         30
@@ -395,12 +403,13 @@ pub fn run() {
                         60
                     };
                     tokio::time::sleep(tokio::time::Duration::from_secs(wait_seconds)).await;
-                    // WebDAV 不依赖 Supabase 登录；启用后即使未登录也要跑。
+                    let vault_enabled = services::vault_sync::is_enabled();
                     let lan_enabled = services::lan_sync::is_enabled();
                     let webdav_enabled = services::webdav_sync::is_enabled();
-                    if lan_enabled || webdav_enabled {
+                    if vault_enabled || lan_enabled || webdav_enabled {
                         log::debug!(
-                            "[Sync] Periodic sync tick (lan={}, webdav={})",
+                            "[Sync] Periodic sync tick (vault={}, lan={}, webdav={})",
+                            vault_enabled,
                             lan_enabled,
                             webdav_enabled
                         );
@@ -534,6 +543,19 @@ pub fn run() {
             // Sync
             commands::sync::sync_status,
             commands::sync::sync_trigger,
+            // 同步空间（多设备六位配对码）
+            commands::vault_sync::vault_sync_get_config,
+            commands::vault_sync::vault_sync_test,
+            commands::vault_sync::vault_sync_create_vault,
+            commands::vault_sync::vault_sync_start_pairing,
+            commands::vault_sync::vault_sync_pairing_status,
+            commands::vault_sync::vault_sync_confirm_pairing,
+            commands::vault_sync::vault_sync_begin_join,
+            commands::vault_sync::vault_sync_poll_join,
+            commands::vault_sync::vault_sync_leave,
+            commands::vault_sync::vault_sync_seed_local,
+            commands::vault_sync::vault_sync_list_devices,
+            commands::vault_sync::vault_sync_revoke_device,
             // WebDAV 同步
             commands::webdav::webdav_get_config,
             commands::webdav::webdav_save_config,

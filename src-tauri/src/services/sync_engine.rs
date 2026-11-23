@@ -2,6 +2,7 @@ use crate::db;
 use crate::services::auth_service;
 use crate::services::lan_sync;
 use crate::services::utils::now_str;
+use crate::services::vault_sync;
 use crate::services::webdav_sync;
 use crate::supabase;
 use chrono::{Duration, Utc};
@@ -54,6 +55,8 @@ pub struct SyncStatus {
     pub is_syncing: bool,
     pub last_sync_time: Option<String>,
     pub pending_changes: i32,
+    /// 事件桥接也会带上后端名；否则前端收到周期事件后会把 backend 重置为 off。
+    pub backend: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -709,18 +712,25 @@ async fn do_sync() -> Result<SyncResult, String> {
 /// WebDAV 是独立后端：启用后优先使用它，Supabase 登录态保留但不参与本轮同步。
 pub async fn sync_now_async() -> Result<SyncResult, String> {
     let _guard = SyncGuard::acquire()?;
+    if vault_sync::is_enabled() {
+        return vault_sync::sync_now().await;
+    }
+    // 旧 WebDAV / 局域网只保留给一次性迁移与回滚；新同步空间未启用时
+    // 才可能走到这里。
     if lan_sync::is_enabled() {
         return lan_sync::sync_now().await;
     }
     if webdav_sync::is_enabled() {
         return webdav_sync::sync_now().await;
     }
-    Err("未配置同步方式：请在「WebDAV 同步」中填写服务地址".to_string())
+    Err("未配置同步方式：请先在设置中加入同步空间".to_string())
 }
 
 /// 当前实际生效的同步后端，供前端显示与决定是否触发同步。
 pub fn active_backend() -> &'static str {
-    if lan_sync::is_enabled() {
+    if vault_sync::is_enabled() {
+        "vault"
+    } else if lan_sync::is_enabled() {
         "lan"
     } else if webdav_sync::is_enabled() {
         "webdav"
@@ -732,18 +742,25 @@ pub fn active_backend() -> &'static str {
 /// Get current sync status.
 pub fn get_status() -> SyncStatus {
     let is_syncing = *IS_SYNCING.lock().unwrap();
+    if vault_sync::is_enabled() {
+        let mut status = vault_sync::status();
+        status.is_syncing = is_syncing;
+        status.backend = "vault".to_string();
+        return status;
+    }
     if lan_sync::is_enabled() || webdav_sync::is_enabled() {
         return SyncStatus {
             is_syncing,
             last_sync_time: webdav_sync::last_sync_time(),
             pending_changes: webdav_sync::count_pending_changes(),
+            backend: active_backend().to_string(),
         };
     }
-    // Supabase 同步已从运行时移除；未配置 WebDAV 时不做任何网络同步。
     SyncStatus {
         is_syncing,
         last_sync_time: None,
         pending_changes: 0,
+        backend: "off".to_string(),
     }
 }
 

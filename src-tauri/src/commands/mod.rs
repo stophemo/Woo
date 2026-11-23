@@ -10,6 +10,7 @@ pub mod server;
 pub mod sync;
 pub mod system;
 pub mod update;
+pub mod vault_sync;
 pub mod version;
 pub mod webdav;
 

@@ -52,7 +52,7 @@ const appReady = ref(false)
 
 async function startSyncIfConfigured() {
   await syncStore.refreshStatus()
-  if (syncStore.backend !== 'webdav' && syncStore.backend !== 'lan') return
+  if (syncStore.backend === 'off') return
   const synced = await syncStore.triggerSync()
   if (!synced && syncStore.errorMsg) showToast(syncStore.errorMsg)
 }

@@ -5,6 +5,7 @@ pub mod lan_sync;
 pub mod mcp;
 pub mod sync_engine;
 pub mod utils;
+pub mod vault_sync;
 pub mod webdav_sync;
 
 // Stub modules (to be fully implemented)

@@ -9,6 +9,9 @@
           </button>
         </div>
         <div class="settings-body">
+          <SyncSpaceSettings v-if="section === 'all' || section === 'sync'" />
+          <details v-if="section === 'all' || section === 'sync'" class="legacy-sync">
+            <summary>旧版同步（仅迁移用）</summary>
           <div v-if="section === 'all' || section === 'sync'" class="settings-section webdav-section">
             <h3>WebDAV 同步</h3>
             <div class="settings-field">
@@ -84,6 +87,7 @@
             </div>
             <p v-if="lanError" class="lan-error">{{ lanError }}</p>
           </div>
+          </details>
           <div v-if="section === 'all' || section === 'mcp'" class="settings-section mcp-section">
             <div class="settings-section-title-row">
               <h3>MCP 服务</h3>
@@ -272,6 +276,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { SettingsSection } from '../../config/menus'
 import IconClose from '../icons/IconClose.vue'
+import SyncSpaceSettings from '../settings/SyncSpaceSettings.vue'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
 import { useThemeStore } from '../../stores/theme'
 import { editorFontId, editorFontOptions, setEditorFontId } from '../../config/editorFonts'
@@ -772,6 +777,19 @@ function handleSave() {
 .save-btn:hover:not(:disabled) { background-color: var(--accent-hover); }
 .secondary-btn { border: 1px solid var(--border-primary); background: var(--bg-elevated); color: var(--text-primary); }
 .secondary-btn:hover { background: var(--bg-hover); }
+
+.legacy-sync {
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.legacy-sync > summary {
+  cursor: pointer;
+  user-select: none;
+}
+.legacy-sync[open] > summary { margin-bottom: 10px; }
 
 @media (max-width: 640px) {
   .settings-overlay {

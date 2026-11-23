@@ -91,8 +91,8 @@ function resetAllShortcuts() {
 }
 
 async function onSyncNow() {
-  if (syncStore.backend !== 'webdav' && syncStore.backend !== 'lan') {
-    showToast('请先配置 WebDAV 同步')
+  if (syncStore.backend === 'off') {
+    showToast('请先加入同步空间')
     return
   }
   const ok = await syncStore.triggerSync()
@@ -147,15 +147,15 @@ async function beforePwdClose(action: string) {
       </div>
     </header>
 
-    <!-- WebDAV 同步 -->
-    <van-cell-group inset title="WebDAV 同步">
+    <!-- 同步空间 -->
+    <van-cell-group inset title="同步空间">
       <van-cell
         icon="exchange"
-        title="同步设置"
-        :label="syncStore.backend === 'webdav' || syncStore.backend === 'lan' ? '已连接，自动增量同步' : '支持坚果云、NAS、Nextcloud 或局域网'"
-        :value="syncStore.backend === 'webdav' || syncStore.backend === 'lan' ? '生效中' : '未启用'"
+        title="多设备同步"
+        :label="syncStore.backend === 'vault' ? '六位配对码 · 端到端加密' : '多设备六位配对码 · 端到端加密'"
+        :value="syncStore.backend === 'vault' ? '生效中' : '未启用'"
         is-link
-        @click="router.push('/webdav')"
+        @click="router.push('/sync-space')"
       />
       <van-cell icon="exchange" title="同步状态">
         <template #value>
@@ -169,7 +169,7 @@ async function beforePwdClose(action: string) {
         icon="replay"
         title="立即同步"
         is-link
-        :label="syncStore.backend === 'off' ? '配置 WebDAV 后可用' : ''"
+        :label="syncStore.backend === 'off' ? '加入同步空间后可用' : ''"
         @click="onSyncNow"
       >
         <template #value>

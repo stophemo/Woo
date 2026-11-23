@@ -211,8 +211,8 @@ async function initApp() {
   ])
 
   void syncStore.refreshStatus().then(() => {
-    if (syncStore.backend === 'lan' || syncStore.backend === 'webdav') {
-      // WebDAV / 局域网同步不依赖账号，启动后直接补一轮。
+    if (syncStore.backend !== 'off') {
+      // 同步空间 / 旧 WebDAV 都不依赖账号，启动后直接补一轮。
       void syncStore.triggerSync()
     }
   })

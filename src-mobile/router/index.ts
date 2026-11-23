@@ -40,9 +40,13 @@ const router = createRouter({
       component: () => import('../views/Settings.vue'),
     },
     {
+      path: '/sync-space',
+      name: 'sync-space',
+      component: () => import('../views/SyncSpace.vue'),
+    },
+    {
       path: '/webdav',
-      name: 'webdav',
-      component: () => import('../views/Webdav.vue'),
+      redirect: '/sync-space',
     },
     {
       path: '/font',

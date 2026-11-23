@@ -1424,15 +1424,37 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             if (cloudDoc.updatedAt !== localDoc.updatedAt) {
               currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
             }
+          } else if (hasUnsaved && cloudDoc && localDoc && cloudDoc.content !== localDoc.content) {
+            // 编辑器里有尚未落库的内容，同时另一台设备改了同一篇文稿。
+            // 不能直接忽略远端：防抖随后会用本地旧缓冲覆盖它。把远端
+            // 版本保存为冲突副本，本地继续编辑；下次保存会生成更高 lamport。
+            const key = `${cloudDoc.id}:${cloudDoc.updatedAt}:${cloudDoc.content.length}`
+            if (!dirtyRemoteConflictKeys.has(key)) {
+              if (dirtyRemoteConflictKeys.size > 200) dirtyRemoteConflictKeys.clear()
+              dirtyRemoteConflictKeys.add(key)
+              try {
+                const conflictTitle = `${cloudDoc.title} (远端冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
+                const conflictId = (await documentApi.create({
+                  title: conflictTitle,
+                  folderId: cloudDoc.folderId || fid
+                })).id
+                await documentApi.updateContent(conflictId, cloudDoc.content)
+                await documentApi.rename(conflictId, conflictTitle)
+                folderDocuments.value.unshift(mapDocument(await documentApi.getById(conflictId)))
+              } catch { /* 副本失败时至少保留本地编辑，不阻塞输入 */ }
+            }
           }
-          // 其他情况（内容不同但有未保存修改）→ 编辑器领先于 SQLite，不是云端冲突
-          // debounce 会在 800ms 后将内容写回，无需处理
+          // 其他情况（内容不同但有未保存修改）→ 编辑器领先于 SQLite，
+          // 且远端内容与最后一次保存相同；debounce 会正常写回。
         }
       }
     } catch (e: any) {
       error.value = e?.message || '同步刷新失败'
     }
   }
+
+  // 编辑中收到远端更新时，用来避免对同一远端版本反复创建副本。
+  const dirtyRemoteConflictKeys = new Set<string>()
 
   // ============ 辅助 ============
   /** 从列表中移除指定文档，若正是当前选中则跳到下一篇 */
