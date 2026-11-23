@@ -441,6 +441,7 @@ async function doUnlock() {
     <van-popup
       v-model:show="showToc"
       position="right"
+      teleport="body"
       class="toc-popup"
       :style="{ width: '78%', height: '100%' }"
       close-on-popstate
