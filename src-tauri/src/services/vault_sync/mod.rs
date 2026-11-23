@@ -538,7 +538,7 @@ pub fn seed_local_missing() -> Result<usize, String> {
     active_config().ok_or_else(|| "请先启用同步空间".to_string())?;
     db::with_db(|conn| {
         let state = store::load_state(conn)?;
-        if state.cursor == 0 {
+        if state.last_success_at.is_none() {
             return Err("请先完成一次同步，再上传本机独有文稿".to_string());
         }
         store::enqueue_local_missing(conn)
