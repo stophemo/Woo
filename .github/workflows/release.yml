@@ -98,7 +98,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-15-intel
             target: aarch64-apple-darwin
             artifact: macos
           # Windows 版暂停维护：保留 CI 构建验证，不发布安装包。
@@ -153,7 +153,7 @@ jobs:
           fi
 
       - name: 确定 macOS 签名模式
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -186,7 +186,7 @@ jobs:
           fi
 
       - name: 导入 Developer ID 证书
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -239,25 +239,25 @@ jobs:
           echo "已导入 Developer ID Application 证书"
 
       - name: 构建桌面应用
-        if: matrix.os != 'macos-latest'
+        if: matrix.os != 'macos-15-intel'
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx tauri build --config src-tauri/tauri.release.conf.json --ci
 
       - name: 构建桌面应用（仅 .app）
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         env:
           CI: true
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx tauri build --config src-tauri/tauri.release.conf.json --bundles app --target "${{ matrix.target }}" --no-sign --ci
 
       - name: 运行 Rust 库测试
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 
       - name: 签名并按条件公证 macOS 应用
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         shell: bash
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -332,7 +332,7 @@ jobs:
           fi
 
       - name: 打包、签名并公证 DMG
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         shell: bash
         env:
           VERSION: ${{ needs.meta.outputs.version }}
@@ -406,7 +406,7 @@ jobs:
           fi
 
       - name: 生成并签名 macOS 自动更新包
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         shell: bash
         env:
           VERSION: ${{ needs.meta.outputs.version }}
@@ -426,7 +426,7 @@ jobs:
           test -s "$ARCHIVE.sig"
 
       - name: 清理 macOS 签名凭据
-        if: always() && matrix.os == 'macos-latest'
+        if: always() && matrix.os == 'macos-15-intel'
         shell: bash
         run: |
           if [[ -n "${MACOS_KEYCHAIN_PATH:-}" ]]; then
@@ -437,7 +437,7 @@ jobs:
             "${APPLE_API_KEY_PATH:-$RUNNER_TEMP/missing-api-key}"
 
       - name: 上传 macOS 安装包
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         uses: actions/upload-artifact@v4
         with:
           name: woo-desktop-macos
