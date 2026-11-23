@@ -8,7 +8,7 @@ pub struct SyncStatusResponse {
     pub is_syncing: bool,
     pub last_sync_time: Option<String>,
     pub pending_changes: i32,
-    /// supabase | webdav | off
+    /// vault | lan | webdav | off
     pub backend: String,
 }
 
