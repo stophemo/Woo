@@ -776,10 +776,18 @@ pub fn apply_remote_page(
             continue;
         }
         if operation.device_id == identity.device_id {
-            // 服务端会把本设备刚 push 的操作回显回来；本地已经有更新的
-            // 版本，直接记为已应用，避免用旧快照覆盖本地。
-            mark_applied(&tx, operation)?;
-            continue;
+            // 服务端会把本设备刚 push 的操作回显回来。通常本地还有未确认的
+            // outbox 或已经应用过该版本，直接跳过；但从旧备份恢复数据库时，
+            // 本地版本可能落后于服务端，这时要允许自己的旧操作重新应用。
+            let current = load_entity_version(&tx, &operation.entity_id)?;
+            let pending = has_pending_local_change(&tx, &operation.entity_id)?;
+            let already_applied = current
+                .as_ref()
+                .is_some_and(|version| version.lamport >= operation.lamport);
+            if pending || already_applied {
+                mark_applied(&tx, operation)?;
+                continue;
+            }
         }
         // 应用任何远端实体操作前先抬高本地 Lamport 时钟。新设备从 cursor=0
         // 拉完整历史后，下一次本地编辑必须生成比远端更大的 lamport。
@@ -1731,6 +1739,43 @@ mod tests {
             .unwrap_or(0);
         let next = next_lamport(&target).unwrap();
         assert!(next > remote_max, "next={next}, remote_max={remote_max}");
+    }
+
+    #[test]
+    fn own_device_echo_can_restore_a_stale_backup() {
+        let source = setup();
+        set_binding(&source, "vault-1", "device-a", true).unwrap();
+        set_active(&source, true).unwrap();
+        insert_sample(&source);
+        let identity = identity("vault-1", "device-a");
+        prepare_outbox(&source, &identity, 100).unwrap();
+        let pulled = outbox_as_pulled(&source, "device-a");
+
+        // 从旧备份恢复后的数据库：cursor/outbox 落后，但服务端有本设备
+        // 之前推送的操作。不能因为 deviceId 相同就无条件跳过。
+        let restored = setup();
+        set_binding(&restored, "vault-1", "device-a", true).unwrap();
+        set_active(&restored, true).unwrap();
+        let data = SyncData {
+            push: SyncPushSummary {
+                received: 0,
+                inserted: 0,
+                duplicates: 0,
+            },
+            pull: pulled,
+            cursor: 10,
+            has_more: false,
+            server_time: 1,
+        };
+        apply_remote_page(&restored, &identity, &data).unwrap();
+        let content: String = restored
+            .query_row(
+                "SELECT content FROM note_document WHERE id = 'doc-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(content, "<p>正文</p>".repeat(4000));
     }
 
     #[test]
