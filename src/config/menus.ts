@@ -104,7 +104,7 @@ export const viewMenuItems: MenuItem[] = [
 
 // 同步菜单
 export const syncMenuItems: MenuItem[] = [
-  { type: 'item', label: '同步设置…', action: 'open-sync-settings' },
+  { type: 'item', label: '跨设备同步…', action: 'open-sync-settings' },
   { type: 'item', label: '立即同步', action: 'sync-now' }
 ]
 

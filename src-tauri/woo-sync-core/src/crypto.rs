@@ -149,6 +149,12 @@ pub struct PairingKeyPair {
     secret: StaticSecret,
 }
 
+impl Clone for PairingKeyPair {
+    fn clone(&self) -> Self {
+        Self::from_private_key(self.private_key_bytes())
+    }
+}
+
 impl PairingKeyPair {
     pub fn generate() -> SyncResult<Self> {
         let bytes = random_bytes::<32>()?;

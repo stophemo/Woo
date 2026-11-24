@@ -1,6 +1,6 @@
 [package]
 name = "woo-tauri"
-version = "0.9.0"
+version = "0.9.1"
 description = "Woo Notes - Tauri v2"
 authors = ["stophemo"]
 edition = "2021"
@@ -38,9 +38,12 @@ env_logger = "0.11"
 base64 = "0.22"
 tiny_http = "0.12"
 percent-encoding = "2"
+async-trait = "0.1"
+roxmltree = "0.20"
 woo-sync-core = { path = "woo-sync-core" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring = "4"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

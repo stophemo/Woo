@@ -45,10 +45,6 @@ const router = createRouter({
       component: () => import('../views/SyncSpace.vue'),
     },
     {
-      path: '/webdav',
-      redirect: '/sync-space',
-    },
-    {
       path: '/font',
       name: 'font-settings',
       component: () => import('../views/FontSettings.vue'),

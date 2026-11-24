@@ -151,6 +151,67 @@ pub fn next_lamport(conn: &Connection) -> Result<i64, String> {
     Ok(next)
 }
 
+/// 加入已有空间前把本地 Lamport 抬到远端水位，避免本地新操作反而更旧。
+pub fn set_lamport_at_least(conn: &Connection, lamport: i64) -> Result<(), String> {
+    conn.execute(
+        "UPDATE vault_sync_state
+         SET lamport = MAX(lamport, ?1) WHERE singleton = 1",
+        params![lamport.max(0)],
+    )
+    .map_err(|error| format!("设置 Lamport 水位失败：{error}"))?;
+    Ok(())
+}
+
+/// WebDAV 没有服务端游标；用本地 applied 表分配单调序号，复用
+/// `apply_remote_page` 的幂等与 LWW 逻辑。
+pub fn next_operation_sequence(conn: &Connection) -> Result<i64, String> {
+    let cursor: i64 = conn
+        .query_row(
+            "SELECT cursor FROM vault_sync_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("读取同步序号失败：{error}"))?;
+    let applied: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(server_seq), 0) FROM vault_sync_applied_ops",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("读取已处理序号失败：{error}"))?;
+    Ok(cursor.max(applied).saturating_add(1))
+}
+
+pub fn is_operation_applied(conn: &Connection, op_id: &str) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM vault_sync_applied_ops WHERE op_id = ?1",
+            params![op_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("查询已应用操作失败：{error}"))?;
+    Ok(count > 0)
+}
+
+/// 把无法解码/校验失败的单条远端操作标记为已处理，防止一个坏对象
+/// 让整个空间永久卡在同一条操作上。
+pub fn mark_operation_processed(conn: &Connection, op_id: &str) -> Result<(), String> {
+    let next: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(server_seq), 0) + 1 FROM vault_sync_applied_ops",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("分配已处理操作序号失败：{error}"))?;
+    conn.execute(
+        "INSERT OR IGNORE INTO vault_sync_applied_ops(op_id, server_seq, applied_at)
+         VALUES (?1, ?2, ?3)",
+        params![op_id, next, now_str()],
+    )
+    .map_err(|error| format!("记录已处理操作失败：{error}"))?;
+    Ok(())
+}
+
 pub fn set_active(conn: &Connection, active: bool) -> Result<(), String> {
     set_meta(conn, "vault_sync_active", if active { "1" } else { "0" })
 }
@@ -170,6 +231,7 @@ pub fn clear_sync_data(conn: &Connection) -> Result<(), String> {
          DELETE FROM vault_sync_known_chunks;
          DELETE FROM vault_sync_incoming_chunks;
          DELETE FROM vault_sync_deferred_documents;
+         DELETE FROM webdav_pairing_observations;
          UPDATE vault_sync_state
          SET vault_id = '', device_id = '', cursor = 0, lamport = 0,
              last_success_at = NULL, last_error = NULL
@@ -240,14 +302,14 @@ fn cleanup_seconds() -> i64 {
 pub fn enqueue_all_local(conn: &Connection) -> Result<(), String> {
     conn.execute(
         "INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
-         SELECT 'doc:' || id, 'document', ?1 FROM note_document
+         SELECT 'doc:' || id, 'document', ?1 FROM note_document WHERE true
          ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at",
         params![now_str()],
     )
     .map_err(|error| format!("登记本地文稿失败：{error}"))?;
     conn.execute(
         "INSERT INTO vault_sync_pending_entities(entity_id, entity_type, changed_at)
-         SELECT 'folder:' || id, 'folder', ?1 FROM note_folder
+         SELECT 'folder:' || id, 'folder', ?1 FROM note_folder WHERE true
          ON CONFLICT(entity_id) DO UPDATE SET changed_at = excluded.changed_at",
         params![now_str()],
     )
@@ -560,7 +622,8 @@ fn enqueue_chunk(
     let lamport = next_lamport(conn)?;
     // 内容块使用随机 opId：不同设备推送同一块时不会因 AAD 中的设备信息
     // 或压缩实现差异触发 OP_ID_CONFLICT。接收端按 entityId 的哈希合并。
-    let op_id = format!("chunkop:{}", uuid::Uuid::new_v4());
+    // 使用短横线而不是冒号，避免 WebDAV 路径在部分供应商上不可用。
+    let op_id = format!("chunk-{}", uuid::Uuid::new_v4());
     let aad = chunk_aad_canonical(identity.vault_id, &entity_id, lamport);
     let envelope = aes256_gcm_seal(&chunk.stored, identity.vault_key, None, aad.as_bytes())?;
     conn.execute(

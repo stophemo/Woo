@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>无我笔记 Woo | 本地优先、支持 Markdown 的跨平台笔记应用</title>
-  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需账号即可离线写作，支持所见即所得编辑、自动保存与版本历史，并可通过六位配对码加入自托管的端到端加密同步空间，提供 macOS 和 Android 客户端。">
+  <meta name="description" content="无我笔记 Woo 是一款支持 Markdown 的本地优先笔记应用。无需账号即可离线写作，支持所见即所得编辑、自动保存与版本历史，并可通过同一个 WebDAV 账号和六位配对码加入端到端加密同步空间，提供 macOS 和 Android 客户端。">
   <meta name="author" content="Woo Notes">
   <meta name="theme-color" content="#171a19">
   <meta name="color-scheme" content="light">
@@ -13,7 +13,7 @@
   <meta property="og:locale" content="zh_CN">
   <meta property="og:url" content="https://woo-notes.vercel.app/">
   <meta property="og:title" content="无我笔记 Woo | 本地优先、支持 Markdown 的跨平台笔记应用">
-  <meta property="og:description" content="无需账号，打开就能离线写作。文稿默认保存在本机；需要跨设备时，用六位配对码加入自托管同步空间。">
+  <meta property="og:description" content="无需账号，打开就能离线写作。文稿默认保存在本机；需要跨设备时，配置同一个 WebDAV 账号，再用六位配对码加入同步空间。">
   <meta name="twitter:card" content="summary">
   <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -65,7 +65,7 @@
           </p>
           <h1 id="hero-title">无我笔记</h1>
           <p class="hero-tagline"><span class="heading-fragment">先写在本地，</span><span class="heading-fragment">需要时再同步。</span></p>
-          <p class="hero-support">一款支持 Markdown 的本地优先笔记应用。无需账号也能离线写作；需要跨设备时，用六位配对码加入自托管的端到端加密同步空间。</p>
+          <p class="hero-support">一款支持 Markdown 的本地优先笔记应用。无需账号也能离线写作；需要跨设备时，配置同一个 WebDAV 账号，再用六位配对码加入端到端加密同步空间。</p>
           <div class="hero-actions" aria-label="客户端下载安装">
             <a class="button button-primary" data-download="macos" href="https://github.com/stophemo/Woo/releases/latest/download/Woo_macos-arm64.dmg">
               下载 macOS
@@ -206,7 +206,7 @@
             <span class="step-number">03</span>
             <p class="step-context">六位配对码 · 端到端加密</p>
             <h3>换台设备，接着写</h3>
-            <p>第一台设备创建同步空间，其他设备输入六位配对码加入。正文和图片按块加密，服务端只保存密文；同步会同时拉取和推送，冲突时保留副本。版本历史仍只留在本机。</p>
+            <p>每台设备先配置同一个 WebDAV 账号，第一台设备建立同步空间，其他设备输入六位配对码加入。正文和图片按块加密，WebDAV 只保存密文；同步不是实时的，冲突时保留副本。版本历史仍只留在本机。</p>
           </article>
         </div>
       </div>
@@ -384,7 +384,7 @@
         <div class="data-copy">
           <p class="section-kicker">数据与同步</p>
           <h2 id="data-title"><span class="heading-fragment">本地保存是默认，</span><span class="heading-fragment">同步是选择</span></h2>
-          <p>每台设备一份本地数据库，文稿默认只保存在当前设备。需要跨设备时，部署自己的同步空间，第一台设备创建空间，其他设备用六位配对码加入；正文与图片端到端加密，服务端只保存密文。临时草稿仍留在设备本地。</p>
+          <p>每台设备一份本地数据库，文稿默认只保存在当前设备。需要跨设备时，每台设备配置同一个 WebDAV 账号，第一台设备建立空间，其他设备用六位配对码加入；正文与图片端到端加密，WebDAV 只保存密文。临时草稿仍留在设备本地。</p>
           <a href="https://github.com/stophemo/Woo#数据库" target="_blank" rel="noreferrer">了解本地存储与同步机制</a>
           <p class="data-note">应用内访问锁用于限制查看，不等同于磁盘加密。</p>
         </div>
@@ -398,8 +398,8 @@
           <div class="sync-link"><b aria-hidden="true">↔</b><small>读取 · 合并</small></div>
           <div class="sync-node node-engine">
             <span>02</span>
-            <strong>同步空间</strong>
-            <small>端到端加密 · 六位码</small>
+            <strong>WebDAV 同步空间</strong>
+            <small>端到端加密 · 六位码 · 非实时</small>
           </div>
           <div class="sync-link"><b aria-hidden="true">↔</b><small>拉取 · 推送</small></div>
           <div class="sync-node node-cloud">

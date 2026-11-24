@@ -1,9 +1,7 @@
 use crate::db;
 use crate::services::auth_service;
-use crate::services::lan_sync;
 use crate::services::utils::now_str;
-use crate::services::vault_sync;
-use crate::services::webdav_sync;
+use crate::services::webdav_space;
 use crate::supabase;
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
@@ -712,27 +710,15 @@ async fn do_sync() -> Result<SyncResult, String> {
 /// WebDAV 是独立后端：启用后优先使用它，Supabase 登录态保留但不参与本轮同步。
 pub async fn sync_now_async() -> Result<SyncResult, String> {
     let _guard = SyncGuard::acquire()?;
-    if vault_sync::is_enabled() {
-        return vault_sync::sync_now().await;
+    if webdav_space::is_enabled() {
+        return webdav_space::sync_now().await;
     }
-    // 旧 WebDAV / 局域网只保留给一次性迁移与回滚；新同步空间未启用时
-    // 才可能走到这里。
-    if lan_sync::is_enabled() {
-        return lan_sync::sync_now().await;
-    }
-    if webdav_sync::is_enabled() {
-        return webdav_sync::sync_now().await;
-    }
-    Err("未配置同步方式：请先在设置中加入同步空间".to_string())
+    Err("WebDAV 同步空间未启用：请先在「跨设备」中配置账号并加入空间".to_string())
 }
 
 /// 当前实际生效的同步后端，供前端显示与决定是否触发同步。
 pub fn active_backend() -> &'static str {
-    if vault_sync::is_enabled() {
-        "vault"
-    } else if lan_sync::is_enabled() {
-        "lan"
-    } else if webdav_sync::is_enabled() {
+    if webdav_space::is_enabled() {
         "webdav"
     } else {
         "off"
@@ -742,19 +728,10 @@ pub fn active_backend() -> &'static str {
 /// Get current sync status.
 pub fn get_status() -> SyncStatus {
     let is_syncing = *IS_SYNCING.lock().unwrap();
-    if vault_sync::is_enabled() {
-        let mut status = vault_sync::status();
+    if webdav_space::is_enabled() {
+        let mut status = webdav_space::status();
         status.is_syncing = is_syncing;
-        status.backend = "vault".to_string();
         return status;
-    }
-    if lan_sync::is_enabled() || webdav_sync::is_enabled() {
-        return SyncStatus {
-            is_syncing,
-            last_sync_time: webdav_sync::last_sync_time(),
-            pending_changes: webdav_sync::count_pending_changes(),
-            backend: active_backend().to_string(),
-        };
     }
     SyncStatus {
         is_syncing,

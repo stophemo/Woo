@@ -13,6 +13,7 @@ pub mod update;
 pub mod vault_sync;
 pub mod version;
 pub mod webdav;
+pub mod webdav_space;
 
 use serde::Serialize;
 use tauri::AppHandle;

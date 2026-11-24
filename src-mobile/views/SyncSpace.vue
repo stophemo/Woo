@@ -1,90 +1,133 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { useSyncStore } from '../../src/stores/sync'
-import vaultSyncApi, {
-  type PairingCodeView,
+import webdavSpaceApi, {
   type PairingStatusView,
-  type VaultDeviceView,
-  type VaultSyncConfigView,
-} from '../../src/services/vaultSyncApi'
+  type WebdavSpaceConfigView,
+} from '../../src/services/webdavSpaceApi'
 
 const router = useRouter()
 const syncStore = useSyncStore()
 
-const config = ref<VaultSyncConfigView | null>(null)
+const config = ref<WebdavSpaceConfigView | null>(null)
 const endpoint = ref('')
+const username = ref('')
+const password = ref('')
 const deviceName = ref('')
-const inviteCode = ref('')
 const joinCode = ref('')
-const joinStatus = ref('')
-const joinVerification = ref('')
+const hostJoinCode = ref('')
+const showHostJoinInput = ref(false)
 const busy = ref(false)
-const devices = ref<VaultDeviceView[]>([])
-const pairing = ref<(PairingCodeView & Partial<PairingStatusView>) | null>(null)
+const hostPairing = ref<(PairingStatusView & { shortCode?: string }) | null>(null)
+const guestPairing = ref<(PairingStatusView & { shortCode?: string }) | null>(null)
+let hostTimer: ReturnType<typeof setInterval> | null = null
+let guestTimer: ReturnType<typeof setInterval> | null = null
+let pollingHost = false
+let pollingGuest = false
+let hostMode: 'offer' | 'join' = 'offer'
 
-let pairingTimer: ReturnType<typeof setInterval> | null = null
-let joinTimer: ReturnType<typeof setInterval> | null = null
-let joinPairingId = ''
+function stopHostTimer() {
+  if (hostTimer) clearInterval(hostTimer)
+  hostTimer = null
+}
 
-const shortVaultId = computed(() => {
-  const id = config.value?.vaultId || ''
-  return id ? `${id.slice(0, 8)}…` : ''
-})
+function stopGuestTimer() {
+  if (guestTimer) clearInterval(guestTimer)
+  guestTimer = null
+}
+
+function platformLabel(platform: string) {
+  return ({ macos: 'macOS', windows: 'Windows', linux: 'Linux', android: 'Android', ios: 'iOS' } as Record<string, string>)[platform] || platform
+}
+
+function formatTime(ms: number) {
+  return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
 
 async function loadConfig() {
-  config.value = await vaultSyncApi.getConfig()
-  if (!deviceName.value) deviceName.value = config.value.deviceName || '手机'
-  if (!endpoint.value) endpoint.value = config.value.endpoint || ''
+  config.value = await webdavSpaceApi.getConfig()
+  endpoint.value = config.value.account.endpoint || endpoint.value
+  username.value = config.value.account.username || username.value
+  if (!deviceName.value) deviceName.value = config.value.identity.deviceName || '手机'
+  if (config.value.notice) showToast(config.value.notice)
 }
 
-async function loadDevices() {
-  if (!config.value?.active) return
-  try {
-    devices.value = await vaultSyncApi.listDevices()
-  } catch (error: any) {
-    showToast(error?.message || '读取设备失败')
-  }
-}
-
-async function testConnection() {
+async function saveAccount() {
   if (busy.value) return
   busy.value = true
   try {
-    showToast(await vaultSyncApi.test(endpoint.value))
+    await webdavSpaceApi.connectAccount(endpoint.value, username.value, password.value || undefined)
+    password.value = ''
+    showToast('WebDAV 连接成功，账号已保存')
+    await loadConfig()
   } catch (error: any) {
-    showToast(error?.message || '连接失败')
+    showToast(error?.message || 'WebDAV 连接失败')
   } finally {
     busy.value = false
   }
 }
 
-async function createVault() {
+async function createSpace() {
   if (busy.value) return
   busy.value = true
   try {
-    config.value = await vaultSyncApi.createVault(endpoint.value, inviteCode.value, deviceName.value)
-    inviteCode.value = ''
-    showToast('同步空间已创建')
+    await webdavSpaceApi.createSpace(deviceName.value)
+    showToast('同步空间已建立')
+    await loadConfig()
     await syncStore.refreshStatus()
     void syncStore.triggerSync()
-    await loadDevices()
   } catch (error: any) {
-    showToast(error?.message || '创建失败')
+    showToast(error?.message || '建立失败')
   } finally {
     busy.value = false
   }
 }
 
-async function startPairing() {
+async function resetPairing() {
+  stopHostTimer()
+  stopGuestTimer()
+  hostPairing.value = null
+  guestPairing.value = null
+  await webdavSpaceApi.cancelPairing().catch(() => {})
+}
+
+async function findOffer() {
   if (busy.value) return
   busy.value = true
   try {
-    const code = await vaultSyncApi.startPairing()
-    pairing.value = { ...code, status: 'open', claimedDevice: null, verificationCode: null }
-    stopPairingTimer()
-    pairingTimer = setInterval(pollPairing, 2000)
+    await resetPairing()
+    const status = await webdavSpaceApi.findOffer(joinCode.value, deviceName.value)
+    guestPairing.value = { ...status, shortCode: joinCode.value }
+    if (status.status !== 'ready' && status.status !== 'expired') {
+      guestTimer = setInterval(pollGuest, 2000)
+    }
+  } catch (error: any) {
+    showToast(error?.message || '配对失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function startJoin() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await resetPairing()
+    const start = await webdavSpaceApi.startJoin(deviceName.value)
+    guestPairing.value = {
+      pairingId: start.pairingId,
+      shortCode: start.shortCode,
+      status: 'waiting',
+      expiresAt: start.expiresAt,
+      verificationCode: start.verificationCode,
+      peer: null,
+      vaultId: null,
+      spaceFingerprint: null,
+      message: '等待已有设备输入六位码并批准…'
+    }
+    guestTimer = setInterval(pollGuest, 2000)
   } catch (error: any) {
     showToast(error?.message || '生成配对码失败')
   } finally {
@@ -92,251 +135,204 @@ async function startPairing() {
   }
 }
 
-async function pollPairing() {
-  if (!pairing.value) return
+async function pollGuest() {
+  if (!guestPairing.value || pollingGuest) return
+  pollingGuest = true
   try {
-    const status = await vaultSyncApi.pairingStatus(pairing.value.pairingId)
-    pairing.value = { ...pairing.value, ...status }
-    if (['expired', 'canceled', 'confirmed'].includes(status.status)) stopPairingTimer()
+    const status = await webdavSpaceApi.joinStatus(guestPairing.value.pairingId)
+    guestPairing.value = { ...guestPairing.value, ...status }
+    if (status.status === 'ready' || status.status === 'expired') stopGuestTimer()
   } catch (error: any) {
+    stopGuestTimer()
     showToast(error?.message || '查询配对状态失败')
-    stopPairingTimer()
+  } finally {
+    pollingGuest = false
   }
 }
 
-async function confirmPairing() {
-  if (!pairing.value || busy.value) return
+async function confirmGuest() {
+  if (!guestPairing.value || busy.value) return
   busy.value = true
   try {
-    await vaultSyncApi.confirmPairing(pairing.value.pairingId)
-    pairing.value = { ...pairing.value, status: 'confirmed' }
-    stopPairingTimer()
-    showToast('新设备已加入')
-    await loadDevices()
+    await webdavSpaceApi.confirmJoin(guestPairing.value.pairingId)
+    stopGuestTimer()
+    guestPairing.value = null
+    showToast('已加入同步空间')
+    await loadConfig()
+    await syncStore.refreshStatus()
+    void syncStore.triggerSync()
   } catch (error: any) {
-    showToast(error?.message || '确认失败')
+    showToast(error?.message || '完成加入失败')
   } finally {
     busy.value = false
   }
 }
 
-async function joinVault() {
+async function startOffer() {
   if (busy.value) return
   busy.value = true
-  joinStatus.value = '正在认领配对码…'
   try {
-    const start = await vaultSyncApi.beginJoin(endpoint.value, joinCode.value, deviceName.value)
-    joinPairingId = start.pairingId
-    joinVerification.value = start.verificationCode
-    joinStatus.value = '等待已有设备确认…'
-    stopJoinTimer()
-    joinTimer = setInterval(pollJoin, 2000)
+    await resetPairing()
+    hostMode = 'offer'
+    const start = await webdavSpaceApi.startOffer()
+    hostPairing.value = {
+      pairingId: start.pairingId,
+      shortCode: start.shortCode,
+      status: 'waiting',
+      expiresAt: start.expiresAt,
+      verificationCode: start.verificationCode,
+      peer: null,
+      vaultId: null,
+      spaceFingerprint: config.value?.identity.spaceFingerprint || null,
+      message: '等待新设备输入配对码…'
+    }
+    showHostJoinInput.value = false
+    hostTimer = setInterval(pollHost, 2000)
   } catch (error: any) {
-    joinStatus.value = ''
+    showToast(error?.message || '生成配对码失败')
+  } finally {
     busy.value = false
-    showToast(error?.message || '加入失败')
   }
 }
 
-async function pollJoin() {
-  if (!joinPairingId) return
+async function pollHost() {
+  if (!hostPairing.value || hostMode !== 'offer' || pollingHost) return
+  pollingHost = true
   try {
-    const result = await vaultSyncApi.pollJoin(joinPairingId)
-    if (result.configured) {
-      stopJoinTimer()
-      joinPairingId = ''
-      joinCode.value = ''
-      joinStatus.value = '已加入，正在拉取远端数据…'
-      await loadConfig()
-      await syncStore.refreshStatus()
-      void syncStore.triggerSync()
-      await loadDevices()
-      busy.value = false
-      return
-    }
-    if (result.status === 'expired' || result.status === 'canceled') {
-      stopJoinTimer()
-      joinPairingId = ''
-      joinStatus.value = '配对码已过期，请在已有设备上重新生成。'
-      busy.value = false
+    const status = await webdavSpaceApi.offerStatus(hostPairing.value.pairingId)
+    hostPairing.value = { ...hostPairing.value, ...status }
+    if (status.status === 'claimed' || status.status === 'approved' || status.status === 'expired') {
+      stopHostTimer()
     }
   } catch (error: any) {
-    stopJoinTimer()
-    joinPairingId = ''
-    busy.value = false
-    showToast(error?.message || '加入失败')
+    stopHostTimer()
+    showToast(error?.message || '查询配对状态失败')
+  } finally {
+    pollingHost = false
   }
+}
+
+async function findJoin() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await resetPairing()
+    hostMode = 'join'
+    const status = await webdavSpaceApi.findJoin(hostJoinCode.value)
+    hostPairing.value = { ...status, shortCode: hostJoinCode.value }
+    showHostJoinInput.value = false
+  } catch (error: any) {
+    showToast(error?.message || '查找配对码失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function approveHost() {
+  if (!hostPairing.value || busy.value) return
+  busy.value = true
+  try {
+    const status = hostMode === 'offer'
+      ? await webdavSpaceApi.approveOffer(hostPairing.value.pairingId)
+      : await webdavSpaceApi.approveJoin(hostPairing.value.pairingId)
+    hostPairing.value = { ...hostPairing.value, ...status }
+    stopHostTimer()
+    showToast('已批准新设备，请在新设备上确认')
+  } catch (error: any) {
+    showToast(error?.message || '批准失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function cancelPairing() {
+  stopHostTimer()
+  stopGuestTimer()
+  hostPairing.value = null
+  guestPairing.value = null
+  joinCode.value = ''
+  hostJoinCode.value = ''
+  showHostJoinInput.value = false
+  await webdavSpaceApi.cancelPairing().catch(() => {})
 }
 
 async function syncNow() {
   const ok = await syncStore.triggerSync()
   showToast(ok ? '同步完成' : (syncStore.errorMsg || '同步失败'))
-  await loadDevices()
-}
-
-async function seedLocal() {
-  if (busy.value) return
-  try {
-    await showConfirmDialog({
-      title: '上传本机独有文稿',
-      message: '只上传远端空间中不存在的本机文稿，不会覆盖已有内容。',
-    })
-  } catch {
-    return
-  }
-  busy.value = true
-  try {
-    const count = await vaultSyncApi.seedLocal()
-    showToast(count > 0 ? `已加入 ${count} 项，正在上传` : '没有需要上传的内容')
-    if (count > 0) void syncStore.triggerSync()
-  } catch (error: any) {
-    showToast(error?.message || '登记失败')
-  } finally {
-    busy.value = false
-  }
-}
-
-async function revoke(device: VaultDeviceView) {
-  try {
-    await showConfirmDialog({
-      title: '撤销设备',
-      message: `撤销「${device.name}」后，它需要重新配对才能继续同步。`,
-    })
-  } catch {
-    return
-  }
-  busy.value = true
-  try {
-    await vaultSyncApi.revokeDevice(device.id)
-    showToast('已撤销')
-    await loadDevices()
-  } catch (error: any) {
-    showToast(error?.message || '撤销失败')
-  } finally {
-    busy.value = false
-  }
 }
 
 async function leave() {
   try {
     await showConfirmDialog({
-      title: '离开同步空间',
-      message: '本机笔记仍会保留，但不再与其他设备同步。确定离开吗？',
+      title: '退出同步空间',
+      message: '只清除本机身份，本机笔记仍保留。要阻止旧设备继续同步，请修改 WebDAV 应用密码。如果这是唯一设备，退出后旧空间将无法解密。',
     })
   } catch {
     return
   }
   busy.value = true
   try {
-    await vaultSyncApi.leave()
-    config.value = await vaultSyncApi.getConfig()
-    devices.value = []
-    pairing.value = null
-    stopPairingTimer()
-    stopJoinTimer()
-    showToast('已离开同步空间')
+    await webdavSpaceApi.leaveSpace()
+    await cancelPairing()
+    await loadConfig()
     await syncStore.refreshStatus()
+    showToast('已退出同步空间')
   } catch (error: any) {
-    showToast(error?.message || '离开失败')
+    showToast(error?.message || '退出失败')
   } finally {
     busy.value = false
   }
-}
-
-function platformLabel(platform: string) {
-  return ({ macos: 'macOS', windows: 'Windows', linux: 'Linux', android: 'Android', ios: 'iOS' } as Record<string, string>)[platform] || platform
-}
-
-function stopPairingTimer() {
-  if (pairingTimer) clearInterval(pairingTimer)
-  pairingTimer = null
-}
-
-function stopJoinTimer() {
-  if (joinTimer) clearInterval(joinTimer)
-  joinTimer = null
 }
 
 onMounted(async () => {
   try {
     await loadConfig()
     await syncStore.refreshStatus()
-    await loadDevices()
   } catch (error: any) {
-    showToast(error?.message || '读取同步配置失败')
+    showToast(error?.message || '读取跨设备配置失败')
   }
 })
 
 onBeforeUnmount(() => {
-  stopPairingTimer()
-  stopJoinTimer()
+  stopHostTimer()
+  stopGuestTimer()
 })
 </script>
 
 <template>
   <div class="sync-page">
-    <van-nav-bar title="同步空间" left-arrow fixed placeholder @click-left="router.back()" />
+    <van-nav-bar title="跨设备" left-arrow fixed placeholder @click-left="router.back()" />
 
-    <template v-if="config?.active">
-      <van-cell-group inset title="当前空间">
-        <van-cell title="服务地址" :label="config.endpoint" />
-        <van-cell title="空间 ID" :value="shortVaultId" />
-        <van-cell title="本机名称" :value="config.deviceName" />
-        <van-cell title="同步状态" :value="syncStore.isSyncing ? '同步中…' : syncStore.lastSyncLabel" />
-      </van-cell-group>
+    <p class="hint">
+      每台设备先配置同一个 WebDAV 账号，之后只用六位配对码加入。正文和图片端到端加密。
+      WebDAV 没有服务端推送，同步不是实时的。
+    </p>
 
-      <van-cell-group v-if="pairing" inset title="新设备配对">
-        <van-cell title="六位配对码">
-          <template #value>
-            <span class="pairing-code">{{ pairing.shortCode }}</span>
-          </template>
-        </van-cell>
-        <van-cell v-if="pairing.claimedDevice" title="新设备" :value="pairing.claimedDevice.name" />
-        <van-cell v-if="pairing.verificationCode" title="核对码">
-          <template #value>
-            <span class="pairing-code">{{ pairing.verificationCode }}</span>
-          </template>
-        </van-cell>
-        <van-cell
-          v-if="pairing.claimedDevice"
-          title="确认新设备加入"
-          is-link
-          :label="'请确认新设备屏幕显示相同核对码'"
-          @click="confirmPairing"
-        />
-        <van-cell v-else title="等待新设备输入配对码…" />
-      </van-cell-group>
-
-      <van-cell-group inset title="设备">
-        <van-cell
-          v-for="device in devices"
-          :key="device.id"
-          :title="device.name"
-          :label="platformLabel(device.platform) + (device.isCurrent ? ' · 当前设备' : '')"
-        >
-          <template v-if="!device.isCurrent" #right-icon>
-            <van-button size="mini" type="danger" plain :disabled="busy" @click="revoke(device)">撤销</van-button>
-          </template>
-        </van-cell>
-      </van-cell-group>
-
-      <p class="hint">
-        请保留至少一台已配对设备并备份应用数据目录。当前版本没有恢复码，密钥丢失后无法解密。
-      </p>
-
-      <div class="actions">
-        <van-button block type="primary" :loading="syncStore.isSyncing" @click="syncNow">立即同步</van-button>
-        <van-button block plain :disabled="busy" @click="startPairing">生成六位配对码</van-button>
-        <van-button block plain :disabled="busy" @click="seedLocal">上传本机独有文稿</van-button>
-        <van-button block plain type="danger" :disabled="busy" @click="leave">离开同步空间</van-button>
+    <van-cell-group inset title="WebDAV 账号">
+      <van-field v-model="endpoint" label="地址" placeholder="https://dav.example.com/dav/" clearable />
+      <van-field v-model="username" label="用户名" placeholder="WebDAV 用户名" clearable />
+      <van-field
+        v-model="password"
+        label="应用密码"
+        type="password"
+        :placeholder="config?.account.hasPassword ? '已保存，留空不改' : 'WebDAV 应用密码'"
+        clearable
+      />
+      <van-cell title="测试连接并保存" is-link :label="busy ? '正在测试…' : ''" @click="saveAccount" />
+      <div class="hint-block">
+        坚果云 https://dav.jianguoyun.com/dav/（使用应用密码）；Nextcloud
+        https://cloud.example.com/remote.php/dav/files/用户名/；群晖
+        https://nas.example.com:5006/woo。应用密码只加密保存在本机。
       </div>
-    </template>
+    </van-cell-group>
 
-    <template v-else>
-      <van-cell-group inset title="连接服务">
-        <van-field v-model="endpoint" label="服务地址" placeholder="https://woo-sync.example.workers.dev" clearable />
+    <p v-if="config?.legacyNotice" class="hint">{{ config.legacyNotice }}</p>
+    <p v-if="config?.notice" class="hint">{{ config.notice }}</p>
+
+    <template v-if="config?.account.active && !config?.spaceConfigured">
+      <van-cell-group inset title="建立同步空间">
         <van-field v-model="deviceName" label="本机名称" maxlength="80" clearable />
-        <van-cell title="测试连接" is-link @click="testConnection" />
+        <van-cell title="建立同步空间" is-link @click="createSpace" />
       </van-cell-group>
 
       <van-cell-group inset title="加入已有空间">
@@ -348,22 +344,97 @@ onBeforeUnmount(() => {
           type="digit"
           clearable
         />
-        <van-cell title="加入空间" is-link :label="joinStatus" @click="joinCode.length === 6 && joinVault()" />
-        <van-cell v-if="joinVerification" title="核对码">
-          <template #value><span class="pairing-code">{{ joinVerification }}</span></template>
-        </van-cell>
+        <van-cell title="查找并认领" is-link @click="joinCode.length === 6 && findOffer()" />
       </van-cell-group>
 
-      <van-cell-group inset title="创建新空间">
-        <van-field v-model="inviteCode" label="邀请码" placeholder="部署同步服务时设置" type="password" clearable />
-        <van-cell title="创建空间" is-link @click="createVault" />
+      <van-cell-group inset title="我是新设备">
+        <van-cell title="显示我的配对码" is-link label="在已有设备上输入并批准" @click="startJoin" />
       </van-cell-group>
-
-      <p class="hint">
-        如果这台设备之前使用 WebDAV，建议先完成一次同步再创建空间。
-        六位配对码只用于加入空间，不会上传到第三方服务。
-      </p>
     </template>
+
+    <template v-if="config?.active">
+      <van-cell-group inset title="当前空间">
+        <van-cell title="WebDAV" :label="config.account.endpoint" />
+        <van-cell title="账号" :value="config.account.username" />
+        <van-cell title="空间指纹" :value="config.identity.spaceFingerprint" />
+        <van-cell title="本机" :label="platformLabel(config.identity.platform)" :value="config.identity.deviceName" />
+        <van-cell title="同步状态" :value="syncStore.isSyncing ? '同步中…' : syncStore.lastSyncLabel" />
+      </van-cell-group>
+
+      <div class="hint">
+        启动、本地修改、回到前台和每 15 分钟兜底时同步。没有服务端设备列表，不能远程吊销；
+        如需阻止旧设备，请修改 WebDAV 应用密码。
+      </div>
+
+      <div class="actions">
+        <van-button block type="primary" :loading="syncStore.isSyncing" @click="syncNow">立即同步</van-button>
+        <van-button block plain :disabled="busy" @click="startOffer">显示配对码</van-button>
+        <van-button block plain :disabled="busy" @click="showHostJoinInput = !showHostJoinInput">
+          输入新设备配对码
+        </van-button>
+        <van-button block plain type="danger" :disabled="busy" @click="leave">退出空间</van-button>
+      </div>
+
+      <van-cell-group v-if="showHostJoinInput" inset title="输入新设备配对码">
+        <van-field
+          v-model="hostJoinCode"
+          label="配对码"
+          placeholder="六位数字"
+          maxlength="6"
+          type="digit"
+          clearable
+        />
+        <van-cell title="查找并核对" is-link @click="hostJoinCode.length === 6 && findJoin()" />
+        <van-cell title="取消" is-link @click="cancelPairing" />
+      </van-cell-group>
+    </template>
+
+    <van-cell-group v-if="hostPairing" inset title="已有设备：批准新设备">
+      <van-cell v-if="hostPairing.shortCode" title="六位配对码">
+        <template #value><span class="pairing-code">{{ hostPairing.shortCode }}</span></template>
+      </van-cell>
+      <van-cell v-if="hostPairing.peer" title="新设备" :label="platformLabel(hostPairing.peer.platform)" :value="hostPairing.peer.name" />
+      <van-cell v-if="hostPairing.verificationCode" title="核对码">
+        <template #value><span class="pairing-code">{{ hostPairing.verificationCode }}</span></template>
+      </van-cell>
+      <van-cell v-if="hostPairing.spaceFingerprint" title="空间指纹" :value="hostPairing.spaceFingerprint" />
+      <van-cell :title="hostPairing.message || '等待新设备…'" />
+      <div v-if="hostPairing.status === 'claimed'" class="hint">
+        请确认新设备屏幕显示相同的六位码和空间指纹，再批准。
+      </div>
+      <van-cell
+        v-if="hostPairing.status === 'claimed'"
+        title="核对一致，批准新设备"
+        is-link
+        @click="approveHost"
+      />
+      <van-cell v-if="hostPairing.status === 'approved'" title="已批准，等待新设备确认" />
+      <van-cell v-if="hostPairing.status === 'expired'" title="配对码已过期，请重新生成" />
+      <van-cell title="取消配对" is-link @click="cancelPairing" />
+    </van-cell-group>
+
+    <van-cell-group v-if="guestPairing" inset title="新设备：等待加入">
+      <van-cell v-if="guestPairing.shortCode" title="六位配对码">
+        <template #value><span class="pairing-code">{{ guestPairing.shortCode }}</span></template>
+      </van-cell>
+      <van-cell v-if="guestPairing.peer" title="已有设备" :label="platformLabel(guestPairing.peer.platform)" :value="guestPairing.peer.name" />
+      <van-cell v-if="guestPairing.verificationCode" title="核对码">
+        <template #value><span class="pairing-code">{{ guestPairing.verificationCode }}</span></template>
+      </van-cell>
+      <van-cell v-if="guestPairing.spaceFingerprint" title="空间指纹" :value="guestPairing.spaceFingerprint" />
+      <van-cell :title="guestPairing.message || '等待已有设备确认…'" />
+      <div v-if="guestPairing.status === 'ready'" class="hint">
+        请与已有设备核对六位码和空间指纹一致后，再完成加入。
+      </div>
+      <van-cell
+        v-if="guestPairing.status === 'ready'"
+        title="核对一致，完成加入"
+        is-link
+        @click="confirmGuest"
+      />
+      <van-cell v-if="guestPairing.status === 'expired'" title="配对码已过期，请重新生成" />
+      <van-cell title="取消配对" is-link @click="cancelPairing" />
+    </van-cell-group>
   </div>
 </template>
 
@@ -372,4 +443,5 @@ onBeforeUnmount(() => {
 .pairing-code { font-size: 22px; letter-spacing: 5px; font-weight: 600; color: var(--van-primary-color); }
 .actions { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .hint { margin: 0 20px; color: var(--van-text-color-2); font-size: 12px; line-height: 1.7; }
+.hint-block { padding: 8px 16px 12px; color: var(--van-text-color-2); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 </style>

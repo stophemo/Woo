@@ -345,6 +345,13 @@ CREATE TABLE IF NOT EXISTS vault_sync_deferred_documents (
     created_at TEXT NOT NULL
 );
 
+-- WebDAV 配对文件的本机首次观察时间。有效期以「首次观察 + 文件 TTL」
+-- 计算，不使用对端 createdAt，避免设备时钟偏差导致误判。
+CREATE TABLE IF NOT EXISTS webdav_pairing_observations (
+    path TEXT PRIMARY KEY,
+    first_seen_ms INTEGER NOT NULL
+);
+
 CREATE TRIGGER IF NOT EXISTS vault_sync_document_after_insert
 AFTER INSERT ON note_document
 WHEN EXISTS (SELECT 1 FROM sync_meta WHERE key = 'vault_sync_active' AND value = '1')

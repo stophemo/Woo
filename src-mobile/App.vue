@@ -97,7 +97,7 @@ onMounted(async () => {
   // 单用户数据模式：直接打开本地 woo.db，不存在账号切换。
   appReady.value = true
   void lockStore.bootstrap().catch(() => {})
-  // WebDAV/局域网启用时后台补一轮同步，不阻塞本地文稿。
+  // WebDAV 同步空间启用时后台补一轮同步，不阻塞本地文稿。
   void startSyncIfConfigured()
 })
 </script>

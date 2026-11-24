@@ -7,6 +7,7 @@ pub mod sync_engine;
 pub mod utils;
 pub mod vault_sync;
 pub mod webdav_sync;
+pub mod webdav_space;
 
 // Stub modules (to be fully implemented)
 pub mod auth_service;

@@ -92,7 +92,7 @@ function resetAllShortcuts() {
 
 async function onSyncNow() {
   if (syncStore.backend === 'off') {
-    showToast('请先加入同步空间')
+    showToast('请先加入 WebDAV 同步空间')
     return
   }
   const ok = await syncStore.triggerSync()
@@ -148,12 +148,12 @@ async function beforePwdClose(action: string) {
     </header>
 
     <!-- 同步空间 -->
-    <van-cell-group inset title="同步空间">
+    <van-cell-group inset title="跨设备">
       <van-cell
         icon="exchange"
-        title="多设备同步"
-        :label="syncStore.backend === 'vault' ? '六位配对码 · 端到端加密' : '多设备六位配对码 · 端到端加密'"
-        :value="syncStore.backend === 'vault' ? '生效中' : '未启用'"
+        title="WebDAV 同步空间"
+        label="六位配对码 · 端到端加密 · 非实时"
+        :value="syncStore.backend === 'webdav' ? '生效中' : '未启用'"
         is-link
         @click="router.push('/sync-space')"
       />

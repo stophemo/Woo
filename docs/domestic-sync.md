@@ -1,82 +1,161 @@
-# 同步空间（多设备六位配对码）
+# WebDAV 同步空间（多设备六位配对码）
 
-Woo 是本地优先的编辑器：所有文稿先写入本机 SQLite。跨设备同步使用**自托管同步空间**：
-一台设备创建空间，其他设备输入六位配对码加入，最多 4 台设备共享同一个端到端加密空间。
+Woo 是本地优先的编辑器：所有文稿先写入本机 SQLite。跨设备同步只使用 **WebDAV 同步空间**：
 
-服务端只保存 AES-256-GCM 密文、递增游标和必要的同步元数据，不知道正文、标题或图片内容。
-后端实现位于仓库的 `sync-server/`（Cloudflare Workers + D1），部署方式见
-[sync-server/README.md](../sync-server/README.md)。
+1. 每台设备第一次使用时配置同一个 WebDAV 账号（地址、用户名、应用密码）；
+2. 第一台设备点「建立同步空间」，生成 `vaultId`、`deviceId` 和 32 字节 `vaultKey`；
+3. 其他设备只用六位配对码加入。
+
+服务端只保存 AES-256-GCM 密文和必要的同步元数据；WebDAV 供应商无法读取正文、标题或图片内容。
+WebDAV 没有服务端推送，**不是实时同步**；同步在启动、本地修改、回到前台和每 15 分钟兜底时进行。
 
 ---
 
-## 一、创建同步空间
+## 一、配置 WebDAV 账号
 
-1. 部署 `sync-server`，得到 Worker 根地址（如 `https://woo-sync.example.workers.dev`）和创建邀请码。
-2. 在第一台设备打开 Woo → 设置 → 同步空间，填写：
-   - 同步服务地址：Worker 根地址，不要附加 `/v1`；
-   - 创建邀请码：部署时设置的 `VAULT_CREATION_INVITE_CODE`；
-   - 本机名称。
-3. 点「创建空间」。本机现有文稿、目录会作为初始内容上传；图片和长文按内容块加密上传。
+支持任意 HTTPS WebDAV。供应商示例：
 
-## 二、加入已有空间
+| 供应商 | 地址示例 | 说明 |
+| --- | --- | --- |
+| 坚果云 | `https://dav.jianguoyun.com/dav/` | 使用「应用密码」，不是登录密码 |
+| Nextcloud | `https://cloud.example.com/remote.php/dav/files/用户名/` | 地址需包含用户目录 |
+| 群晖 | `https://nas.example.com:5006/woo` | 需启用 WebDAV Server |
+| 自定义 | `https://dav.example.com/dav/` | 必须使用 HTTPS |
 
-1. 在已加入的设备上打开「同步空间」，点「生成六位配对码」。
-2. 新设备打开「同步空间」，填写同一服务地址和六位配对码，点「加入空间」。
-3. 两端会显示相同的六位核对码；在已加入设备上确认新设备名称后，配对完成。
-4. 新设备会拉取空间内全部数据。加入时**不会**自动上传本机旧文稿，避免用较旧的本地副本覆盖远端；
-   本机独有文稿可在加入后点「上传本机独有文稿」按需上传。
+应用密码与同步身份**分开加密保存**在本机：
 
-## 三、同步规则
+- `webdav-account.enc.json`：地址、用户名、应用密码；
+- `webdav-identity.enc.json`：`vaultId`、`deviceId`、`vaultKey`；
+- 主密钥优先放在系统钥匙串（macOS / Windows / Linux），不可用时退化为应用私有目录下 0600 的随机密钥文件。
 
-- **触发**：本地保存/目录变更后约 1.5 秒防抖触发；回到前台、窗口聚焦时补一轮；
-  后台每 15 秒兜底轮询一次。每次请求很小，空闲时服务端只做一次游标查询。
-- **增量**：客户端维护 outbox 和 cursor；每次 push 最多 30 条，pull 最多 100 条。
-  服务端按 `serverSeq` 交付，客户端整页落地后才推进 cursor。
-- **冲突**：每个实体按 `(lamport, deviceId)` 最后写入胜出；如果本地有未同步修改，
-  会先创建「冲突副本」，不会静默覆盖。编辑器里正在输入时收到远端更新，会先把远端版本
-  保存为「远端冲突副本」，本地输入继续。
-- **删除**：回收站中的文稿仍作为普通行同步；清空回收站后进入待清理状态，超过
-  `SYNC_CLEANUP_SECONDS`（默认 7 天）物理删除并生成 tombstone，随同步传播。
-- **正文分块**：正文和 base64 图片按内容定义边界切成不超过 24 KiB 的块，
-  压缩后独立加密；内容清单本身再分片，避免长文撑爆单条 32 KiB 的操作限制。
-- **不参与同步**：版本历史、密码锁密码哈希、知识库分块、草稿（localStorage）、
-  外部文件路径映射和界面偏好只保留在本机。`is_locked` 会随文稿同步，
-  但新设备没有本机密码时无法解锁，需要在原设备解锁或重设。
+账号密码不会进入日志、明文备份或 Android 系统云备份（`android:allowBackup="false"`）。
 
-## 四、安全与恢复
+## 二、建立与加入空间
 
-- vault 密钥由客户端生成，只保存在应用私有目录的 `vault-sync-config.json`（Unix 权限 0600）；
-  服务端、WebDAV 或任何第三方都拿不到明文密钥。
-- 每台设备有独立 Bearer 令牌，服务端只存 HMAC 哈希；可随时撤销其他设备。
-- 请保留至少一台已配对设备，并备份 `vault-sync-config.json`。**当前版本没有恢复码**；
-  所有设备和密钥同时丢失后，服务端密文无法解密。
-- 六位配对码 5 分钟有效，每个空间最多 3 个活跃码；发起设备仍需人工确认并核对六位验证码。
+### 第一台设备
 
-## 五、容量与限制
+1. 设置 → 跨设备，填写 WebDAV 账号并点「测试连接并保存」。
+2. 点「建立同步空间」。本机现有文稿和目录会作为初始内容上传。
 
-- 每个空间最多 4 台设备。
-- 服务端默认上限：200000 条操作 / 300 MiB 解码后密文（适配 D1 免费档单库约 500 MB）。
-- 当前版本没有历史压缩/快照裁剪；接近上限时同步会返回 `507`，需要导出备份后重建空间。
-- 新设备从 `cursor = 0` 重放全部历史，空间很大时首次同步会比较慢。
-- `workers.dev` 在中国大陆的可达性不稳定；日常使用建议绑定自己的域名并实测，
-  或部署兼容的自建服务。同步服务不可达时不影响本地写作。
+### 其他设备
 
-## 六、旧版 WebDAV / 局域网
+- **已有设备显示码**：已有设备点「显示配对码」，新设备输入六位码并「查找并认领」。
+- **新设备显示码**：新设备点「显示我的配对码」，已有设备输入六位码并「查找并核对」。
 
-旧版 WebDAV 与局域网同步已从主界面移入「设置 → 同步 → 旧版同步（仅迁移用）」。
-创建或加入同步空间时会自动停用旧后端。迁移建议：
+六位码只负责定位配对请求，**安全依赖两端人工核对的六位核对码和空间指纹**。
+新设备只有在点击「核对一致，完成加入」后才会保存身份；已有设备也必须在核对后点击批准。
 
-1. 先在原设备上完成一次 WebDAV 同步，确认本机数据是最新的；
-2. 再创建同步空间，让本机数据成为空间基线；
-3. 其他设备加入后只拉取空间数据，不要先用旧 WebDAV 覆盖本机。
+加入已有空间时不会自动用本机旧副本覆盖远端；首次拉取完成后，仅把远端不存在的本机独有文稿补传上去。
 
-旧代码仍保留用于一次性迁移和回滚，但不再作为主要同步路径。
+## 三、远端数据布局
 
-## 七、相关代码
+```text
+v1/<vaultId>/space.json
+v1/<vaultId>/ops/<shard>/<opId>.json
+v1/pairing/offer-<6位码>-<pairingId>.json
+v1/pairing/claim-<pairingId>.json
+v1/pairing/join-<6位码>-<pairingId>.json
+v1/pairing/resolve-<pairingId>.json
+v1/pairing/approval-<pairingId>.json
+```
 
-- 同步空间客户端：`src-tauri/src/services/vault_sync/`
-- 共享加密/分块内核：`src-tauri/woo-sync-core/`
-- 服务端：`sync-server/`
+每个操作文件包含：
+
+```json
+{
+  "protocolVersion": 1,
+  "vaultId": "...",
+  "deviceId": "...",
+  "opId": "...",
+  "entityId": "doc:...",
+  "kind": "upsert",
+  "lamport": 12,
+  "nonce": "...",
+  "ciphertext": "..."
+}
+```
+
+`kind` 为 `upsert` / `delete` / `reorder`。`nonce` 和 `ciphertext` 是 Base64URL；
+AAD 绑定 `vaultId`、`opId`、`entityId`、`kind`、`lamport` 和 `deviceId`。
+
+操作文件永不删除，其他设备通过本地 `vault_sync_applied_ops` 表按 `opId` 幂等去重。
+内容块使用独立 AAD，文件名中的 `:` 编码为 `~`，以兼容严格的 WebDAV 服务器。
+
+## 四、同步内核
+
+- **推送**：本地触发器登记脏实体 → outbox 分块/压缩/加密 → `PUT` 到 `ops/<shard>/<opId>.json`。
+  `PUT` 使用 `If-None-Match: *`，重试时若远端已有相同内容视为成功，不同内容拒绝覆盖。
+- **拉取**：`PROPFIND` 两层列举 `ops` 和 shard 目录，只 `GET` 本地未应用的操作；
+  整条操作通过 AES-GCM 校验后应用，成功后写入 applied 表。
+- **重试**：HTTPS only、Basic Auth、禁止重定向；429/5xx/网络错误按 1/2/4 秒退避重试。
+- **Lamport**：每个实体按 `(lamport, deviceId)` 最后写入胜出；加入已有空间前先扫描远端最大
+  lamport 作为水位，避免本地新操作被远端旧操作覆盖。
+- **坏操作隔离**：单条 JSON 损坏、密文校验失败或解密失败时，按 `opId` 记录为已处理并告警，
+  不让一个坏对象让整个空间永久同步失败。
+- **删除**：回收站状态随正文同步；清空回收站后超过清理窗口（默认 7 天）物理删除并生成 tombstone。
+- **请求频率**：目录创建结果在进程内缓存；shard 数量为 4；本地修改触发的自动同步最小间隔 30 秒，
+  后台每 15 分钟兜底。坚果云等供应商仍可能限速，同步失败时本地写作不受影响。
+
+## 五、配对协议
+
+使用 X25519 + HKDF-SHA256 + AES-256-GCM 传递 `vaultKey`；六位码不用于派生加密密钥。
+
+### Path A：已有设备显示码
+
+1. 已有设备写 `offer`：发起方公钥、`pairingSecret`、`vaultId`、设备信息、TTL。
+2. 新设备读 `offer`，生成临时 X25519 密钥，写 `claim`（新设备公钥、deviceId、名称、平台）。
+3. 已有设备读 `claim`，两端显示六位核对码；用户核对后已有设备写 `approval`，
+   其中 `vaultKey` 用会话密钥封装，AAD 绑定 `pairingId` 和 `claimedDeviceId`。
+4. 新设备读 `approval`，校验批准公钥与 `offer` 一致、`vaultId` 一致、`claimedDeviceId` 等于本机，
+   解密后显示核对码和空间指纹；**用户点击确认后**才保存身份。
+
+### Path B：新设备显示码
+
+1. 新设备写 `join`：新设备公钥、`joinSecret`、设备信息、TTL。
+2. 已有设备读 `join`，生成临时密钥，写 `resolve`（批准方公钥、`vaultId`、设备信息），
+   显示六位核对码；用户核对后写 `approval`。
+3. 新设备**必须先看到 `resolve`** 才处理 `approval`；只有 approval、没有 resolve 时直接忽略。
+   `approval.approverPublicKey` 必须与 `resolve` 完全一致。
+
+### 安全不变量
+
+1. 新设备读到 approval 后绝不自动保存身份；必须人工点击「核对一致，完成加入」。
+2. 保存前校验 `pairingId`、`deviceId`、`vaultId`、批准公钥、封装密钥解密结果。
+3. 同一六位码匹配到多份 offer/join 时返回「配对码冲突，请重新生成」，不按远端时间自动选择。
+4. 有效期 = 本机首次观察时间 + 文件自身 TTL，不使用本地时钟直接比较远端 `createdAt`。
+5. 无法解码或未知 `protocolVersion` 的配对文件不删除。
+6. 成功后清理该 `pairingId` 的已知配对文件；取消时清理本机写入的文件；过期文件按观察窗口清理。
+7. 临时私钥、`vaultKey` 和 `joinSecret` 不写入本机日志或明文配置。
+
+## 六、设备与吊销
+
+WebDAV 没有服务端设备列表，**不能远程吊销设备**。退出空间只清除本机身份，本机笔记仍保留。
+如需阻止旧设备继续同步，请修改 WebDAV 应用密码；旧设备无法通过认证后自然停止同步。
+不要相信「远程移除设备」之类的假入口。
+
+## 七、迁移
+
+- 旧版 `webdav-config.json`（地址/用户名/应用密码）会在升级后自动迁移为新的加密账号配置；
+  成功后删除旧文件，避免清除本机数据后从旧配置回填。
+- 如果云端还没有 `v1/<vaultId>`，迁移会建立新空间并上传本机数据；如果云端已有空间，
+  不自动建立身份，提示用六位配对码加入。
+- 旧 Worker / 局域网凭据保留在磁盘上但**不再启用**；界面会提示用 WebDAV 重新配置。
+- 旧 WebDAV 的 `manifest.json` 数据不会被新空间读取；其他旧设备需要重新配对。
+
+## 八、测试
+
+- `cargo test services::webdav_space`：账号加密、身份、配对 Path A/B、approval-only 忽略、
+  配对码冲突、vaultId 不一致拒绝、PUT 幂等、重试、重定向拒绝、PROPFIND 解析、
+  双设备推送/拉取、坏操作跳过。
+- `cargo test services::webdav_space::sync::local_webdav_smoke -- --ignored`：需要本机 WebDAV
+  （`wsgidav`）在 `127.0.0.1:18080`，覆盖真实 MKCOL/PROPFIND/PUT/GET 和墓碑传播。
+- 真实供应商（坚果云/Nextcloud/群晖）双设备验证需要用户自己的账号和两台设备，当前仓库测试不包含。
+
+## 九、相关代码
+
+- WebDAV 同步空间：`src-tauri/src/services/webdav_space/`
+- 共享加密/分块与操作模型：`src-tauri/woo-sync-core/`
+- 本地 outbox / applied / LWW：`src-tauri/src/services/vault_sync/store.rs`
 - 桌面设置页：`src/components/settings/SyncSpaceSettings.vue`
 - 移动端设置页：`src-mobile/views/SyncSpace.vue`
 - 同步编排与状态：`src-tauri/src/services/sync_engine.rs`、`src/stores/sync.ts`
