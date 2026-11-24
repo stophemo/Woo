@@ -37,6 +37,15 @@
       <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" :title="'显示/隐藏缩略图栏 (' + modKey() + '←)'">
         <IconThumbnailSidebar />
       </button>
+      <button
+        class="window-control-btn"
+        :class="{ 'is-active': alwaysOnTop }"
+        :title="alwaysOnTop ? '取消窗口置顶' : '窗口置顶'"
+        :aria-pressed="alwaysOnTop"
+        @click="toggleAlwaysOnTop"
+      >
+        <IconPin />
+      </button>
       <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" :class="{ 'spin': syncing }">
           <path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/>
@@ -79,8 +88,10 @@
 
 <script setup lang="ts">
 import { ref, type ComponentPublicInstance, computed, onMounted, onBeforeUnmount } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import IconLeftSidebar from '../../components/icons/IconLeftSidebar.vue'
 import IconThumbnailSidebar from '../../components/icons/IconThumbnailSidebar.vue'
+import IconPin from '../../components/icons/IconPin.vue'
 import IconSettings from '../../components/icons/IconSettings.vue'
 import IconMinimize from '../../components/icons/IconMinimize.vue'
 import IconMaximize from '../../components/icons/IconMaximize.vue'
@@ -265,6 +276,26 @@ onMounted(() => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
 })
+
+// 窗口置顶
+const alwaysOnTop = ref(false)
+
+onMounted(async () => {
+  if (props.isMobile) return
+  try {
+    alwaysOnTop.value = await getCurrentWindow().isAlwaysOnTop()
+  } catch { /* 非 Tauri 环境下忽略 */ }
+})
+
+async function toggleAlwaysOnTop() {
+  const next = !alwaysOnTop.value
+  try {
+    await getCurrentWindow().setAlwaysOnTop(next)
+    alwaysOnTop.value = next
+  } catch (e: any) {
+    log.app.error('[TopMenu] 切换窗口置顶失败:', e?.message || e)
+  }
+}
 
 // 窗口控制
 const minimizeWindow = () => {

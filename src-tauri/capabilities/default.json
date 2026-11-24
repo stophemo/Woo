@@ -5,6 +5,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-always-on-top",
     "dialog:default",
     "dialog:allow-save",
     "dialog:allow-open",
