@@ -104,6 +104,20 @@ function onCheckUpdate() {
   window.dispatchEvent(new CustomEvent('woo:mobile-check-update'))
 }
 
+async function openProjectHomepage() {
+  const url = 'https://github.com/stophemo/Woo'
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url)
+  } catch (error: any) {
+    try {
+      window.open(url, '_blank', 'noopener')
+    } catch {
+      showToast(error?.message || '无法打开项目主页')
+    }
+  }
+}
+
 // ------- 密码锁 -------
 const showPwdDialog = ref(false)
 const pwd = reactive({ value: '', confirm: '' })
@@ -238,7 +252,7 @@ async function beforePwdClose(action: string) {
     <van-cell-group inset title="关于">
       <van-cell icon="info-o" title="版本" :value="`v${appVersion}`" />
       <van-cell icon="upgrade" title="检查更新" is-link @click="onCheckUpdate" />
-      <van-cell icon="link-o" title="项目主页" value="GitHub" is-link @click="showToast('打开链接')" />
+      <van-cell icon="link-o" title="项目主页" value="GitHub" is-link @click="openProjectHomepage" />
     </van-cell-group>
 
     <!-- 密码锁设置对话框 -->
