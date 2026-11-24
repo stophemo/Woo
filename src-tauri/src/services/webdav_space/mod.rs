@@ -376,23 +376,15 @@ pub fn join_local_state() -> Result<JoinLocalStateView, String> {
     })
 }
 
-/// 加入其他空间前清空本机文稿、目录、版本与同步状态；保留 WebDAV 账号和偏好。
-/// 只影响本机，不删除 WebDAV 上的旧空间。
-pub async fn clear_local_for_join() -> Result<(), String> {
-    let _guard = crate::services::sync_engine::acquire_exclusive()?;
-    let account = account::configured_account().ok().flatten();
-    let identity = identity::configured_identity().ok().flatten();
-    if let (Some(account), Some(identity)) = (account.as_ref(), identity.as_ref()) {
-        if let Ok(client) = client_for(account) {
-            let _ = devices::delete_own_heartbeat(&client, identity).await;
-            let _ = pairing::cancel_pairing(&client, &DbObservations).await;
-        }
-    }
-    // 先删本机身份：即使后续清空数据库失败，也不会留下“有身份但绑定已空”的半状态。
-    identity::delete_identity()?;
-    db::with_db(clear_local_content)?;
-    pairing::clear_session();
-    log::info!("[WebDAV] 已清空本机文稿与同步身份，准备加入其他空间");
+fn clear_local_content_inner(conn: &rusqlite::Connection) -> Result<(), String> {
+    store::set_active(conn, false)?;
+    conn.execute_batch(
+        "DELETE FROM note_document_version;
+         DELETE FROM note_document;
+         DELETE FROM note_folder;
+         DELETE FROM kb_chunks;",
+    )
+    .map_err(|error| format!("清空本机文稿失败：{error}"))?;
     Ok(())
 }
 
@@ -401,18 +393,34 @@ fn clear_local_content(conn: &rusqlite::Connection) -> Result<(), String> {
     let tx = conn
         .unchecked_transaction()
         .map_err(|error| format!("开始清空本机文稿事务失败：{error}"))?;
-    store::set_active(&tx, false)?;
-    tx.execute_batch(
-        "DELETE FROM note_document_version;
-         DELETE FROM note_document;
-         DELETE FROM note_folder;
-         DELETE FROM kb_chunks;",
-    )
-    .map_err(|error| format!("清空本机文稿失败：{error}"))?;
+    clear_local_content_inner(&tx)?;
     store::clear_sync_data(&tx)?;
     tx.commit()
         .map_err(|error| format!("提交清空本机文稿事务失败：{error}"))?;
     Ok(())
+}
+
+/// 批准后加入空间：清空（如选择以对方为准）+ 绑定 + Lamport 水位在同一事务内完成。
+fn prepare_join_binding(
+    identity: &WebDavIdentity,
+    replace_local: bool,
+    lamport_floor: i64,
+) -> Result<(), String> {
+    db::with_db(|conn| {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("开始加入空间事务失败：{error}"))?;
+        if replace_local {
+            clear_local_content_inner(&tx)?;
+        }
+        store::clear_sync_data(&tx)?;
+        store::set_binding(&tx, &identity.vault_id, &identity.device_id, true)?;
+        store::set_lamport_at_least(&tx, lamport_floor)?;
+        store::set_active(&tx, true)?;
+        tx.commit()
+            .map_err(|error| format!("提交加入空间事务失败：{error}"))?;
+        Ok::<(), String>(())
+    })
 }
 
 pub async fn create_space(device_name: &str) -> Result<SpaceCreatedView, String> {
@@ -479,10 +487,13 @@ pub async fn start_offer() -> Result<pairing::PairingStartView, String> {
     pairing::start_offer(&account, &identity, &client).await
 }
 
-pub async fn start_join(device_name: &str) -> Result<pairing::PairingStartView, String> {
+pub async fn start_join(
+    device_name: &str,
+    adopt_peer: bool,
+) -> Result<pairing::PairingStartView, String> {
     let account = active_account()?;
     let client = client_for(&account)?;
-    pairing::start_join(&account, device_name, &client).await
+    pairing::start_join(&account, device_name, adopt_peer, &client).await
 }
 
 pub async fn preview_offer(
@@ -503,6 +514,7 @@ pub async fn list_devices() -> Result<Vec<DeviceView>, String> {
 pub async fn find_offer(
     code: &str,
     device_name: &str,
+    adopt_peer: bool,
 ) -> Result<PairingStatusView, String> {
     let account = active_account()?;
     let client = client_for(&account)?;
@@ -510,6 +522,7 @@ pub async fn find_offer(
         &account,
         code,
         device_name,
+        adopt_peer,
         &client,
         &DbObservations,
     )
@@ -536,7 +549,18 @@ pub async fn join_status(pairing_id: &str) -> Result<PairingStatusView, String> 
     if view.status != "ready" {
         return Ok(view);
     }
-    // 人工确认只保留在持有空间的一方。加入方读到 approval 后自动保存身份并绑定。
+
+    let pending = pairing::pending_join(pairing_id)?;
+    let old_identity = identity::configured_identity().ok().flatten();
+    let counts = db::with_db(local_counts)?;
+    let has_local_content = counts.documents + counts.folders + counts.versions > 0;
+    if old_identity.is_some() && !pending.adopt_peer {
+        return Err("本机已有同步空间，必须选择以对方为准，或改用本机配对码".to_string());
+    }
+    if old_identity.is_none() && has_local_content && !pending.adopt_peer {
+        return Err("本机已有文稿，必须选择以对方为准或取消加入".to_string());
+    }
+
     // 与后台同步互斥；如果同步正在进行，保持 ready 让前端继续轮询重试。
     let _guard = match crate::services::sync_engine::acquire_exclusive() {
         Ok(guard) => guard,
@@ -545,18 +569,31 @@ pub async fn join_status(pairing_id: &str) -> Result<PairingStatusView, String> 
             return Ok(view);
         }
     };
-    let confirmed = pairing::confirm_join(pairing_id, &client, &DbObservations).await?;
-    let floor = match sync::remote_max_lamport(&client, &confirmed.identity.vault_id).await {
-        Ok(floor) => floor,
-        Err(error) => {
-            let _ = identity::delete_identity();
-            return Err(format!("读取远端 Lamport 水位失败，请重新配对：{}", error));
+
+    let floor = sync::remote_max_lamport(&client, &pending.identity.vault_id)
+        .await
+        .map_err(|error| format!("读取远端 Lamport 水位失败，请重新配对：{error}"))?;
+
+    if pending.adopt_peer {
+        // 防止旧身份继续同步旧空间；任务此时仍然保留，失败可重试。
+        if let (Some(account), Some(old_identity)) = (Some(&account), old_identity.as_ref()) {
+            if let Ok(client) = client_for(account) {
+                let _ = devices::delete_own_heartbeat(&client, old_identity).await;
+            }
         }
-    };
-    if let Err(error) = prepare_binding(&confirmed.identity, false, Some(floor)) {
-        let _ = identity::delete_identity();
+        identity::delete_identity()?;
+    }
+
+    identity::stage_identity(&pending.identity)?;
+    if let Err(error) = prepare_join_binding(&pending.identity, pending.adopt_peer, floor) {
+        identity::discard_staged_identity();
         return Err(error);
     }
+    if let Err(error) = identity::install_staged_identity() {
+        identity::discard_staged_identity();
+        return Err(error);
+    }
+    pairing::finish_join(pairing_id, &client, &DbObservations).await?;
     view.configured = true;
     view.status = "configured".to_string();
     view.message = Some("已加入同步空间，正在拉取远端数据…".to_string());
@@ -610,7 +647,17 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         crate::db::close_db();
         crate::db::set_data_dir(dir.clone());
-        crate::db::with_db(|_| {});
+        crate::db::with_db(|conn| {
+            conn.execute(
+                "INSERT INTO note_document(
+                   id, folder_id, title, content, branch_name, sort_order,
+                   create_time, update_time, deleted, is_locked
+                 ) VALUES ('local-doc', 'folder-1', '本机旧任务', '<p>old</p>', NULL, 0,
+                   '2026-11-24T10:00:00', '2026-11-24T10:00:00', 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
         secure::set_test_master_key(random_vault_key().unwrap());
 
         let account = WebDavAccount {
@@ -640,6 +687,7 @@ mod tests {
             &account,
             &offer.short_code,
             "Guest",
+            true,
             &client,
             &DbObservations,
         )
@@ -651,6 +699,11 @@ mod tests {
         pairing::approve_offer(&offer.pairing_id, &client, &DbObservations)
             .await
             .unwrap();
+        let before: i64 = crate::db::with_db(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM note_document", [], |row| row.get(0))
+                .unwrap()
+        });
+        assert_eq!(before, 1, "批准前不得清空本机任务");
 
         let view = super::join_status(&offer.pairing_id).await.unwrap();
         assert!(view.configured);
@@ -660,6 +713,11 @@ mod tests {
         let state = crate::db::with_db(|conn| store::load_state(conn)).unwrap();
         assert_eq!(state.vault_id, host.vault_id);
         assert!(crate::db::with_db(|conn| store::is_active(conn)));
+        let after: i64 = crate::db::with_db(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM note_document", [], |row| row.get(0))
+                .unwrap()
+        });
+        assert_eq!(after, 0, "批准成功后应清空本机任务");
 
         pairing::clear_session();
         secure::clear_test_master_key();

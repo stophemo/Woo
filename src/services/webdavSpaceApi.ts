@@ -123,10 +123,6 @@ export function getJoinState(): Promise<JoinLocalStateView> {
   return invoke<JoinLocalStateView>('webdavSpace:joinState')
 }
 
-export function clearLocalForJoin(): Promise<void> {
-  return invoke<void>('webdavSpace:clearLocalForJoin')
-}
-
 export function createSpace(deviceName: string): Promise<SpaceCreatedView> {
   return invoke<SpaceCreatedView>('webdavSpace:create', { deviceName })
 }
@@ -143,8 +139,8 @@ export function startOffer(): Promise<PairingStartView> {
   return invoke<PairingStartView>('webdavSpace:startOffer')
 }
 
-export function startJoin(deviceName: string): Promise<PairingStartView> {
-  return invoke<PairingStartView>('webdavSpace:startJoin', { deviceName })
+export function startJoin(deviceName: string, adoptPeer: boolean): Promise<PairingStartView> {
+  return invoke<PairingStartView>('webdavSpace:startJoin', { deviceName, adoptPeer })
 }
 
 export function previewOffer(code: string): Promise<OfferPreviewView> {
@@ -155,8 +151,12 @@ export function listDevices(): Promise<WebDavDeviceView[]> {
   return invoke<WebDavDeviceView[]>('webdavSpace:listDevices')
 }
 
-export function findOffer(code: string, deviceName: string): Promise<PairingStatusView> {
-  return invoke<PairingStatusView>('webdavSpace:findOffer', { code, deviceName })
+export function findOffer(
+  code: string,
+  deviceName: string,
+  adoptPeer: boolean,
+): Promise<PairingStatusView> {
+  return invoke<PairingStatusView>('webdavSpace:findOffer', { code, deviceName, adoptPeer })
 }
 
 export function findJoin(code: string): Promise<PairingStatusView> {
@@ -187,7 +187,6 @@ export default {
   getConfig,
   connectAccount,
   joinState: getJoinState,
-  clearLocalForJoin,
   createSpace,
   leaveSpace,
   syncNow,

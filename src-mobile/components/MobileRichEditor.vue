@@ -598,7 +598,7 @@ const editor = useEditor({
       autocomplete: 'off',
       enterkeyhint: 'enter',
     },
-    handlePaste: (view, event) => {
+    handlePaste: (_view, event) => {
       const file = Array.from(event.clipboardData?.files || []).find(item => item.type.startsWith('image/'))
       if (!file) return false
       event.preventDefault()

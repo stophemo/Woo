@@ -561,7 +561,6 @@ pub fn run() {
             commands::webdav_space::webdav_space_get_config,
             commands::webdav_space::webdav_space_connect_account,
             commands::webdav_space::webdav_space_join_state,
-            commands::webdav_space::webdav_space_clear_local_for_join,
             commands::webdav_space::webdav_space_create,
             commands::webdav_space::webdav_space_leave,
             commands::webdav_space::webdav_space_sync_now,

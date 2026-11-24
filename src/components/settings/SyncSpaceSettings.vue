@@ -52,7 +52,8 @@
     <p v-if="config?.notice" class="sync-notice">{{ config.notice }}</p>
 
     <template v-if="config?.account.active && !config?.spaceConfigured && !guestPairing && !hostPairing">
-      <div class="sync-box">
+      <div class="sync-choice-grid">
+      <div class="sync-box sync-choice span-2">
         <h4>建立同步空间</h4>
         <p class="sync-help">第一台设备建立空间后，其他设备用六位配对码加入。请确认本机数据是当前最新版本。</p>
         <label class="sync-field">
@@ -64,7 +65,7 @@
         </div>
       </div>
 
-      <div class="sync-box">
+      <div class="sync-box sync-choice">
         <h4>加入已有空间：输入配对码</h4>
         <p class="sync-help">在已有设备上点击「显示配对码」，把六位数字填到这里。已有设备批准后，本机会自动完成加入。</p>
         <label class="sync-field">
@@ -86,7 +87,7 @@
         </div>
       </div>
 
-      <div class="sync-box">
+      <div class="sync-box sync-choice">
         <h4>我是新设备：显示我的配对码</h4>
         <p class="sync-help">生成六位码后，在已有设备上输入并批准；批准后本机会自动完成加入，不需要再点确认。</p>
         <label class="sync-field">
@@ -97,24 +98,33 @@
           <button class="sync-btn" :disabled="busy" @click="requestStartJoin">显示我的配对码</button>
         </div>
       </div>
+      </div>
     </template>
 
     <template v-if="config?.active">
-      <div class="sync-box">
-        <div class="sync-row"><span>WebDAV</span><code>{{ config.account.endpoint }}</code></div>
-        <div class="sync-row"><span>账号</span><code>{{ config.account.username }}</code></div>
-        <div class="sync-row"><span>空间指纹</span><code>{{ config.identity.spaceFingerprint }}</code></div>
-        <div class="sync-row"><span>本机</span><code>{{ config.identity.deviceName }} · {{ platformLabel(config.identity.platform) }}</code></div>
-        <div class="sync-row">
-          <span>状态</span>
-          <code>{{ syncStore.isSyncing ? '同步中…' : syncStore.lastSyncLabel }}</code>
+      <div class="space-hero">
+        <div class="space-hero-top">
+          <div class="space-hero-copy">
+            <span class="space-kicker">WebDAV 同步空间</span>
+            <strong class="space-fingerprint">{{ config.identity.spaceFingerprint }}</strong>
+            <button class="space-id-copy" type="button" @click="copySpaceId">
+              <span>空间 ID</span>
+              <code>{{ config.identity.vaultId }}</code>
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+          <span class="space-status" :class="{ syncing: syncStore.isSyncing }">
+            <span class="status-dot"></span>
+            {{ syncStore.isSyncing ? '同步中' : syncStore.lastSyncLabel }}
+          </span>
         </div>
-        <p v-if="syncStore.pendingChanges > 0" class="sync-help">待同步 {{ syncStore.pendingChanges }} 项</p>
-        <p class="sync-help">
-          同步会在启动、本地修改、回到前台和每 15 分钟兜底时进行，因此另一台设备的修改不会立刻出现。
-          设备列表来自加密心跳，只读；WebDAV 没有服务端，不能远程吊销。要阻止旧设备，请修改 WebDAV 应用密码。
-        </p>
-        <div class="sync-actions">
+        <div class="space-meta-grid">
+          <div><span>WebDAV</span><code>{{ config.account.endpoint }}</code></div>
+          <div><span>账号</span><code>{{ config.account.username }}</code></div>
+          <div><span>本机</span><code>{{ config.identity.deviceName }} · {{ platformLabel(config.identity.platform) }}</code></div>
+          <div><span>待同步</span><code>{{ syncStore.pendingChanges || 0 }} 项</code></div>
+        </div>
+        <div class="space-actions">
           <button class="sync-btn primary" :disabled="syncStore.isSyncing" @click="syncNow">
             {{ syncStore.isSyncing ? '同步中…' : '立即同步' }}
           </button>
@@ -127,6 +137,7 @@
           </button>
           <button class="sync-btn danger" :disabled="busy" @click="leave">退出空间</button>
         </div>
+        <p class="space-note">不是实时同步；设备列表来自加密心跳，只读，不能远程吊销。</p>
       </div>
 
       <div v-if="showHostJoinInput" class="sync-box">
@@ -188,10 +199,18 @@
             <span v-if="device.isCurrent" class="device-current">当前设备</span>
             <span class="device-meta">
               {{ platformLabel(device.platform) }} · {{ formatLastSeen(device.lastSeenAt) }} · v{{ device.appVersion }}
+              <template v-if="isStale(device.lastSeenAt)"> · 很久未同步</template>
             </span>
           </div>
         </div>
-        <p v-if="devices.length === 0" class="sync-help">完成一次同步后会显示设备心跳。</p>
+        <div v-if="config?.active && !devices.some(device => device.isCurrent)" class="device-row">
+          <div>
+            <strong>{{ config.identity.deviceName }}</strong>
+            <span class="device-current">当前设备</span>
+            <span class="device-meta">{{ platformLabel(config.identity.platform) }} · 尚未同步</span>
+          </div>
+        </div>
+        <p v-if="config?.active && devices.filter(device => !device.isCurrent).length === 0" class="sync-help">只有当前设备。</p>
         <p v-if="deviceError" class="sync-error">{{ deviceError }}</p>
         <p class="sync-help">只读列表，不能移除设备；旧设备仍持有 vaultKey，只能通过修改 WebDAV 应用密码阻止它继续访问。</p>
       </div>
@@ -258,15 +277,15 @@
 
     <div v-if="joinPrompt" class="join-prompt-overlay" @click.self="cancelJoinPrompt">
       <div class="join-prompt-dialog">
-        <h4>{{ joinPrompt.state.hasIdentity ? '选择以哪台设备的数据为准' : '本机文稿将被清空' }}</h4>
+        <h4>{{ joinPrompt.state.hasIdentity ? '选择以哪台设备的数据为准' : '加入后以对方数据为准' }}</h4>
         <p class="join-prompt-message">{{ joinPromptMessage }}</p>
         <p class="sync-warning">
-          清空只影响本机，不删除 WebDAV 上的旧空间；WebDAV 账号与界面偏好会保留。
-          清空发生在对方批准之前；如果随后配对失败，本机数据不会自动恢复。
+          选择以对方为准后只会开始配对；只有对方批准成功后才会清空本机文稿。
+          取消、过期或未批准都不会清空。清空只影响本机，不删除 WebDAV 上的旧空间。
         </p>
         <div class="sync-actions">
           <button class="sync-btn primary" :disabled="busy" @click="clearAndContinue">
-            {{ joinPrompt.state.hasIdentity ? '以对方为准（清空本机后加入）' : '清空本机文稿并加入' }}
+            以对方为准（批准后清空并加入）
           </button>
           <button v-if="joinPrompt.state.hasIdentity" class="sync-btn" :disabled="busy" @click="joinUsingLocal">
             以本机为准（请在对方设备输入本机配对码）
@@ -321,6 +340,7 @@ const devices = ref<WebDavDeviceView[]>([])
 const hostPairing = ref<(PairingStatusView & { shortCode?: string }) | null>(null)
 const guestPairing = ref<(PairingStatusView & { shortCode?: string }) | null>(null)
 const joinPrompt = ref<PendingJoin | null>(null)
+const guestAdoptPeer = ref(false)
 
 let hostTimer: ReturnType<typeof setInterval> | null = null
 let guestTimer: ReturnType<typeof setInterval> | null = null
@@ -384,6 +404,21 @@ function formatLastSeen(ms: number) {
 
 function platformLabel(platform: string) {
   return ({ macos: 'macOS', windows: 'Windows', linux: 'Linux', android: 'Android', ios: 'iOS' } as Record<string, string>)[platform] || platform
+}
+
+function isStale(lastSeenAt: number) {
+  return Date.now() - lastSeenAt > 30 * 24 * 60 * 60 * 1000
+}
+
+async function copySpaceId() {
+  const id = config.value?.identity.vaultId
+  if (!id) return
+  try {
+    await navigator.clipboard.writeText(id)
+    notice.value = '空间 ID 已复制。'
+  } catch {
+    notice.value = '复制失败，请手动选择空间 ID。'
+  }
 }
 
 async function loadConfig() {
@@ -476,7 +511,7 @@ async function requestJoinOffer(code: string) {
     const state = await webdavSpaceApi.joinState()
     const drafts = localDraftCount()
     if (!state.hasIdentity && !state.hasLocalData && drafts === 0) {
-      await beginFindOffer(code, preview.vaultId)
+      await beginFindOffer(code, preview.vaultId, false)
       return
     }
     joinPrompt.value = { mode: 'offer', code, preview, state, draftCount: drafts }
@@ -487,11 +522,12 @@ async function requestJoinOffer(code: string) {
   }
 }
 
-async function beginFindOffer(code: string, expectedVaultId?: string) {
+async function beginFindOffer(code: string, expectedVaultId?: string, adoptPeer = false) {
   showJoinOtherInput.value = false
   joinOtherCode.value = ''
   await resetPairing()
-  const status = await webdavSpaceApi.findOffer(code, deviceName.value)
+  guestAdoptPeer.value = adoptPeer
+  const status = await webdavSpaceApi.findOffer(code, deviceName.value, adoptPeer)
   if (expectedVaultId && status.vaultId !== expectedVaultId) {
     await webdavSpaceApi.cancelPairing().catch(() => {})
     throw new Error('配对码对应的空间已变化，请重新输入')
@@ -511,7 +547,7 @@ async function requestStartJoin() {
     const state = await webdavSpaceApi.joinState()
     const drafts = localDraftCount()
     if (!state.hasIdentity && !state.hasLocalData && drafts === 0) {
-      await beginStartJoin()
+      await beginStartJoin(false)
       return
     }
     joinPrompt.value = { mode: 'join', code: '', preview: null, state, draftCount: drafts }
@@ -522,11 +558,12 @@ async function requestStartJoin() {
   }
 }
 
-async function beginStartJoin() {
+async function beginStartJoin(adoptPeer = false) {
   showJoinOtherInput.value = false
   joinOtherCode.value = ''
   await resetPairing()
-  const start = await webdavSpaceApi.startJoin(deviceName.value)
+  guestAdoptPeer.value = adoptPeer
+  const start = await webdavSpaceApi.startJoin(deviceName.value, adoptPeer)
   guestPairing.value = {
     pairingId: start.pairingId,
     shortCode: start.shortCode,
@@ -555,23 +592,17 @@ async function clearAndContinue() {
         throw new Error('配对码对应的空间已变化，请重新输入')
       }
     }
-    await webdavSpaceApi.clearLocalForJoin()
-    workspaceStore.clearLocalDataForJoin()
-    await workspaceStore.bootstrap()
-    await workspaceStore.restoreLastView()
     joinPrompt.value = null
     showJoinOtherInput.value = false
     joinOtherCode.value = ''
-    await loadConfig()
-    await syncStore.refreshStatus()
     if (prompt.mode === 'offer') {
-      await beginFindOffer(prompt.code, prompt.preview?.vaultId)
+      await beginFindOffer(prompt.code, prompt.preview?.vaultId, true)
     } else {
-      await beginStartJoin()
+      await beginStartJoin(true)
     }
-    notice.value = '已清空本机文稿，正在加入对方空间…'
+    notice.value = '等待对方批准；批准成功后才清空本机文稿并加入。'
   } catch (err: any) {
-    error.value = err?.message || '清空本机数据失败'
+    error.value = err?.message || '开始加入失败'
   } finally {
     busy.value = false
   }
@@ -579,12 +610,14 @@ async function clearAndContinue() {
 
 function joinUsingLocal() {
   joinPrompt.value = null
+  guestAdoptPeer.value = false
   notice.value = '已取消本次加入，本机数据未改变。请在本机点「显示配对码」，再到对方设备输入本机配对码。'
 }
 
 function cancelJoinPrompt() {
   const prompt = joinPrompt.value
   joinPrompt.value = null
+  guestAdoptPeer.value = false
   notice.value = prompt && !prompt.state.hasIdentity
     ? '已取消加入，本机数据未改变。如果要以本机数据为准，请先建立同步空间，再让对方输入本机配对码。'
     : '已取消加入，本机数据未改变。'
@@ -598,6 +631,10 @@ async function pollGuest() {
     if (status.configured) {
       stopGuestTimer()
       guestPairing.value = null
+      if (guestAdoptPeer.value) {
+        workspaceStore.clearLocalDataForJoin()
+        guestAdoptPeer.value = false
+      }
       await loadConfig()
       await syncStore.refreshStatus()
       const synced = await syncStore.triggerSync()
@@ -722,6 +759,7 @@ async function cancelPairing() {
   stopGuestTimer()
   hostPairing.value = null
   guestPairing.value = null
+  guestAdoptPeer.value = false
   joinCode.value = ''
   hostJoinCode.value = ''
   await webdavSpaceApi.cancelPairing().catch(() => {})
@@ -774,7 +812,27 @@ onBeforeUnmount(() => {
 .sync-space-section h3 { margin: 0; font-size: 15px; }
 .sync-space-section h4 { margin: 0 0 8px; font-size: 13px; }
 .sync-help { margin: 0; color: var(--text-secondary, #8a8a8a); font-size: 12px; line-height: 1.6; }
-.sync-box { border: 1px solid var(--border-color, #e5e5e5); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sync-box { border: 1px solid var(--border-color, #e5e5e5); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--bg-secondary, #fff) 72%, transparent); }
+.sync-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sync-choice.span-2 { grid-column: 1 / -1; }
+.space-hero { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--border-color, #e5e5e5); border-radius: 14px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent-color, #2f6fed) 7%, var(--bg-elevated, #fff)), var(--bg-elevated, #fff) 58%); box-shadow: 0 8px 24px color-mix(in srgb, #000 6%, transparent); }
+.space-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.space-hero-copy { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.space-kicker { color: var(--text-secondary, #8a8a8a); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.space-fingerprint { color: var(--text-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 26px; letter-spacing: .16em; line-height: 1.1; }
+.space-id-copy { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--text-secondary, #8a8a8a); font: inherit; font-size: 11px; cursor: pointer; text-align: left; }
+.space-id-copy code { overflow: hidden; color: var(--text-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.space-id-copy .copy-label { flex: 0 0 auto; color: var(--accent-color, #2f6fed); }
+.space-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--accent-color, #2f6fed) 22%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent-color, #2f6fed) 8%, transparent); color: var(--text-secondary, #8a8a8a); font-size: 11px; }
+.space-status .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-color, #2f6fed); }
+.space-status.syncing .status-dot { animation: pulse 1.2s ease-in-out infinite; }
+.space-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.space-meta-grid > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.space-meta-grid span { color: var(--text-secondary, #8a8a8a); font-size: 10px; }
+.space-meta-grid code { overflow: hidden; color: var(--text-primary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.space-actions { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 2px; }
+.space-note { margin: 0; color: var(--text-secondary, #8a8a8a); font-size: 11px; line-height: 1.5; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .sync-row { display: flex; gap: 10px; align-items: baseline; font-size: 12px; }
 .sync-row > span { color: var(--text-secondary, #8a8a8a); min-width: 72px; }
 .sync-row code { overflow-wrap: anywhere; }
@@ -795,6 +853,10 @@ onBeforeUnmount(() => {
 .sync-notice { margin: 0; color: #1d7a46; font-size: 12px; }
 .sync-warning { margin: 0; color: #a15c00; font-size: 12px; line-height: 1.6; }
 .sync-error { margin: 0; color: #c0392b; font-size: 12px; }
+@media (max-width: 640px) {
+  .sync-choice-grid, .space-meta-grid { grid-template-columns: minmax(0, 1fr); }
+  .sync-choice.span-2 { grid-column: auto; }
+}
 .device-row { padding: 7px 0; border-top: 1px solid var(--border-color, #eee); font-size: 12px; }
 .device-row:first-of-type { border-top: 0; }
 .device-row strong { font-weight: 600; }

@@ -217,6 +217,9 @@ impl WebdavClient {
             StatusCode::NOT_FOUND => RemoteError::NotFound,
             StatusCode::CONFLICT => RemoteError::Conflict,
             StatusCode::PRECONDITION_FAILED => RemoteError::Conflict,
+            StatusCode::INSUFFICIENT_STORAGE => RemoteError::Other(
+                "云盘空间不足，请清理空间或更换 WebDAV 账号".to_string(),
+            ),
             _ => RemoteError::Other(format!(
                 "WebDAV 请求失败（{}）：HTTP {}",
                 action,

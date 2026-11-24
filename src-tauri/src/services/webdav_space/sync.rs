@@ -413,9 +413,6 @@ pub async fn sync_now(
     store: &dyn RemoteStore,
     identity: &WebDavIdentity,
 ) -> Result<SyncResult, String> {
-    if let Err(error) = devices::write_heartbeat(store, identity).await {
-        log::warn!("[WebDAV] 写入设备心跳失败：{}", error);
-    }
     let _ = db::with_db(|conn| store::cleanup_expired_deletes(conn))?;
 
     ensure_root_cached(store, &identity.vault_id).await?;
@@ -452,6 +449,9 @@ pub async fn sync_now(
 
     let finished_at = now_str();
     db::with_db(|conn| store::set_last_success(conn, &finished_at))?;
+    if let Err(error) = devices::write_heartbeat(store, identity).await {
+        log::warn!("[WebDAV] 写入设备心跳失败：{}", error);
+    }
     Ok(SyncResult {
         pushed_count: pushed as i32,
         pulled_count: pulled as i32,

@@ -16,6 +16,7 @@ use crate::services::vault_sync::config::{default_device_name, platform_name};
 use super::secure;
 
 const IDENTITY_FILE: &str = "webdav-identity.enc.json";
+const STAGED_IDENTITY_FILE: &str = "webdav-identity.staged.json";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -144,7 +145,42 @@ pub fn identity_view(identity: Option<&WebDavIdentity>) -> WebDavIdentityView {
     }
 }
 
+fn staged_identity_path() -> PathBuf {
+    db::data_dir().join(STAGED_IDENTITY_FILE)
+}
+
+/// 先写临时身份文件；只有本地任务清空/绑定成功后才替换正式身份。
+pub fn stage_identity(identity: &WebDavIdentity) -> Result<PathBuf, String> {
+    if !identity_is_valid(identity) {
+        return Err("拒绝暂存无效的同步身份".to_string());
+    }
+    let bytes = serde_json::to_vec(identity)
+        .map_err(|error| format!("序列化同步身份失败：{error}"))?;
+    let path = staged_identity_path();
+    secure::save_file(&path, "identity", &bytes)?;
+    Ok(path)
+}
+
+pub fn install_staged_identity() -> Result<(), String> {
+    let staged = staged_identity_path();
+    if !staged.exists() {
+        return Err("待安装的同步身份不存在，请重新配对".to_string());
+    }
+    let final_path = identity_path();
+    #[cfg(windows)]
+    {
+        let _ = std::fs::remove_file(&final_path);
+    }
+    std::fs::rename(&staged, &final_path)
+        .map_err(|error| format!("保存同步身份失败：{error}"))
+}
+
+pub fn discard_staged_identity() {
+    let _ = std::fs::remove_file(staged_identity_path());
+}
+
 pub fn save_identity(identity: &WebDavIdentity) -> Result<(), String> {
+    discard_staged_identity();
     if !identity_is_valid(identity) {
         return Err("拒绝保存无效的同步身份".to_string());
     }
@@ -160,6 +196,7 @@ pub fn save_identity(identity: &WebDavIdentity) -> Result<(), String> {
 }
 
 pub fn delete_identity() -> Result<(), String> {
+    discard_staged_identity();
     secure::delete_file(&identity_path())
 }
 

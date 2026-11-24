@@ -123,8 +123,10 @@ pub struct OfferPreviewView {
     pub space_fingerprint: String,
 }
 
-pub struct ConfirmedJoin {
+pub struct PendingJoin {
     pub identity: WebDavIdentity,
+    pub adopt_peer: bool,
+    pub written: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,6 +153,7 @@ enum PairingSession {
     },
     OfferGuest {
         pairing_id: String,
+        adopt_peer: bool,
         keypair: PairingKeyPair,
         offer_public: [u8; 32],
         offer_vault_id: String,
@@ -178,6 +181,7 @@ enum PairingSession {
     },
     JoinGuest {
         pairing_id: String,
+        adopt_peer: bool,
         keypair: PairingKeyPair,
         join_secret: [u8; 32],
         device_id: String,
@@ -899,6 +903,7 @@ pub async fn find_offer_and_claim(
     _account: &WebDavAccount,
     code: &str,
     device_name: &str,
+    adopt_peer: bool,
     store: &dyn RemoteStore,
     obs: &dyn ObservationStore,
 ) -> Result<PairingStatusView, String> {
@@ -945,6 +950,7 @@ pub async fn find_offer_and_claim(
         })?;
     set_session(PairingSession::OfferGuest {
         pairing_id: pairing_id.clone(),
+        adopt_peer,
         keypair,
         offer_public: host_public,
         offer_vault_id: offer.vault_id.clone(),
@@ -1189,44 +1195,59 @@ pub async fn join_status(
     }
 }
 
-/// 加入方读到 approval 后自动调用：保存身份并清理配对文件。人工确认已在持有空间的一方完成。
-pub async fn confirm_join(
-    pairing_id: &str,
-    store: &dyn RemoteStore,
-    obs: &dyn ObservationStore,
-) -> Result<ConfirmedJoin, String> {
+/// 读取已解封的待加入身份和用户选择的数据基准，不做任何落盘/清理。
+pub fn pending_join(pairing_id: &str) -> Result<PendingJoin, String> {
     let session = guest_session(pairing_id)
         .ok_or_else(|| "配对会话不存在".to_string())?;
     if now_ms() >= session.expires_at() {
         return Err("配对码已过期，请重新生成".to_string());
     }
-    let (identity, written) = match &session {
+    let (identity, adopt_peer, written) = match &session {
         PairingSession::OfferGuest {
             pending_identity,
+            adopt_peer,
             written,
             ..
         } => (
             pending_identity
                 .clone()
                 .ok_or_else(|| "还没有收到可确认的配对结果".to_string())?,
+            *adopt_peer,
             written.clone(),
         ),
         PairingSession::JoinGuest {
             pending_identity,
+            adopt_peer,
             written,
             ..
         } => (
             pending_identity
                 .clone()
                 .ok_or_else(|| "还没有收到可确认的配对结果".to_string())?,
+            *adopt_peer,
             written.clone(),
         ),
         _ => return Err("当前配对角色不支持该操作".to_string()),
     };
-    identity::save_identity(&identity)?;
-    cleanup_pairing_id(store, obs, pairing_id, &written, &[]).await;
-    drop_session(pairing_id, 2);
-    Ok(ConfirmedJoin { identity })
+    Ok(PendingJoin {
+        identity,
+        adopt_peer,
+        written,
+    })
+}
+
+/// 新身份保存并绑定成功后，清理本次配对文件并结束会话。
+pub async fn finish_join(
+    pairing_id: &str,
+    store: &dyn RemoteStore,
+    obs: &dyn ObservationStore,
+) -> Result<(), String> {
+    let session = guest_session(pairing_id)
+        .ok_or_else(|| "配对会话不存在".to_string())?;
+    let role = session.role();
+    cleanup_pairing_id(store, obs, pairing_id, session.written(), &[]).await;
+    drop_session(pairing_id, role);
+    Ok(())
 }
 
 // ============================================================
@@ -1236,6 +1257,7 @@ pub async fn confirm_join(
 pub async fn start_join(
     _account: &WebDavAccount,
     device_name: &str,
+    adopt_peer: bool,
     store: &dyn RemoteStore,
 ) -> Result<PairingStartView, String> {
     let pairing_id = uuid::Uuid::new_v4().to_string();
@@ -1265,6 +1287,7 @@ pub async fn start_join(
     write_file(store, &path, &file, true).await?;
     set_session(PairingSession::JoinGuest {
         pairing_id: pairing_id.clone(),
+        adopt_peer,
         keypair,
         join_secret,
         device_id,
@@ -1529,6 +1552,7 @@ pub(crate) mod tests {
             &account,
             &offer.short_code,
             "Guest",
+            false,
             &remote,
             &obs,
         )
@@ -1585,7 +1609,7 @@ pub(crate) mod tests {
         let account = account();
         let host = identity::create_identity("Host").unwrap();
 
-        let join = start_join(&account, "Guest", &remote).await.unwrap();
+        let join = start_join(&account, "Guest", false, &remote).await.unwrap();
         // approval-only：没有 resolve 时必须忽略。
         let approval_path = pairing_path(&approval_name(&join.pairing_id));
         let fake_approval = PairingFile {
@@ -1655,7 +1679,7 @@ pub(crate) mod tests {
         )
         .await
         .unwrap();
-        let error = find_offer_and_claim(&account, code, "Guest", &remote, &obs)
+        let error = find_offer_and_claim(&account, code, "Guest", false, &remote, &obs)
             .await
             .unwrap_err();
         assert!(error.contains("冲突"));
@@ -1670,7 +1694,7 @@ pub(crate) mod tests {
         let account = account();
         let host = identity::create_identity("Host").unwrap();
         let offer = start_offer(&account, &host, &remote).await.unwrap();
-        find_offer_and_claim(&account, &offer.short_code, "Guest", &remote, &obs)
+        find_offer_and_claim(&account, &offer.short_code, "Guest", false, &remote, &obs)
             .await
             .unwrap();
         offer_status(&offer.pairing_id, &remote, &obs).await.unwrap();
@@ -1755,7 +1779,7 @@ pub(crate) mod tests {
             .lock()
             .unwrap()
             .insert(path.clone(), now_ms() - 301_000);
-        let error = find_offer_and_claim(&account, code, "Guest", &remote, &obs)
+        let error = find_offer_and_claim(&account, code, "Guest", false, &remote, &obs)
             .await
             .unwrap_err();
         assert!(error.contains("没有找到"));
@@ -1793,6 +1817,7 @@ mod local_webdav_smoke {
             &account,
             &offer.short_code,
             "Guest",
+            false,
             &client,
             &obs,
         )
@@ -1806,7 +1831,7 @@ mod local_webdav_smoke {
         cleanup_pairing_id(&client, &obs, &offer.pairing_id, &[], &[]).await;
         clear_session();
 
-        let join = start_join(&account, "Guest", &client).await.unwrap();
+        let join = start_join(&account, "Guest", false, &client).await.unwrap();
         let host_view = find_join_and_resolve(
             &account,
             &host,

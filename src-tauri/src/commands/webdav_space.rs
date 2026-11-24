@@ -31,14 +31,6 @@ pub fn webdav_space_join_state() -> CommandResult<webdav_space::JoinLocalStateVi
     }
 }
 
-#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceClearLocalForJoin")]
-pub async fn webdav_space_clear_local_for_join() -> CommandResult<()> {
-    match webdav_space::clear_local_for_join().await {
-        Ok(()) => CommandResult::success(()),
-        Err(message) => CommandResult::error(&message),
-    }
-}
-
 #[tauri::command(rename_all = "camelCase", rename = "webdavSpaceCreate")]
 pub async fn webdav_space_create(
     device_name: String,
@@ -77,8 +69,9 @@ pub async fn webdav_space_start_offer(
 #[tauri::command(rename_all = "camelCase", rename = "webdavSpaceStartJoin")]
 pub async fn webdav_space_start_join(
     device_name: String,
+    adopt_peer: bool,
 ) -> CommandResult<webdav_space::pairing::PairingStartView> {
-    match webdav_space::start_join(&device_name).await {
+    match webdav_space::start_join(&device_name, adopt_peer).await {
         Ok(view) => CommandResult::success(view),
         Err(message) => CommandResult::error(&message),
     }
@@ -107,8 +100,9 @@ pub async fn webdav_space_list_devices(
 pub async fn webdav_space_find_offer(
     code: String,
     device_name: String,
+    adopt_peer: bool,
 ) -> CommandResult<webdav_space::pairing::PairingStatusView> {
-    match webdav_space::find_offer(&code, &device_name).await {
+    match webdav_space::find_offer(&code, &device_name, adopt_peer).await {
         Ok(view) => CommandResult::success(view),
         Err(message) => CommandResult::error(&message),
     }
