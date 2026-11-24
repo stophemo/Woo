@@ -103,6 +103,7 @@ pub struct PairingStartView {
 pub struct PairingStatusView {
     pub pairing_id: String,
     pub status: String,
+    pub configured: bool,
     pub expires_at: i64,
     pub verification_code: Option<String>,
     pub peer: Option<PeerView>,
@@ -113,18 +114,17 @@ pub struct PairingStatusView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct JoinConfirmView {
-    pub configured: bool,
+pub struct OfferPreviewView {
+    pub pairing_id: String,
+    pub short_code: String,
+    pub expires_at: i64,
+    pub peer: PeerView,
     pub vault_id: String,
-    pub device_id: String,
-    pub device_name: String,
-    pub platform: String,
     pub space_fingerprint: String,
 }
 
 pub struct ConfirmedJoin {
     pub identity: WebDavIdentity,
-    pub view: JoinConfirmView,
 }
 
 #[derive(Debug, Clone)]
@@ -562,6 +562,7 @@ fn status_view(
     PairingStatusView {
         pairing_id: pairing_id.to_string(),
         status: status.to_string(),
+        configured: false,
         expires_at,
         verification_code,
         peer,
@@ -644,6 +645,29 @@ async fn observe_single_file(
     }
     let expires_at = first_seen.saturating_add(ttl(&file).saturating_mul(1000));
     Ok(Some((file, expires_at)))
+}
+
+/// 只读预览 offer，不写 claim，供加入方在清空本机数据前显示对方设备。
+pub async fn preview_offer(
+    store: &dyn RemoteStore,
+    obs: &dyn ObservationStore,
+    code: &str,
+) -> Result<OfferPreviewView, String> {
+    let (offer, expires_at) =
+        find_unique_pairing_file(store, obs, PairingKind::Offer, code).await?;
+    let _ = validate_public(&offer.initiator_public_key, "发起设备公钥")?;
+    let _ = validate_secret(&offer.pairing_secret, "配对密钥")?;
+    if offer.vault_id.is_empty() {
+        return Err("配对文件缺少同步空间 ID".to_string());
+    }
+    Ok(OfferPreviewView {
+        pairing_id: offer.pairing_id.clone(),
+        short_code: offer.short_code.clone(),
+        expires_at,
+        peer: peer_from_file(&offer),
+        vault_id: offer.vault_id.clone(),
+        space_fingerprint: space_fingerprint(&offer.vault_id),
+    })
 }
 
 // ============================================================
@@ -992,7 +1016,7 @@ pub async fn join_status(
                     Some(verification_code.clone()),
                     Some(offer_device.clone()),
                     Some(offer_vault_id.clone()),
-                    Some("请核对六位码和空间 ID 后点击「核对一致，完成加入」".to_string()),
+                    Some("等待已有设备批准；批准后本机会自动完成加入".to_string()),
                 ));
             }
             let approval_path = pairing_path(&approval_name(pairing_id));
@@ -1041,7 +1065,7 @@ pub async fn join_status(
                 Some(verification_code.clone()),
                 Some(offer_device.clone()),
                 Some(offer_vault_id.clone()),
-                Some("请核对六位码和空间 ID 后点击「核对一致，完成加入」".to_string()),
+                Some("等待已有设备批准；批准后本机会自动完成加入".to_string()),
             );
             update_session(session);
             let _ = approval;
@@ -1066,7 +1090,7 @@ pub async fn join_status(
                     Some(info.verification_code.clone()),
                     Some(info.approver.clone()),
                     Some(info.vault_id.clone()),
-                    Some("请核对六位码和空间 ID 后点击「核对一致，完成加入」".to_string()),
+                    Some("等待已有设备批准；批准后本机会自动完成加入".to_string()),
                 ));
             }
             if resolve.is_none() {
@@ -1156,7 +1180,7 @@ pub async fn join_status(
                 Some(info.verification_code.clone()),
                 Some(info.approver.clone()),
                 Some(info.vault_id.clone()),
-                Some("请核对六位码和空间 ID 后点击「核对一致，完成加入」".to_string()),
+                Some("等待已有设备批准；批准后本机会自动完成加入".to_string()),
             );
             update_session(session);
             return Ok(view);
@@ -1165,7 +1189,7 @@ pub async fn join_status(
     }
 }
 
-/// 用户人工核对后才会走到这里：保存身份并清理配对文件。
+/// 加入方读到 approval 后自动调用：保存身份并清理配对文件。人工确认已在持有空间的一方完成。
 pub async fn confirm_join(
     pairing_id: &str,
     store: &dyn RemoteStore,
@@ -1202,17 +1226,7 @@ pub async fn confirm_join(
     identity::save_identity(&identity)?;
     cleanup_pairing_id(store, obs, pairing_id, &written, &[]).await;
     drop_session(pairing_id, 2);
-    Ok(ConfirmedJoin {
-        view: JoinConfirmView {
-            configured: true,
-            vault_id: identity.vault_id.clone(),
-            device_id: identity.device_id.clone(),
-            device_name: identity.device_name.clone(),
-            platform: identity.platform.clone(),
-            space_fingerprint: space_fingerprint(&identity.vault_id),
-        },
-        identity,
-    })
+    Ok(ConfirmedJoin { identity })
 }
 
 // ============================================================
@@ -1682,6 +1696,29 @@ pub(crate) mod tests {
             .await
             .unwrap_err();
         assert!(error.contains("空间 ID"));
+        clear_session();
+    }
+
+    #[tokio::test]
+    async fn preview_offer_does_not_write_a_claim() {
+        let _guard = test_lock();
+        clear_session();
+        let remote = MemoryRemote::new();
+        let obs = MemoryObservations::default();
+        let account = account();
+        let host = identity::create_identity("Host").unwrap();
+        let offer = start_offer(&account, &host, &remote).await.unwrap();
+        let before = remote.files.lock().unwrap().len();
+        let preview = preview_offer(&remote, &obs, &offer.short_code).await.unwrap();
+        assert_eq!(preview.peer.name, host.device_name);
+        assert_eq!(preview.vault_id, host.vault_id);
+        assert_eq!(remote.files.lock().unwrap().len(), before);
+        assert!(!remote
+            .files
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|path| path.contains(&claim_name(&offer.pairing_id))));
         clear_session();
     }
 

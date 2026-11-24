@@ -47,7 +47,8 @@ export interface PairingPeerView {
 
 export interface PairingStatusView {
   pairingId: string
-  status: 'waiting' | 'claimed' | 'resolved' | 'ready' | 'approved' | 'expired' | string
+  status: 'waiting' | 'claimed' | 'resolved' | 'ready' | 'approved' | 'expired' | 'configured' | string
+  configured: boolean
   expiresAt: number
   verificationCode: string | null
   peer: PairingPeerView | null
@@ -56,13 +57,34 @@ export interface PairingStatusView {
   message: string | null
 }
 
-export interface JoinConfirmView {
-  configured: boolean
+export interface OfferPreviewView {
+  pairingId: string
+  shortCode: string
+  expiresAt: number
+  peer: PairingPeerView
   vaultId: string
-  deviceId: string
-  deviceName: string
-  platform: string
   spaceFingerprint: string
+}
+
+export interface JoinLocalStateView {
+  hasIdentity: boolean
+  vaultId: string | null
+  spaceFingerprint: string | null
+  lastSyncTime: string | null
+  documentCount: number
+  folderCount: number
+  versionCount: number
+  trashCount: number
+  hasLocalData: boolean
+}
+
+export interface WebDavDeviceView {
+  deviceId: string
+  name: string
+  platform: string
+  lastSeenAt: number
+  appVersion: string
+  isCurrent: boolean
 }
 
 export interface SpaceCreatedView {
@@ -97,6 +119,14 @@ export function connectAccount(
   })
 }
 
+export function getJoinState(): Promise<JoinLocalStateView> {
+  return invoke<JoinLocalStateView>('webdavSpace:joinState')
+}
+
+export function clearLocalForJoin(): Promise<void> {
+  return invoke<void>('webdavSpace:clearLocalForJoin')
+}
+
 export function createSpace(deviceName: string): Promise<SpaceCreatedView> {
   return invoke<SpaceCreatedView>('webdavSpace:create', { deviceName })
 }
@@ -115,6 +145,14 @@ export function startOffer(): Promise<PairingStartView> {
 
 export function startJoin(deviceName: string): Promise<PairingStartView> {
   return invoke<PairingStartView>('webdavSpace:startJoin', { deviceName })
+}
+
+export function previewOffer(code: string): Promise<OfferPreviewView> {
+  return invoke<OfferPreviewView>('webdavSpace:previewOffer', { code })
+}
+
+export function listDevices(): Promise<WebDavDeviceView[]> {
+  return invoke<WebDavDeviceView[]>('webdavSpace:listDevices')
 }
 
 export function findOffer(code: string, deviceName: string): Promise<PairingStatusView> {
@@ -141,10 +179,6 @@ export function approveJoin(pairingId: string): Promise<PairingStatusView> {
   return invoke<PairingStatusView>('webdavSpace:approveJoin', { pairingId })
 }
 
-export function confirmJoin(pairingId: string): Promise<JoinConfirmView> {
-  return invoke<JoinConfirmView>('webdavSpace:confirmJoin', { pairingId })
-}
-
 export function cancelPairing(): Promise<void> {
   return invoke<void>('webdavSpace:cancelPairing')
 }
@@ -152,17 +186,20 @@ export function cancelPairing(): Promise<void> {
 export default {
   getConfig,
   connectAccount,
+  joinState: getJoinState,
+  clearLocalForJoin,
   createSpace,
   leaveSpace,
   syncNow,
   startOffer,
   startJoin,
+  previewOffer,
+  listDevices,
   findOffer,
   findJoin,
   offerStatus,
   joinStatus,
   approveOffer,
   approveJoin,
-  confirmJoin,
   cancelPairing,
 }

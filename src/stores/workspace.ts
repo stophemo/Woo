@@ -226,6 +226,44 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     error.value = ''
   }
 
+  /**
+   * 加入其他同步空间前清空本机界面状态与本地草稿。
+   * 后端负责删除 SQLite 文稿/目录/版本，前端负责 localStorage 草稿与未落库保存。
+   */
+  function clearLocalDataForJoin() {
+    for (const timer of saveTimers.values()) clearTimeout(timer)
+    saveTimers.clear()
+    pendingSaves.clear()
+    savingPromises.clear()
+    saveErrors.clear()
+    pendingExternalFileWrites.clear()
+    externalFileWritingPromises.clear()
+    externalFileSaveErrors.clear()
+    deletingDocumentIds.clear()
+    if (draftCommitTimer) clearTimeout(draftCommitTimer)
+    draftCommitTimer = null
+    pendingDraftCommitId = null
+    dirtyRemoteConflictKeys.clear()
+    isExternalStreaming.value = false
+    drafts.value = []
+    trashDrafts.value = []
+    persistDrafts([])
+    persistTrashDrafts([])
+    externalFilePathMap.value = {}
+    persistExternalFilePathMap()
+    localStorage.removeItem(LAST_VIEW_KEY)
+    localStorage.removeItem(LAST_DOC_KEY)
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index)
+      if (key?.startsWith('sheet-')) localStorage.removeItem(key)
+    }
+    editingFolderId.value = null
+    lastVersionedDocId.value = null
+    versionRefreshTick.value += 1
+    reset()
+    saveActivity.value += 1
+  }
+
   // ============ 目录操作 ============
   function toggleFolder(folder: FolderNode) {
     folder.isExpanded = !folder.isExpanded
@@ -1686,6 +1724,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     folders,
     folderDocuments,
     currentDocumentData,
+    drafts,
+    trashDrafts,
     selectedFolderId,
     selectedFolderLocked,
     selectedDocumentId,
@@ -1698,6 +1738,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // 启动 & 重置
     bootstrap,
     reset,
+    clearLocalDataForJoin,
     restoreLastView,
     // 同步
     syncRefresh,

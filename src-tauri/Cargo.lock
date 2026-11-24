@@ -6685,7 +6685,7 @@ dependencies = [
 
 [[package]]
 name = "woo-tauri"
-version = "0.9.1"
+version = "0.8.1"
 dependencies = [
  "ammonia",
  "async-trait",

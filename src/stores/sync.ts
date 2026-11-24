@@ -33,13 +33,13 @@ export const useSyncStore = defineStore('sync', () => {
    * 监听主进程推送的同步状态，并接管「什么时候该补一轮同步」：
    * - 本地保存/目录变更：1.5 秒防抖后触发，连续输入不会每键同步；
    * - 回到前台（手机切回、桌面窗口重新可见/聚焦）：补一轮；
-   * - WebDAV 没有服务端推送，自动触发之间至少间隔 30 秒，
+   * - WebDAV 没有服务端推送，自动触发之间至少间隔 60 秒，
    *   避免本地连续保存把云盘请求额度打满。
    */
   let autoTimer: ReturnType<typeof setTimeout> | null = null
   let lastAutoTriggerAt = 0
   const AUTO_SYNC_DEBOUNCE_MS = 1500
-  const AUTO_SYNC_MIN_GAP_WEBDAV_MS = 30000
+  const AUTO_SYNC_MIN_GAP_WEBDAV_MS = 60000
 
   function listen() {
     if (listening) return

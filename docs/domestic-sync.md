@@ -28,7 +28,13 @@ WebDAV 没有服务端推送，**不是实时同步**；同步在启动、本地
 - `webdav-identity.enc.json`：`vaultId`、`deviceId`、`vaultKey`；
 - 主密钥优先放在系统钥匙串（macOS / Windows / Linux），不可用时退化为应用私有目录下 0600 的随机密钥文件。
 
-账号密码不会进入日志、明文备份或 Android 系统云备份（`android:allowBackup="false"`）。
+账号密码不会进入日志或明文配置；Android 系统云备份已关闭（`android:allowBackup="false"`）。
+
+### 备份与恢复
+
+- 备份应用数据目录不会得到明文账号或 vaultKey；`webdav-account.enc.json` 和 `webdav-identity.enc.json` 都是 AES-GCM 密文。
+- 主密钥优先在系统钥匙串中；钥匙串不可用时才退化为应用私有 0600 文件。桌面备份如果同时包含该密钥文件，仍可能解密身份文件，请自行排除应用数据目录或钥匙串。
+- 当前没有恢复码。至少保留一台已配对设备，并确认系统钥匙串和本机数据目录可恢复。
 
 ## 二、建立与加入空间
 
@@ -42,16 +48,30 @@ WebDAV 没有服务端推送，**不是实时同步**；同步在启动、本地
 - **已有设备显示码**：已有设备点「显示配对码」，新设备输入六位码并「查找并认领」。
 - **新设备显示码**：新设备点「显示我的配对码」，已有设备输入六位码并「查找并核对」。
 
-六位码只负责定位配对请求，**安全依赖两端人工核对的六位核对码和空间指纹**。
-新设备只有在点击「核对一致，完成加入」后才会保存身份；已有设备也必须在核对后点击批准。
+六位码只负责定位配对请求，**安全依赖持有空间的一方人工核对六位核对码、空间指纹和设备名**。
+只有已有设备需要点一次「批准加入」；新设备读到 approval 后会自动保存身份并开始同步，不再要求第二次确认。
 
 加入已有空间时不会自动用本机旧副本覆盖远端；首次拉取完成后，仅把远端不存在的本机独有文稿补传上去。
+
+### 加入方的数据基准
+
+加入方在写 claim/join 前会检查本机数据：
+
+- 没有身份、没有文稿、没有本地草稿：直接加入。
+- 没有身份，但有文稿/目录/版本/草稿：提示这些本机数据会以对方为准被清空；确认后清空本机文稿、目录、回收站、版本、草稿和同步状态，保留 WebDAV 账号与界面偏好。
+- 已有同步身份：显示本机空间短 ID、最近同步时间、对方设备名/平台，选择：
+  - 「以对方为准」：清空本机文稿与身份后加入；
+  - 「以本机为准」：取消本次加入，不清数据；请在本机点「显示配对码」，让对方输入本机配对码；
+  - 「取消」：不做任何改变。
+- 清空只影响本机，不删除 WebDAV 上的旧空间；笔记端会同时清空本地草稿、外部文件映射和表格草稿，但不会删除磁盘上的外部 Markdown 文件。
+- 清空发生在写 claim/join 之前；如果之后配对失败或过期，本机数据不会自动恢复。
 
 ## 三、远端数据布局
 
 ```text
 v1/<vaultId>/space.json
 v1/<vaultId>/ops/<shard>/<opId>.json
+v1/<vaultId>/devices/<deviceId>.json
 v1/pairing/offer-<6位码>-<pairingId>.json
 v1/pairing/claim-<pairingId>.json
 v1/pairing/join-<6位码>-<pairingId>.json
@@ -80,6 +100,8 @@ AAD 绑定 `vaultId`、`opId`、`entityId`、`kind`、`lamport` 和 `deviceId`�
 
 操作文件永不删除，其他设备通过本地 `vault_sync_applied_ops` 表按 `opId` 幂等去重。
 内容块使用独立 AAD，文件名中的 `:` 编码为 `~`，以兼容严格的 WebDAV 服务器。
+笔记正文分块会产生大量 `chunk-*` 操作，因此 shard 使用 `opId` 哈希取模 4，避免全部落在同一个
+`ch/` 目录；旧版本留下的其他 shard 目录仍会被列举和读取。
 
 ## 四、同步内核
 
@@ -93,12 +115,17 @@ AAD 绑定 `vaultId`、`opId`、`entityId`、`kind`、`lamport` 和 `deviceId`�
 - **坏操作隔离**：单条 JSON 损坏、密文校验失败或解密失败时，按 `opId` 记录为已处理并告警，
   不让一个坏对象让整个空间永久同步失败。
 - **删除**：回收站状态随正文同步；清空回收站后超过清理窗口（默认 7 天）物理删除并生成 tombstone。
-- **请求频率**：目录创建结果在进程内缓存；shard 数量为 4；本地修改触发的自动同步最小间隔 30 秒，
+- **请求频率**：目录创建结果在进程内缓存；shard 数量为 4；本地修改触发的自动同步最小间隔 60 秒，
   后台每 15 分钟兜底。坚果云等供应商仍可能限速，同步失败时本地写作不受影响。
+- **设备心跳**：每次同步把加密心跳写到 `devices/<deviceId>.json`；心跳失败只告警，不阻塞同步。
 
 ## 五、配对协议
 
 使用 X25519 + HKDF-SHA256 + AES-256-GCM 传递 `vaultKey`；六位码不用于派生加密密钥。
+同一个 WebDAV 账号的访问者能看到配对临时文件和六位定位码，因此批准前必须核对设备名、平台、六位核对码和空间指纹；人工批准是唯一防线。
+
+如果无我笔记和无我待办共用同一个 WebDAV 账号，`v1/pairing/` 是账号级共享命名空间，
+两边的六位码可能互相干扰；建议给两个应用使用不同的 WebDAV 账号或不同的子路径。
 
 ### Path A：已有设备显示码
 
@@ -107,7 +134,7 @@ AAD 绑定 `vaultId`、`opId`、`entityId`、`kind`、`lamport` 和 `deviceId`�
 3. 已有设备读 `claim`，两端显示六位核对码；用户核对后已有设备写 `approval`，
    其中 `vaultKey` 用会话密钥封装，AAD 绑定 `pairingId` 和 `claimedDeviceId`。
 4. 新设备读 `approval`，校验批准公钥与 `offer` 一致、`vaultId` 一致、`claimedDeviceId` 等于本机，
-   解密后显示核对码和空间指纹；**用户点击确认后**才保存身份。
+   解密后自动保存身份并开始同步。人工确认只发生在已有设备批准前。
 
 ### Path B：新设备显示码
 
@@ -119,19 +146,36 @@ AAD 绑定 `vaultId`、`opId`、`entityId`、`kind`、`lamport` 和 `deviceId`�
 
 ### 安全不变量
 
-1. 新设备读到 approval 后绝不自动保存身份；必须人工点击「核对一致，完成加入」。
-2. 保存前校验 `pairingId`、`deviceId`、`vaultId`、批准公钥、封装密钥解密结果。
+1. 人工确认只保留在持有空间的一方；已有设备必须显示加入方设备名/平台、六位核对码和空间指纹，确认后新设备自动完成。
+2. 新设备保存前校验 `pairingId`、`deviceId`、`vaultId`、批准公钥、封装密钥解密结果。
 3. 同一六位码匹配到多份 offer/join 时返回「配对码冲突，请重新生成」，不按远端时间自动选择。
 4. 有效期 = 本机首次观察时间 + 文件自身 TTL，不使用本地时钟直接比较远端 `createdAt`。
 5. 无法解码或未知 `protocolVersion` 的配对文件不删除。
 6. 成功后清理该 `pairingId` 的已知配对文件；取消时清理本机写入的文件；过期文件按观察窗口清理。
 7. 临时私钥、`vaultKey` 和 `joinSecret` 不写入本机日志或明文配置。
 
-## 六、设备与吊销
+## 六、设备列表与吊销
 
-WebDAV 没有服务端设备列表，**不能远程吊销设备**。退出空间只清除本机身份，本机笔记仍保留。
-如需阻止旧设备继续同步，请修改 WebDAV 应用密码；旧设备无法通过认证后自然停止同步。
-不要相信「远程移除设备」之类的假入口。
+每台设备的心跳文件是 `v1/<vaultId>/devices/<deviceId>.json`：
+
+```json
+{
+  "format": "woo-notes-webdav-device",
+  "protocolVersion": 1,
+  "deviceId": "...",
+  "nonce": "...",
+  "ciphertext": "..."
+}
+```
+
+明文只有 `name`、`platform`、`lastSeenAt`（毫秒）和 `appVersion`，用 vaultKey 加密；
+AAD 为 `woo-notes-webdav-device-v1|<vaultId>|<deviceId>`。设备列表只读：按最近同步时间降序展示，
+当前设备单独标记，不提供移除按钮。
+
+旧版 0.9.x 设备不会写心跳；升级后需要成功同步一次才会出现在列表里。
+WebDAV 没有服务端设备列表，**不能远程吊销设备**。退出空间只清除本机身份并尽力删除自己的心跳，
+本机笔记仍保留。如需阻止旧设备继续同步，请修改 WebDAV 应用密码；旧设备无法通过认证后自然停止同步。
+不要相信「远程移除设备」之类的假入口。供应商能看到设备数量和时间，但看不到设备名/平台。
 
 ## 七、迁移
 
@@ -144,13 +188,18 @@ WebDAV 没有服务端设备列表，**不能远程吊销设备**。退出空间
 
 ## 八、测试
 
-- `cargo test services::webdav_space`：账号加密、身份、配对 Path A/B、approval-only 忽略、
-  配对码冲突、vaultId 不一致拒绝、PUT 幂等、重试、重定向拒绝、PROPFIND 解析、
-  双设备推送/拉取、坏操作跳过。
+- `cargo test services::webdav_space`：账号加密、身份、配对 Path A/B、offer 预览不写 claim、
+  approval-only 忽略、配对码冲突、vaultId 不一致拒绝、PUT 幂等、重试、重定向拒绝、
+  PROPFIND 解析、双设备推送/拉取、坏操作跳过、设备心跳加解密/排序/坏文件跳过、
+  加入前清空本机文稿与同步状态。
+- `npm run test:pairing-ui`：检查桌面/移动端六位码样式使用前景色和明确背景，防止深色模式对比度回退。
+- 加入方自动完成已由本地 WebDAV 测试覆盖；设备列表 UI 通过构建验证，项目尚未引入前端组件测试框架。
 - `cargo test services::webdav_space::sync::local_webdav_smoke -- --ignored`：需要本机 WebDAV
   （`wsgidav`）在 `127.0.0.1:18080`，覆盖真实 MKCOL/PROPFIND/PUT/GET 和墓碑传播。
 - `cargo test services::webdav_space::pairing::local_webdav_smoke -- --ignored`：覆盖真实 WebDAV
   上的 Path A / Path B 配对文件读写。
+- `cargo test services::webdav_space::tests::auto_join_saves_identity_after_host_approval -- --ignored`：
+  覆盖已有设备批准后加入方自动保存身份、写入 Lamport 水位并绑定本地库。
 - 真实供应商（坚果云/Nextcloud/群晖）双设备验证需要用户自己的账号和两台设备，当前仓库测试不包含。
 
 ## 九、相关代码

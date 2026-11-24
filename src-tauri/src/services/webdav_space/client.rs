@@ -111,14 +111,6 @@ impl WebdavClient {
         })
     }
 
-    pub fn from_url(
-        endpoint: &str,
-        username: &str,
-        password: &str,
-    ) -> Result<Self, String> {
-        Self::new(endpoint, username, password, false, Duration::from_secs(1))
-    }
-
     fn url_for(&self, path: &str, collection: bool) -> Result<reqwest::Url, RemoteError> {
         let mut url = self.base.clone();
         {
@@ -184,7 +176,14 @@ impl WebdavClient {
                     if status.is_redirection() {
                         return Err(RemoteError::Redirect);
                     }
-                    if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+                    if status == StatusCode::TOO_MANY_REQUESTS {
+                        last_error = Some(RemoteError::Other(
+                            "云盘请求过于频繁，请稍后再试；部分供应商有 30 分钟请求配额"
+                                .to_string(),
+                        ));
+                        continue;
+                    }
+                    if status.is_server_error() {
                         last_error = Some(RemoteError::Other(format!(
                             "WebDAV 暂时不可用（HTTP {}）",
                             status.as_u16()
@@ -501,6 +500,31 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn preserves_provider_base_paths_when_appending_sync_paths() {
+        let cases = [
+            ("https://dav.jianguoyun.com/dav/", "/dav/v1/vault-a/ops/"),
+            (
+                "https://cloud.example.com/remote.php/dav/files/alice/",
+                "/remote.php/dav/files/alice/v1/vault-a/ops/",
+            ),
+            ("https://nas.example.com:5006/woo", "/woo/v1/vault-a/ops/"),
+            ("https://dav.example.com", "/v1/vault-a/ops/"),
+        ];
+        for (endpoint, expected) in cases {
+            let client = WebdavClient::new(
+                endpoint,
+                "user",
+                "password",
+                false,
+                Duration::ZERO,
+            )
+            .unwrap();
+            let url = client.url_for("v1/vault-a/ops", true).unwrap();
+            assert_eq!(url.path(), expected, "endpoint={endpoint}");
+        }
+    }
 
     #[test]
     fn parses_propfind_hrefs_and_collections() {

@@ -232,6 +232,14 @@ pub fn clear_sync_data(conn: &Connection) -> Result<(), String> {
          DELETE FROM vault_sync_incoming_chunks;
          DELETE FROM vault_sync_deferred_documents;
          DELETE FROM webdav_pairing_observations;
+         INSERT OR REPLACE INTO sync_meta(key, value)
+           VALUES ('vault_sync_applying', '0');
+         DELETE FROM sync_meta WHERE key IN (
+           'last_sync_time', 'webdav_last_sync_time',
+           'webdav_known_documents', 'webdav_known_folders',
+           'webdav_backoff_until', 'empty_db_full_sync_v1',
+           'vault_sync_last_cleanup'
+         );
          UPDATE vault_sync_state
          SET vault_id = '', device_id = '', cursor = 0, lamport = 0,
              last_success_at = NULL, last_error = NULL

@@ -5,6 +5,8 @@
 //! 应用私有目录下 0600 的随机密钥文件。
 
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use woo_sync_core::crypto::{
@@ -19,6 +21,19 @@ const MASTER_KEY_FILE: &str = "webdav-master.key";
 const KEYRING_SERVICE: &str = "com.nonegonotes.woo.tauri.webdav";
 const KEYRING_USER: &str = "master-key-v1";
 const FILE_VERSION: u32 = 1;
+
+#[cfg(test)]
+static TEST_MASTER_KEY: Mutex<Option<[u8; MASTER_KEY_BYTES]>> = Mutex::new(None);
+
+#[cfg(test)]
+pub fn set_test_master_key(key: [u8; MASTER_KEY_BYTES]) {
+    *TEST_MASTER_KEY.lock().unwrap() = Some(key);
+}
+
+#[cfg(test)]
+pub fn clear_test_master_key() {
+    *TEST_MASTER_KEY.lock().unwrap() = None;
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +120,10 @@ fn keyring_master_key() -> Result<[u8; MASTER_KEY_BYTES], String> {
 
 /// 读取本机主密钥；不存在时创建。钥匙串不可用时退回应用私有密钥文件。
 fn load_master_key() -> Result<[u8; MASTER_KEY_BYTES], String> {
+    #[cfg(test)]
+    if let Some(key) = *TEST_MASTER_KEY.lock().unwrap() {
+        return Ok(key);
+    }
     // 一旦退化为文件密钥，就继续使用该文件，避免钥匙串恢复后换用另一把
     // 密钥，导致既有同步凭据无法解密。
     if let Some(key) = read_key_file(&master_key_path())? {

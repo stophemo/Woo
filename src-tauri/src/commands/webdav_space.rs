@@ -23,6 +23,22 @@ pub async fn webdav_space_connect_account(
     }
 }
 
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceJoinState")]
+pub fn webdav_space_join_state() -> CommandResult<webdav_space::JoinLocalStateView> {
+    match webdav_space::join_local_state() {
+        Ok(view) => CommandResult::success(view),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceClearLocalForJoin")]
+pub async fn webdav_space_clear_local_for_join() -> CommandResult<()> {
+    match webdav_space::clear_local_for_join().await {
+        Ok(()) => CommandResult::success(()),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
 #[tauri::command(rename_all = "camelCase", rename = "webdavSpaceCreate")]
 pub async fn webdav_space_create(
     device_name: String,
@@ -64,6 +80,25 @@ pub async fn webdav_space_start_join(
 ) -> CommandResult<webdav_space::pairing::PairingStartView> {
     match webdav_space::start_join(&device_name).await {
         Ok(view) => CommandResult::success(view),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpacePreviewOffer")]
+pub async fn webdav_space_preview_offer(
+    code: String,
+) -> CommandResult<webdav_space::pairing::OfferPreviewView> {
+    match webdav_space::preview_offer(&code).await {
+        Ok(view) => CommandResult::success(view),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceListDevices")]
+pub async fn webdav_space_list_devices(
+) -> CommandResult<Vec<webdav_space::devices::DeviceView>> {
+    match webdav_space::list_devices().await {
+        Ok(devices) => CommandResult::success(devices),
         Err(message) => CommandResult::error(&message),
     }
 }
@@ -124,16 +159,6 @@ pub async fn webdav_space_approve_join(
     pairing_id: String,
 ) -> CommandResult<webdav_space::pairing::PairingStatusView> {
     match webdav_space::approve_join(&pairing_id).await {
-        Ok(view) => CommandResult::success(view),
-        Err(message) => CommandResult::error(&message),
-    }
-}
-
-#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceConfirmJoin")]
-pub async fn webdav_space_confirm_join(
-    pairing_id: String,
-) -> CommandResult<webdav_space::pairing::JoinConfirmView> {
-    match webdav_space::confirm_join(&pairing_id).await {
         Ok(view) => CommandResult::success(view),
         Err(message) => CommandResult::error(&message),
     }

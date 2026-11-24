@@ -18,6 +18,7 @@ use crate::services::utils::{now_str, sha256};
 use crate::services::vault_sync::store::{self, SyncIdentity};
 
 use super::client::{ensure_collection, RemoteStore};
+use super::devices;
 use super::identity::{decode_vault_key, WebDavIdentity};
 
 const OPS_SHARDS: usize = 4;
@@ -412,6 +413,9 @@ pub async fn sync_now(
     store: &dyn RemoteStore,
     identity: &WebDavIdentity,
 ) -> Result<SyncResult, String> {
+    if let Err(error) = devices::write_heartbeat(store, identity).await {
+        log::warn!("[WebDAV] 写入设备心跳失败：{}", error);
+    }
     let _ = db::with_db(|conn| store::cleanup_expired_deletes(conn))?;
 
     ensure_root_cached(store, &identity.vault_id).await?;
@@ -690,6 +694,9 @@ mod local_webdav_smoke {
         });
         let pushed = sync_now(&client, &id_a).await.unwrap();
         assert!(pushed.pushed_count > 0);
+        let devices = devices::list_devices(&client, &id_a).await.unwrap();
+        assert!(devices.iter().any(|device| device.device_id == id_a.device_id));
+        assert!(devices.iter().all(|device| device.is_current));
 
         crate::db::close_db();
         crate::db::set_data_dir(dir_b.clone());
@@ -699,6 +706,9 @@ mod local_webdav_smoke {
         });
         let pulled = sync_now(&client, &id_b).await.unwrap();
         assert!(pulled.pulled_count > 0);
+        let devices = devices::list_devices(&client, &id_b).await.unwrap();
+        assert_eq!(devices.len(), 2);
+        assert!(devices.iter().any(|device| device.device_id == id_b.device_id && device.is_current));
         crate::db::with_db(|conn| {
             let content: String = conn
                 .query_row("SELECT content FROM note_document WHERE id = 'doc-1'", [], |row| row.get(0))

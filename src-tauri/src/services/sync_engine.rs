@@ -45,6 +45,15 @@ impl Drop for SyncGuard {
     }
 }
 
+/// 让“清空本机数据后加入其他空间”与后台同步互斥。
+pub struct ExclusiveSyncGuard {
+    _guard: SyncGuard,
+}
+
+pub fn acquire_exclusive() -> Result<ExclusiveSyncGuard, String> {
+    SyncGuard::acquire().map(|guard| ExclusiveSyncGuard { _guard: guard })
+}
+
 // ===================== Data Structures =====================
 
 #[derive(Debug, Serialize)]

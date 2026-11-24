@@ -1,7 +1,7 @@
 {
   "name": "woo-tauri",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.8.1",
   "type": "module",
   "description": "无我笔记 - Tauri v2 重构版",
   "author": "stophemo",
@@ -17,7 +17,8 @@
     "tauri:android:build": "tauri android build --config src-tauri/tauri.android.conf.json",
     "tauri:android:init": "tauri android init",
     "dev:mobile": "vite --config vite.mobile.config.ts",
-    "build:mobile": "vite build --config vite.mobile.config.ts"
+    "build:mobile": "vite build --config vite.mobile.config.ts",
+    "test:pairing-ui": "node --test scripts/check-pairing-contrast.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
