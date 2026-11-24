@@ -244,6 +244,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     draftCommitTimer = null
     pendingDraftCommitId = null
     dirtyRemoteConflictKeys.clear()
+    recentSavedHashes.clear()
     isExternalStreaming.value = false
     drafts.value = []
     trashDrafts.value = []
@@ -442,6 +443,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (doc.isLocked) doc.content = ''
       // 整体赋值，引用变化 → 触发编辑器重载内容
       currentDocumentData.value = doc
+      if (!doc.isLocked) await rememberSavedContent(doc.id, doc.content)
     } catch (e: any) {
       error.value = e?.message || '加载文稿内容失败'
       currentDocumentData.value = null
@@ -455,6 +457,48 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const saveErrors = new Map<string, Error>()
   // 保存状态是 Map（非响应式）；用计数器让 MCP 脏状态 watcher 能在每次调度/完成时重新求值。
   const saveActivity = ref(0)
+  // 最近成功写入数据库的内容指纹。同步刷新时如果云端内容只是本机刚保存的
+  // 旧快照，不能当成另一台设备的冲突，否则连续输入会每轮生成一个副本。
+  const recentSavedHashes = new Map<string, string[]>()
+  const RECENT_SAVED_LIMIT = 20
+
+  async function contentFingerprint(content: string): Promise<string> {
+    const bytes = new TextEncoder().encode(content)
+    if (globalThis.crypto?.subtle) {
+      try {
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+        return Array.from(
+          new Uint8Array(digest),
+          value => value.toString(16).padStart(2, '0')
+        ).join('')
+      } catch { /* 回退到轻量哈希 */ }
+    }
+    let hash = 0x811c9dc5
+    for (let index = 0; index < content.length; index += 1) {
+      hash ^= content.charCodeAt(index)
+      hash = Math.imul(hash, 0x01000193)
+    }
+    return `fnv:${content.length}:${(hash >>> 0).toString(16)}`
+  }
+
+  async function rememberSavedContent(documentId: string, content: string) {
+    const fingerprint = await contentFingerprint(content)
+    const hashes = recentSavedHashes.get(documentId) ?? []
+    if (hashes[hashes.length - 1] !== fingerprint) {
+      hashes.push(fingerprint)
+      if (hashes.length > RECENT_SAVED_LIMIT) {
+        hashes.splice(0, hashes.length - RECENT_SAVED_LIMIT)
+      }
+      recentSavedHashes.set(documentId, hashes)
+    }
+  }
+
+  async function isOwnRecentCloudContent(document: Document): Promise<boolean> {
+    const hashes = recentSavedHashes.get(document.id)
+    if (!hashes || hashes.length === 0) return false
+    const fingerprint = await contentFingerprint(document.content || '')
+    return hashes.includes(fingerprint)
+  }
   const pendingExternalFileWrites = new Map<string, { filePath: string; content: string }>()
   const externalFileWritingPromises = new Map<string, Promise<void>>()
   const externalFileSaveErrors = new Map<string, Error>()
@@ -614,6 +658,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       pendingSaves.delete(documentId)
       try {
         await documentApi.updateContent(documentId, content)
+        await rememberSavedContent(documentId, content)
         saveErrors.delete(documentId)
         notifySyncChange()
       } catch (e: any) {
@@ -1438,48 +1483,57 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
             }
           } else if (cloudDoc && localDoc && cloudDoc.content !== localDoc.content && !hasUnsaved) {
-            // 云端内容不同，且编辑器没有未保存的修改 → 真正云端冲突（另一设备修改了同一文稿）
-            // 将云端版本载入编辑器，本地版本另存为冲突副本
-            try {
-              const conflictTitle = `${localDoc.title} (冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
-              const conflictId = (await documentApi.create({
-                title: conflictTitle,
-                folderId: localDoc.folderId || fid
-              })).id
-              await documentApi.updateContent(conflictId, localDoc.content)
-              await documentApi.rename(conflictId, conflictTitle)
-              const conflictDoc = mapDocument(await documentApi.getById(conflictId))
-              folderDocuments.value.unshift(conflictDoc)
-            } catch { /* 冲突备份失败，静默加载云端 */ }
-            // 编辑器加载云端最新内容
-            try {
-              const dto = await documentApi.getById(cloudDoc.id)
-              currentDocumentData.value = mapDocument(dto)
-              if (currentDocumentData.value.isLocked) currentDocumentData.value.content = ''
-            } catch { /* 加载失败时保留本地数据 */ }
+            if (await isOwnRecentCloudContent(cloudDoc)) {
+              // 云端只是本机刚保存的旧快照，当前本地内容更新；不能反向覆盖或造副本。
+              if (cloudDoc.updatedAt !== localDoc.updatedAt) {
+                currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
+              }
+            } else {
+              // 云端内容不同，且编辑器没有未保存的修改 → 真正云端冲突（另一设备修改了同一文稿）
+              // 将云端版本载入编辑器，本地版本另存为冲突副本
+              try {
+                const conflictTitle = `${localDoc.title} (冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
+                const conflictId = (await documentApi.create({
+                  title: conflictTitle,
+                  folderId: localDoc.folderId || fid
+                })).id
+                await documentApi.updateContent(conflictId, localDoc.content)
+                await documentApi.rename(conflictId, conflictTitle)
+                const conflictDoc = mapDocument(await documentApi.getById(conflictId))
+                folderDocuments.value.unshift(conflictDoc)
+              } catch { /* 冲突备份失败，静默加载云端 */ }
+              // 编辑器加载云端最新内容
+              try {
+                const dto = await documentApi.getById(cloudDoc.id)
+                currentDocumentData.value = mapDocument(dto)
+                if (currentDocumentData.value.isLocked) currentDocumentData.value.content = ''
+              } catch { /* 加载失败时保留本地数据 */ }
+            }
           } else if (cloudDoc && localDoc && cloudDoc.content === localDoc.content) {
             // 内容相同 → 仅同步 updatedAt
             if (cloudDoc.updatedAt !== localDoc.updatedAt) {
               currentDocumentData.value = { ...localDoc, updatedAt: cloudDoc.updatedAt }
             }
           } else if (hasUnsaved && cloudDoc && localDoc && cloudDoc.content !== localDoc.content) {
-            // 编辑器里有尚未落库的内容，同时另一台设备改了同一篇文稿。
-            // 不能直接忽略远端：防抖随后会用本地旧缓冲覆盖它。把远端
-            // 版本保存为冲突副本，本地继续编辑；下次保存会生成更高 lamport。
-            const key = `${cloudDoc.id}:${cloudDoc.updatedAt}:${cloudDoc.content.length}`
-            if (!dirtyRemoteConflictKeys.has(key)) {
-              if (dirtyRemoteConflictKeys.size > 200) dirtyRemoteConflictKeys.clear()
-              dirtyRemoteConflictKeys.add(key)
-              try {
-                const conflictTitle = `${cloudDoc.title} (远端冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
-                const conflictId = (await documentApi.create({
-                  title: conflictTitle,
-                  folderId: cloudDoc.folderId || fid
-                })).id
-                await documentApi.updateContent(conflictId, cloudDoc.content)
-                await documentApi.rename(conflictId, conflictTitle)
-                folderDocuments.value.unshift(mapDocument(await documentApi.getById(conflictId)))
-              } catch { /* 副本失败时至少保留本地编辑，不阻塞输入 */ }
+            // 编辑器里有尚未落库的内容。如果云端只是本机刚保存的旧快照，
+            // 防抖会用更新的缓冲覆盖它，这不是另一台设备的冲突。
+            if (!(await isOwnRecentCloudContent(cloudDoc))) {
+              // 另一台设备改了同一篇文稿：把远端版本保存为冲突副本，本地继续编辑。
+              const key = `${cloudDoc.id}:${cloudDoc.updatedAt}:${cloudDoc.content.length}`
+              if (!dirtyRemoteConflictKeys.has(key)) {
+                if (dirtyRemoteConflictKeys.size > 200) dirtyRemoteConflictKeys.clear()
+                dirtyRemoteConflictKeys.add(key)
+                try {
+                  const conflictTitle = `${cloudDoc.title} (远端冲突副本 ${new Date().toLocaleTimeString('zh-CN')})`
+                  const conflictId = (await documentApi.create({
+                    title: conflictTitle,
+                    folderId: cloudDoc.folderId || fid
+                  })).id
+                  await documentApi.updateContent(conflictId, cloudDoc.content)
+                  await documentApi.rename(conflictId, conflictTitle)
+                  folderDocuments.value.unshift(mapDocument(await documentApi.getById(conflictId)))
+                } catch { /* 副本失败时至少保留本地编辑，不阻塞输入 */ }
+              }
             }
           }
           // 其他情况（内容不同但有未保存修改）→ 编辑器领先于 SQLite，
