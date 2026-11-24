@@ -397,9 +397,8 @@ pub fn run() {
             }
 
             // Start periodic sync timer with event emission.
-            // 局域网是本机 HTTP，轮询便宜；WebDAV 受网盘请求配额约束，取 30 秒。
-            // 前端在本地保存、回到前台时还会主动触发一轮，因此用户感知到的延迟
-            // 主要来自这里的兜底轮询，而不是最长 60 秒的等待。
+            // WebDAV 受网盘请求配额约束：本地修改触发的自动同步最小间隔
+            // 30 秒，后台每 15 分钟兜底；启动和回到前台由前端主动触发。
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut last_error: Option<String> = None;
