@@ -1443,7 +1443,7 @@ pub fn clear_session() {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -1458,7 +1458,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemoryObservations {
+    pub(crate) struct MemoryObservations {
         seen: Mutex<HashMap<String, i64>>,
     }
 
@@ -1474,7 +1474,7 @@ mod tests {
         }
     }
 
-    fn account() -> WebDavAccount {
+    pub(crate) fn account() -> WebDavAccount {
         WebDavAccount {
             endpoint: "https://dav.example.com".to_string(),
             username: "user".to_string(),
@@ -1730,5 +1730,62 @@ mod tests {
         let now = 10_000_000i64;
         assert!(!expired(now - 60_000, 300, now));
         assert!(expired(now - 301_000, 300, now));
+    }
+}
+
+#[cfg(test)]
+mod local_webdav_smoke {
+    use std::time::Duration;
+
+    use super::tests::{account, MemoryObservations};
+    use super::*;
+    use crate::services::webdav_space::client::WebdavClient;
+
+    #[tokio::test]
+    #[ignore]
+    async fn smoke_pairing_against_local_webdav() {
+        let client = WebdavClient::new("http://127.0.0.1:18080", "", "", true, Duration::ZERO)
+            .unwrap();
+        let obs = MemoryObservations::default();
+        let account = account();
+        let host = identity::create_identity("Host").unwrap();
+
+        clear_session();
+        let offer = start_offer(&account, &host, &client).await.unwrap();
+        let guest = find_offer_and_claim(
+            &account,
+            &offer.short_code,
+            "Guest",
+            &client,
+            &obs,
+        )
+        .await
+        .unwrap();
+        let host_view = offer_status(&offer.pairing_id, &client, &obs).await.unwrap();
+        assert_eq!(guest.verification_code, host_view.verification_code);
+        approve_offer(&offer.pairing_id, &client, &obs).await.unwrap();
+        let ready = join_status(&offer.pairing_id, &client, &obs).await.unwrap();
+        assert_eq!(ready.status, "ready");
+        cleanup_pairing_id(&client, &obs, &offer.pairing_id, &[], &[]).await;
+        clear_session();
+
+        let join = start_join(&account, "Guest", &client).await.unwrap();
+        let host_view = find_join_and_resolve(
+            &account,
+            &host,
+            &join.short_code,
+            &client,
+            &obs,
+        )
+        .await
+        .unwrap();
+        let resolved = join_status(&join.pairing_id, &client, &obs).await.unwrap();
+        assert_eq!(resolved.status, "resolved");
+        assert_eq!(resolved.verification_code, host_view.verification_code);
+        approve_join(&join.pairing_id, &client, &obs).await.unwrap();
+        let ready = join_status(&join.pairing_id, &client, &obs).await.unwrap();
+        assert_eq!(ready.status, "ready");
+        cleanup_pairing_id(&client, &obs, &join.pairing_id, &[], &[]).await;
+        clear_session();
     }
 }

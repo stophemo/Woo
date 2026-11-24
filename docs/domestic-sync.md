@@ -149,6 +149,8 @@ WebDAV 没有服务端设备列表，**不能远程吊销设备**。退出空间
   双设备推送/拉取、坏操作跳过。
 - `cargo test services::webdav_space::sync::local_webdav_smoke -- --ignored`：需要本机 WebDAV
   （`wsgidav`）在 `127.0.0.1:18080`，覆盖真实 MKCOL/PROPFIND/PUT/GET 和墓碑传播。
+- `cargo test services::webdav_space::pairing::local_webdav_smoke -- --ignored`：覆盖真实 WebDAV
+  上的 Path A / Path B 配对文件读写。
 - 真实供应商（坚果云/Nextcloud/群晖）双设备验证需要用户自己的账号和两台设备，当前仓库测试不包含。
 
 ## 九、相关代码
