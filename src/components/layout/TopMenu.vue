@@ -17,9 +17,6 @@
     </div>
     <!-- 桌面端完整按钮组 -->
     <div v-show="!compact && !isMobile" class="menu-right">
-      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeToggleTitle">
-        <IconThemeToggle :mode="themeIconMode" />
-      </button>
       <button
         class="window-control-btn"
         :class="{ 'is-active': !isOpen }"
@@ -36,6 +33,12 @@
       </button>
       <button class="window-control-btn" @click="$emit('toggle-thumbnail-sidebar')" :title="'显示/隐藏缩略图栏 (' + modKey() + '←)'">
         <IconThumbnailSidebar />
+      </button>
+      <button class="window-control-btn" @click="themeStore.toggleTheme()" :title="themeToggleTitle">
+        <IconThemeToggle :mode="themeIconMode" />
+      </button>
+      <button class="window-control-btn" @click="$emit('open-settings')" title="设置">
+        <IconSettings />
       </button>
       <button
         class="window-control-btn"
@@ -74,6 +77,15 @@
       </button>
       <button class="window-control-btn" @click="$emit('open-settings')" title="设置">
         <IconSettings />
+      </button>
+      <button
+        class="window-control-btn"
+        :class="{ 'is-active': alwaysOnTop }"
+        :title="alwaysOnTop ? '取消窗口置顶' : '窗口置顶'"
+        :aria-pressed="alwaysOnTop"
+        @click="toggleAlwaysOnTop"
+      >
+        <IconPin />
       </button>
       <button class="window-control-btn" @click="handleSync" :title="syncTitle" :disabled="syncing">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" :class="{ 'spin': syncing }">
@@ -134,7 +146,9 @@ import { isMac, shortcutDisplay } from '../../config/shortcutUtils'
 // macOS：窗口模式留 80px 给交通灯按钮（垂直居中由 titleBarOverlay 保证）
 // 全屏时交通灯隐藏，菜单项左对齐；移动端也不需要左侧内边距
 const macMenuStyle = computed(() => {
-  if (!isMac || props.isFullscreen || props.isMobile) return {}
+  // 窄窗口会进入 isMobile 响应式布局，但 macOS 交通灯仍然存在；
+  // 这里不能跟随 isMobile 去掉左侧留白，否则汉堡按钮会压到交通灯上。
+  if (!isMac || props.isFullscreen) return {}
   return { paddingLeft: '80px' }
 })
 
