@@ -2,25 +2,33 @@
   <div class="sync-space-section">
     <h3>跨设备</h3>
     <p class="sync-help">
-      每台设备先配置同一个 WebDAV 账号，之后只用六位配对码加入。正文和图片端到端加密，
-      WebDAV 只保存密文。WebDAV 没有服务端推送，同步不是实时的。
-      同一个 WebDAV 账号的访问者能看到配对临时文件和六位定位码；批准前请核对设备名、平台、核对码和空间指纹。
+      每台设备只需要填写同一个 WebDAV 账号，保存后自动开始同步；
+      云端已有空间时会直接加入，不需要再输入配对码。
+      WebDAV 没有服务端推送，同步不是实时的。
     </p>
 
     <div class="sync-box">
       <h4>WebDAV 账号</h4>
       <label class="sync-field">
-        <span>WebDAV 地址</span>
+        <span>服务商</span>
+        <select v-model="providerId" @change="applyProvider">
+          <option v-for="provider in WEBDAV_PROVIDERS" :key="provider.id" :value="provider.id">
+            {{ provider.label }}
+          </option>
+        </select>
+      </label>
+      <label class="sync-field">
+        <span>服务器地址</span>
         <input
           v-model="endpoint"
           type="url"
-          placeholder="https://dav.example.com/dav/"
+          :placeholder="currentProvider.endpointPlaceholder"
           autocomplete="off"
           spellcheck="false"
         />
       </label>
       <label class="sync-field">
-        <span>用户名</span>
+        <span>账户</span>
         <input v-model="username" type="text" autocomplete="username" spellcheck="false" />
       </label>
       <label class="sync-field">
@@ -32,15 +40,10 @@
           autocomplete="new-password"
         />
       </label>
-      <p class="sync-help">
-        示例：坚果云 <code>https://dav.jianguoyun.com/dav/</code>（使用应用密码）；
-        Nextcloud <code>https://cloud.example.com/remote.php/dav/files/用户名/</code>；
-        群晖 <code>https://nas.example.com:5006/woo</code>；也可填写任意 HTTPS WebDAV。
-        应用密码只加密保存在本机。部分供应商（如坚果云免费版）有请求频率限制；同步失败不影响本地写作。
-      </p>
+      <p class="sync-help">{{ currentProvider.passwordHint }}</p>
       <div class="sync-actions">
         <button class="sync-btn primary" :disabled="busy" @click="saveAccount">
-          {{ busy ? '正在测试…' : '测试连接并保存' }}
+          {{ busy ? '正在连接…' : '保存并同步' }}
         </button>
       </div>
       <p v-if="config?.account.configured" class="sync-help">
@@ -52,24 +55,16 @@
     <p v-if="config?.notice" class="sync-notice">{{ config.notice }}</p>
 
     <template v-if="config?.account.active && !config?.spaceConfigured && !guestPairing && !hostPairing">
+      <p class="sync-help">
+        配对只需要两边各点一次：<strong>已有笔记的一方</strong>生成六位码，<strong>新设备</strong>输入它。
+        下面两种方式选一种即可，不要两边都点「生成配对码」。
+      </p>
       <div class="sync-choice-grid">
-      <div class="sync-box sync-choice span-2">
-        <h4>建立同步空间</h4>
-        <p class="sync-help">第一台设备建立空间后，其他设备用六位配对码加入。请确认本机数据是当前最新版本。</p>
-        <label class="sync-field">
-          <span>本机名称</span>
-          <input v-model="deviceName" type="text" maxlength="80" placeholder="例如 MacBook Air" autocomplete="off" />
-        </label>
-        <div class="sync-actions">
-          <button class="sync-btn primary" :disabled="busy" @click="createSpace">建立同步空间</button>
-        </div>
-      </div>
-
       <div class="sync-box sync-choice">
-        <h4>加入已有空间：输入配对码</h4>
-        <p class="sync-help">在已有设备上点击「显示配对码」，把六位数字填到这里。已有设备批准后，本机会自动完成加入。</p>
+        <h4>方式一：输入另一台设备的六位码</h4>
+        <p class="sync-help">如果笔记在那台设备上：先在那台点「显示配对码」，把六位数字填到这里。对方批准后本机自动完成加入。</p>
         <label class="sync-field">
-          <span>六位配对码</span>
+          <span>另一台设备显示的六位码</span>
           <input
             v-model="joinCode"
             type="text"
@@ -82,14 +77,14 @@
         </label>
         <div class="sync-actions">
           <button class="sync-btn primary" :disabled="busy || joinCode.length !== 6" @click="requestJoinOffer(joinCode)">
-            查找并认领
+            输入并加入
           </button>
         </div>
       </div>
 
       <div class="sync-box sync-choice">
-        <h4>我是新设备：显示我的配对码</h4>
-        <p class="sync-help">生成六位码后，在已有设备上输入并批准；批准后本机会自动完成加入，不需要再点确认。</p>
+        <h4>方式二：让另一台设备输入本机码</h4>
+        <p class="sync-help">如果笔记在本机上：生成本机六位码，再去那台已有空间的设备输入并批准。</p>
         <label class="sync-field">
           <span>本机名称</span>
           <input v-model="deviceName" type="text" maxlength="80" placeholder="例如新手机" autocomplete="off" />
@@ -98,6 +93,19 @@
           <button class="sync-btn" :disabled="busy" @click="requestStartJoin">显示我的配对码</button>
         </div>
       </div>
+
+      <details class="sync-box sync-choice span-2 sync-advanced">
+        <summary>两台设备都没有同步空间：建立新空间</summary>
+        <p class="sync-help">第一台设备建立空间后，其他设备用上面的六位配对码加入。请确认本机数据是当前最新版本。</p>
+        <p class="sync-warning">如果已经在其他设备上建过空间，不要点这里；关掉这一段，走上面的「方式一」。</p>
+        <label class="sync-field">
+          <span>本机名称</span>
+          <input v-model="deviceName" type="text" maxlength="80" placeholder="例如 MacBook Air" autocomplete="off" />
+        </label>
+        <div class="sync-actions">
+          <button class="sync-btn" :disabled="busy" @click="createSpace">建立同步空间</button>
+        </div>
+      </details>
       </div>
     </template>
 
@@ -128,9 +136,9 @@
           <button class="sync-btn primary" :disabled="syncStore.isSyncing" @click="syncNow">
             {{ syncStore.isSyncing ? '同步中…' : '立即同步' }}
           </button>
-          <button class="sync-btn" :disabled="busy" @click="startOffer">显示配对码</button>
+          <button class="sync-btn" :disabled="busy" @click="startOffer">① 让新设备加入（显示配对码）</button>
           <button class="sync-btn" :disabled="busy" @click="showHostJoinInput = !showHostJoinInput">
-            输入新设备配对码
+            ② 输入新设备码并批准
           </button>
           <button class="sync-btn" :disabled="busy" @click="showJoinOtherInput = !showJoinOtherInput">
             加入其他空间
@@ -233,7 +241,9 @@
       <div v-if="hostPairing.spaceFingerprint" class="sync-row">
         <span>空间指纹</span><code>{{ hostPairing.spaceFingerprint }}</code>
       </div>
-      <p class="sync-help">{{ hostPairing.message || (hostPairing.status === 'waiting' ? '等待新设备输入配对码…' : '') }}</p>
+      <p class="sync-help">
+        {{ hostPairing.message || (hostPairing.status === 'waiting' ? `请在另一台设备输入 ${hostPairing.shortCode}…` : '') }}
+      </p>
       <p v-if="hostPairing.status === 'claimed'" class="sync-warning">
         请确认新设备屏幕显示相同的六位核对码和空间指纹。如果不是你正在操作的设备，请不要批准。
       </p>
@@ -243,7 +253,7 @@
       <p v-if="hostPairing.status === 'approved'" class="sync-notice">已批准，新设备会自动完成加入。</p>
       <p v-if="hostPairing.status === 'expired'" class="sync-error">配对码已过期，请重新生成。</p>
       <p v-if="hostPairing.expiresAt" class="sync-help">
-        有效期至 {{ formatTime(hostPairing.expiresAt) }}
+        有效期至 {{ formatTime(hostPairing.expiresAt) }}（{{ remainingLabel(hostPairing.expiresAt) }}）
       </p>
     </div>
 
@@ -271,7 +281,7 @@
       <p v-else class="sync-help">人工确认只在已有设备上完成；本机不需要再点确认。</p>
       <p v-if="guestPairing.status === 'expired'" class="sync-error">配对码已过期，请重新生成。</p>
       <p v-if="guestPairing.expiresAt" class="sync-help">
-        有效期至 {{ formatTime(guestPairing.expiresAt) }}
+        有效期至 {{ formatTime(guestPairing.expiresAt) }}（{{ remainingLabel(guestPairing.expiresAt) }}）
       </p>
     </div>
 
@@ -311,6 +321,11 @@ import webdavSpaceApi, {
   type WebDavDeviceView,
   type WebdavSpaceConfigView,
 } from '../../services/webdavSpaceApi'
+import {
+  WEBDAV_PROVIDERS,
+  findProvider,
+  matchProvider,
+} from '../../config/webdavProviders'
 
 interface PendingJoin {
   mode: 'offer' | 'join'
@@ -323,6 +338,8 @@ interface PendingJoin {
 const syncStore = useSyncStore()
 const workspaceStore = useWorkspaceStore()
 const config = ref<WebdavSpaceConfigView | null>(null)
+const providerId = ref('jianguoyun')
+const currentProvider = computed(() => findProvider(providerId.value))
 const endpoint = ref('')
 const username = ref('')
 const password = ref('')
@@ -344,9 +361,80 @@ const guestAdoptPeer = ref(false)
 
 let hostTimer: ReturnType<typeof setInterval> | null = null
 let guestTimer: ReturnType<typeof setInterval> | null = null
+let tickTimer: ReturnType<typeof setInterval> | null = null
 let pollingHost = false
 let pollingGuest = false
 let hostMode: 'offer' | 'join' = 'offer'
+let hostPollFailures = 0
+let guestPollFailures = 0
+const MAX_POLL_FAILURES = 8
+const nowTick = ref(Date.now())
+const GUEST_RESUME_KEY = 'woo.webdav.pairing.guest.v1'
+const HOST_RESUME_KEY = 'woo.webdav.pairing.host.v1'
+
+type GuestResume = PairingStatusView & { shortCode: string; adoptPeer: boolean }
+type HostResume = PairingStatusView & { shortCode: string; mode: 'offer' | 'join' }
+
+/** 配对中途切走设置页/切后台时，前端状态会丢；把最小状态存本地，回来接着轮询。 */
+function saveGuestResume() {
+  if (!guestPairing.value) return
+  try {
+    const payload: GuestResume = { ...guestPairing.value, shortCode: guestPairing.value.shortCode || '', adoptPeer: guestAdoptPeer.value }
+    localStorage.setItem(GUEST_RESUME_KEY, JSON.stringify(payload))
+  } catch { /* localStorage 不可用时忽略 */ }
+}
+
+function clearGuestResume() {
+  try { localStorage.removeItem(GUEST_RESUME_KEY) } catch { /* ignore */ }
+}
+
+function saveHostResume() {
+  if (!hostPairing.value) return
+  try {
+    const payload: HostResume = { ...hostPairing.value, shortCode: hostPairing.value.shortCode || '', mode: hostMode }
+    localStorage.setItem(HOST_RESUME_KEY, JSON.stringify(payload))
+  } catch { /* ignore */ }
+}
+
+function clearHostResume() {
+  try { localStorage.removeItem(HOST_RESUME_KEY) } catch { /* ignore */ }
+}
+
+function restorePairing() {
+  try {
+    const rawGuest = localStorage.getItem(GUEST_RESUME_KEY)
+    if (rawGuest && !guestPairing.value) {
+      const saved = JSON.parse(rawGuest) as GuestResume
+      if (saved?.pairingId && saved.expiresAt > Date.now()) {
+        guestAdoptPeer.value = !!saved.adoptPeer
+        guestPairing.value = { ...saved, message: '正在恢复上一次配对…' }
+        stopGuestTimer()
+        guestTimer = setInterval(pollGuest, 2000)
+        void pollGuest()
+      } else {
+        clearGuestResume()
+      }
+    }
+    const rawHost = localStorage.getItem(HOST_RESUME_KEY)
+    if (rawHost && !hostPairing.value) {
+      const saved = JSON.parse(rawHost) as HostResume
+      if (saved?.pairingId && saved.expiresAt > Date.now()) {
+        hostMode = saved.mode === 'join' ? 'join' : 'offer'
+        hostPairing.value = { ...saved, message: '正在恢复上一次配对…' }
+        stopHostTimer()
+        if (hostMode === 'offer') {
+          hostTimer = setInterval(pollHost, 2000)
+          void pollHost()
+        }
+      } else {
+        clearHostResume()
+      }
+    }
+  } catch {
+    clearGuestResume()
+    clearHostResume()
+  }
+}
 
 const spaceCaption = computed(() => config.value?.identity.spaceFingerprint || '')
 const joinPromptMessage = computed(() => {
@@ -389,6 +477,15 @@ function formatTime(ms: number) {
   return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+/** 配对码剩余时间；过期后返回“已过期”。 */
+function remainingLabel(expiresAt?: number | null) {
+  if (!expiresAt) return ''
+  const left = expiresAt - nowTick.value
+  if (left <= 0) return '已过期'
+  const total = Math.floor(left / 1000)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} 后过期`
+}
+
 function formatLastSeen(ms: number) {
   try {
     return new Date(ms).toLocaleString('zh-CN', {
@@ -410,6 +507,11 @@ function isStale(lastSeenAt: number) {
   return Date.now() - lastSeenAt > 30 * 24 * 60 * 60 * 1000
 }
 
+/** 这些错误重试也没用，应当立即停下并让用户重新配对。 */
+function isFatalPairingError(message: string) {
+  return /配对会话不存在|必须选择以对方为准|已拒绝|配对码已过期/.test(message)
+}
+
 async function copySpaceId() {
   const id = config.value?.identity.vaultId
   if (!id) return
@@ -426,6 +528,8 @@ async function loadConfig() {
     config.value = await webdavSpaceApi.getConfig()
     endpoint.value = config.value.account.endpoint || endpoint.value
     username.value = config.value.account.username || username.value
+    providerId.value = matchProvider(endpoint.value).id
+    if (!endpoint.value) endpoint.value = currentProvider.value.endpoint
     if (!deviceName.value) {
       deviceName.value = config.value.identity.deviceName || 'Woo 设备'
     }
@@ -435,6 +539,12 @@ async function loadConfig() {
   } catch (err: any) {
     error.value = err?.message || '读取跨设备配置失败'
   }
+}
+
+/** 切换服务商时填入对应预设；没有预设的服务商清空，避免沿用上一个供应商的地址。 */
+function applyProvider() {
+  endpoint.value = currentProvider.value.endpoint
+  error.value = ''
 }
 
 async function loadDevices() {
@@ -458,8 +568,12 @@ async function saveAccount() {
   try {
     await webdavSpaceApi.connectAccount(endpoint.value, username.value, password.value || undefined)
     password.value = ''
-    notice.value = 'WebDAV 连接成功，账号已加密保存。'
     await loadConfig()
+    notice.value = config.value?.notice || (config.value?.active ? '已连接，正在开始同步…' : '账号已保存')
+    if (config.value?.active) {
+      await syncStore.refreshStatus()
+      void syncStore.triggerSync()
+    }
   } catch (err: any) {
     error.value = err?.message || 'WebDAV 连接失败'
   } finally {
@@ -490,6 +604,8 @@ async function resetPairing() {
   stopGuestTimer()
   hostPairing.value = null
   guestPairing.value = null
+  clearHostResume()
+  clearGuestResume()
   await webdavSpaceApi.cancelPairing().catch(() => {})
 }
 
@@ -535,6 +651,7 @@ async function beginFindOffer(code: string, expectedVaultId?: string, adoptPeer 
   guestPairing.value = { ...status, shortCode: code }
   if (!status.configured && status.status !== 'expired') {
     guestTimer = setInterval(pollGuest, 2000)
+    saveGuestResume()
   }
 }
 
@@ -577,6 +694,7 @@ async function beginStartJoin(adoptPeer = false) {
     message: '等待已有设备输入六位码并批准；批准后本机会自动完成加入。'
   }
   guestTimer = setInterval(pollGuest, 2000)
+  saveGuestResume()
 }
 
 async function clearAndContinue() {
@@ -628,8 +746,10 @@ async function pollGuest() {
   pollingGuest = true
   try {
     const status = await webdavSpaceApi.joinStatus(guestPairing.value.pairingId)
+    guestPollFailures = 0
     if (status.configured) {
       stopGuestTimer()
+      clearGuestResume()
       guestPairing.value = null
       if (guestAdoptPeer.value) {
         workspaceStore.clearLocalDataForJoin()
@@ -650,10 +770,25 @@ async function pollGuest() {
     guestPairing.value = { ...guestPairing.value, ...status }
     if (status.status === 'expired') {
       stopGuestTimer()
+      clearGuestResume()
     }
   } catch (err: any) {
+    // 坚果云等供应商经常 429/5xx：一次失败不代表配对失效，继续轮询。
+    guestPollFailures += 1
+    const message = err?.message || '查询配对状态失败'
+    const expired = !!guestPairing.value?.expiresAt && Date.now() >= (guestPairing.value?.expiresAt || 0)
+    if (!isFatalPairingError(message) && guestPollFailures <= MAX_POLL_FAILURES && !expired) {
+      if (guestPairing.value) {
+        guestPairing.value = {
+          ...guestPairing.value,
+          message: `网络不稳定，正在自动重试（第 ${guestPollFailures} 次）…`,
+        }
+      }
+      return
+    }
     stopGuestTimer()
-    error.value = err?.message || '查询配对状态失败'
+    clearGuestResume()
+    error.value = message
   } finally {
     pollingGuest = false
   }
@@ -667,6 +802,8 @@ async function startOffer() {
   try {
     await resetPairing()
     hostMode = 'offer'
+    hostPollFailures = 0
+    guestPollFailures = 0
     const start = await webdavSpaceApi.startOffer()
     hostPairing.value = {
       pairingId: start.pairingId,
@@ -682,6 +819,7 @@ async function startOffer() {
     }
     showHostJoinInput.value = false
     hostTimer = setInterval(pollHost, 2000)
+    saveHostResume()
   } catch (err: any) {
     error.value = err?.message || '生成配对码失败'
   } finally {
@@ -694,13 +832,30 @@ async function pollHost() {
   pollingHost = true
   try {
     const status = await webdavSpaceApi.offerStatus(hostPairing.value.pairingId)
+    hostPollFailures = 0
     hostPairing.value = { ...hostPairing.value, ...status }
     if (status.status === 'claimed' || status.status === 'approved' || status.status === 'expired') {
       stopHostTimer()
+      if (status.status === 'approved' || status.status === 'expired') clearHostResume()
+      else saveHostResume()
     }
   } catch (err: any) {
+    // 与新设备侧一致：网络抖动不能把配对卡死在“等待”上。
+    hostPollFailures += 1
+    const message = err?.message || '查询配对状态失败'
+    const expired = !!hostPairing.value?.expiresAt && Date.now() >= (hostPairing.value?.expiresAt || 0)
+    if (!isFatalPairingError(message) && hostPollFailures <= MAX_POLL_FAILURES && !expired) {
+      if (hostPairing.value) {
+        hostPairing.value = {
+          ...hostPairing.value,
+          message: `网络不稳定，正在自动重试（第 ${hostPollFailures} 次）…`,
+        }
+      }
+      return
+    }
     stopHostTimer()
-    error.value = err?.message || '查询配对状态失败'
+    clearHostResume()
+    error.value = message
   } finally {
     pollingHost = false
   }
@@ -714,9 +869,11 @@ async function findJoin() {
   try {
     await resetPairing()
     hostMode = 'join'
+    hostPollFailures = 0
     const status = await webdavSpaceApi.findJoin(hostJoinCode.value)
     hostPairing.value = { ...status, shortCode: hostJoinCode.value }
     showHostJoinInput.value = false
+    saveHostResume()
   } catch (err: any) {
     error.value = err?.message || '查找配对码失败'
   } finally {
@@ -734,6 +891,7 @@ async function approveHost() {
       : await webdavSpaceApi.approveJoin(hostPairing.value.pairingId)
     hostPairing.value = { ...hostPairing.value, ...status }
     stopHostTimer()
+    clearHostResume()
     notice.value = '已批准，新设备会自动完成加入。'
     void loadDevices()
   } catch (err: any) {
@@ -762,6 +920,8 @@ async function cancelPairing() {
   guestAdoptPeer.value = false
   joinCode.value = ''
   hostJoinCode.value = ''
+  clearHostResume()
+  clearGuestResume()
   await webdavSpaceApi.cancelPairing().catch(() => {})
 }
 
@@ -793,7 +953,10 @@ async function leave() {
 }
 
 onMounted(async () => {
+  nowTick.value = Date.now()
+  tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   await loadConfig()
+  restorePairing()
   await syncStore.refreshStatus()
 })
 
@@ -804,6 +967,8 @@ watch(() => syncStore.lastSyncTime, () => {
 onBeforeUnmount(() => {
   stopHostTimer()
   stopGuestTimer()
+  if (tickTimer) clearInterval(tickTimer)
+  tickTimer = null
 })
 </script>
 
@@ -846,6 +1011,7 @@ onBeforeUnmount(() => {
 .sync-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .sync-field > span { color: var(--text-secondary, #8a8a8a); }
 .sync-field input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color, #d9d9d9); border-radius: 8px; background: var(--bg-primary, #fff); color: inherit; font: inherit; }
+.sync-field select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color, #d9d9d9); border-radius: 8px; background: var(--bg-primary, #fff); color: inherit; font: inherit; }
 .sync-field input.pairing-input { font-size: 20px; letter-spacing: 8px; text-align: center; }
 .pairing-box { border-color: var(--accent-color, #2f6fed); }
 .pairing-code { color: var(--text-primary, inherit); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 24px; letter-spacing: 6px; font-weight: 600; }
@@ -853,6 +1019,10 @@ onBeforeUnmount(() => {
 .sync-notice { margin: 0; color: #1d7a46; font-size: 12px; }
 .sync-warning { margin: 0; color: #a15c00; font-size: 12px; line-height: 1.6; }
 .sync-error { margin: 0; color: #c0392b; font-size: 12px; }
+.sync-advanced summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-secondary, #8a8a8a); }
+.sync-advanced[open] summary { margin-bottom: 8px; }
+.sync-advanced .sync-field { margin-top: 8px; }
+.sync-advanced .sync-actions { margin-top: 8px; }
 @media (max-width: 640px) {
   .sync-choice-grid, .space-meta-grid { grid-template-columns: minmax(0, 1fr); }
   .sync-choice.span-2 { grid-column: auto; }

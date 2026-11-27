@@ -166,7 +166,7 @@ async function beforePwdClose(action: string) {
       <van-cell
         icon="exchange"
         title="WebDAV 同步空间"
-        label="六位配对码 · 端到端加密 · 非实时"
+        label="填写 WebDAV 账号即可同步 · 非实时"
         :value="syncStore.backend === 'webdav' ? '生效中' : '未启用'"
         is-link
         @click="router.push('/sync-space')"

@@ -10,6 +10,7 @@ pub mod account;
 pub mod client;
 pub mod devices;
 pub mod identity;
+pub mod keyslot;
 pub mod pairing;
 pub mod secure;
 pub mod sync;
@@ -74,6 +75,9 @@ struct SpaceMetadata {
     protocol_version: u32,
     vault_id: String,
     created_at: i64,
+    /// 用 WebDAV 应用密码包裹的 vaultKey；旧空间可能没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_slot: Option<keyslot::KeySlot>,
 }
 
 pub fn is_enabled() -> bool {
@@ -158,9 +162,73 @@ async fn has_existing_space(store: &dyn RemoteStore) -> Result<bool, String> {
     }))
 }
 
+async fn read_space_metadata(
+    store: &dyn RemoteStore,
+    vault_id: &str,
+) -> Result<Option<SpaceMetadata>, String> {
+    let path = format!("v1/{vault_id}/space.json");
+    let Some(bytes) = store.get(&path).await.map_err(|error| error.to_string())? else {
+        return Ok(None);
+    };
+    match serde_json::from_slice::<SpaceMetadata>(&bytes) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(_) => {
+            log::warn!("[WebDAV] 忽略损坏的空间信息 {path}");
+            Ok(None)
+        }
+    }
+}
+
+/// 列举云端已有的空间信息，用于判断“这是第一台设备”还是“直接加入”。
+async fn remote_spaces(store: &dyn RemoteStore) -> Result<Vec<SpaceMetadata>, String> {
+    let entries = store
+        .list("v1")
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut spaces = Vec::new();
+    for entry in entries {
+        if !entry.is_dir || uuid::Uuid::parse_str(&entry.name).is_err() {
+            continue;
+        }
+        if let Some(metadata) = read_space_metadata(store, &entry.name).await? {
+            spaces.push(metadata);
+        }
+    }
+    Ok(spaces)
+}
+
+/// 用应用密码包裹 vaultKey 并写入 `space.json`；已有可解开的槽时不重写。
+async fn ensure_key_slot(
+    store: &dyn RemoteStore,
+    identity: &WebDavIdentity,
+    password: &str,
+) -> Result<(), String> {
+    let vault_key = identity::decode_vault_key(identity)?;
+    let path = format!("v1/{}/space.json", identity.vault_id);
+    let mut metadata = read_space_metadata(store, &identity.vault_id)
+        .await?
+        .ok_or_else(|| "云端空间信息不存在".to_string())?;
+    if let Some(slot) = metadata.key_slot.as_ref() {
+        if keyslot::unwrap_key(slot, &identity.vault_id, password)
+            .map(|existing| existing == vault_key)
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+    }
+    metadata.key_slot = Some(keyslot::create(&vault_key, &identity.vault_id, password)?);
+    let bytes = serde_json::to_vec(&metadata)
+        .map_err(|error| format!("序列化空间信息失败：{error}"))?;
+    store
+        .put(&path, &bytes, false)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn ensure_space_metadata(
     store: &dyn RemoteStore,
     identity: &WebDavIdentity,
+    password: Option<&str>,
 ) -> Result<(), String> {
     let root = format!("v1/{}", identity.vault_id);
     ensure_collection(store, &root)
@@ -169,11 +237,16 @@ async fn ensure_space_metadata(
     ensure_collection(store, &sync::ops_root(&identity.vault_id))
         .await
         .map_err(|error| error.to_string())?;
-    let metadata = SpaceMetadata {
+    let mut metadata = SpaceMetadata {
         protocol_version: 1,
         vault_id: identity.vault_id.clone(),
         created_at: chrono::Utc::now().timestamp_millis(),
+        key_slot: None,
     };
+    if let Some(password) = password {
+        let vault_key = identity::decode_vault_key(identity)?;
+        metadata.key_slot = Some(keyslot::create(&vault_key, &identity.vault_id, password)?);
+    }
     let bytes = serde_json::to_vec(&metadata)
         .map_err(|error| format!("序列化空间信息失败：{error}"))?;
     let path = format!("{root}/space.json");
@@ -187,11 +260,14 @@ async fn ensure_space_metadata(
                 .ok_or_else(|| "空间信息写入冲突，请稍后重试".to_string())?;
             let existing: SpaceMetadata = serde_json::from_slice(&existing)
                 .map_err(|_| "云端空间信息格式损坏".to_string())?;
-            if existing.vault_id == identity.vault_id {
-                Ok(())
-            } else {
-                Err("云端空间信息与当前空间 ID 不一致，已停止".to_string())
+            if existing.vault_id != identity.vault_id {
+                return Err("云端空间信息与当前空间 ID 不一致，已停止".to_string());
             }
+            // 旧空间没有密钥槽时，借这次机会补上，之后新设备可直接用密码加入。
+            if existing.key_slot.is_none() && password.is_some() {
+                return ensure_key_slot(store, identity, password.unwrap_or_default()).await;
+            }
+            Ok(())
         }
         Err(error) => Err(error.to_string()),
     }
@@ -220,7 +296,7 @@ fn prepare_binding(
 
 pub async fn get_config() -> Result<WebdavSpaceConfigView, String> {
     let _guard = CONFIG_LOCK.lock().await;
-    let migrated_legacy = migrate_legacy_best_effort();
+    let _ = migrate_legacy_best_effort();
     let mut notice = None;
     let account = account::load_account()?;
     let mut identity = identity::load_identity()?;
@@ -228,34 +304,93 @@ pub async fn get_config() -> Result<WebdavSpaceConfigView, String> {
     if let Some(account) = account.as_ref().filter(|account| account::account_is_active(account)) {
         let client = client_for(account)?;
         let _ = pairing::cleanup_expired(&client, &DbObservations).await;
+
         if identity.is_none() {
-            match has_existing_space(&client).await {
-                Ok(true) => {
-                    notice = Some(
-                        "云端已有同步空间。请输入已有设备显示的六位配对码加入；若这是旧设备，请勿再建立新空间。"
-                            .to_string(),
-                    );
-                }
-                Ok(false) if migrated_legacy => {
+            // 没有本机身份时自动判断：云端没空间就建，有空间就直接用密码加入。
+            match remote_spaces(&client).await {
+                Ok(spaces) if spaces.is_empty() => {
                     let created = identity::create_identity(
                         &crate::services::vault_sync::config::default_device_name(),
                     )?;
-                    ensure_space_metadata(&client, &created).await?;
+                    ensure_space_metadata(&client, &created, Some(account.app_password.as_str()))
+                        .await?;
                     identity::save_identity(&created)?;
                     if let Err(error) = prepare_binding(&created, true, None) {
                         let _ = identity::delete_identity();
                         return Err(error);
                     }
                     identity = Some(created);
-                    notice = Some(
-                        "已根据旧版 WebDAV 配置建立同步空间。其他设备需要用六位配对码重新加入。"
-                            .to_string(),
-                    );
+                    notice = Some("已建立同步空间并开始同步。".to_string());
                 }
-                Ok(false) => {}
+                Ok(spaces) if spaces.len() == 1 => {
+                    let space = &spaces[0];
+                    if let Some(slot) = space.key_slot.as_ref() {
+                        match keyslot::unwrap_key(slot, &space.vault_id, &account.app_password) {
+                            Ok(vault_key) => {
+                                let counts = db::with_db(local_counts)?;
+                                if counts.documents + counts.folders + counts.versions > 0 {
+                                    notice = Some(
+                                        "云端已有同步空间，但本机已有文稿。为避免互相覆盖，请先确认以哪边为准。"
+                                            .to_string(),
+                                    );
+                                } else {
+                                    // 与配对加入一致：先读远端 Lamport 水位，避免本机新操作被旧操作盖掉。
+                                    match sync::remote_lamport_floor(&client, &space.vault_id).await {
+                                        Ok(floor) => {
+                                            let joined =
+                                                identity::join_identity(&space.vault_id, &vault_key)?;
+                                            identity::save_identity(&joined)?;
+                                            if let Err(error) =
+                                                prepare_binding(&joined, false, Some(floor))
+                                            {
+                                                let _ = identity::delete_identity();
+                                                return Err(error);
+                                            }
+                                            identity = Some(joined);
+                                            notice = Some(
+                                                "已加入云端已有的同步空间并开始同步。".to_string(),
+                                            );
+                                        }
+                                        Err(error) => {
+                                            notice = Some(format!(
+                                                "云端已有同步空间，但暂时读不到同步进度，请稍后重试：{error}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                notice = Some(format!(
+                                    "云端已有同步空间，但当前应用密码无法解锁（{error}）。请确认密码；旧空间可以用一次六位配对码加入。"
+                                ));
+                            }
+                        }
+                    } else {
+                        notice = Some(
+                            "云端已有同步空间，但还没有密钥槽。用一次六位配对码加入后，其他设备就能直接填密码同步。"
+                                .to_string(),
+                        );
+                    }
+                }
+                Ok(spaces) => {
+                    notice = Some(format!(
+                        "该 WebDAV 账号下有 {} 个同步空间；暂不能自动选择，请先在已有设备上确认。",
+                        spaces.len()
+                    ));
+                }
                 Err(error) => {
                     notice = Some(format!("暂时无法检查云端同步空间：{}", error));
                 }
+            }
+        } else if let Some(current) = identity.as_ref() {
+            // 旧空间第一次打开设置页时补上密钥槽，之后新设备可直接用密码加入。
+            match read_space_metadata(&client, &current.vault_id).await {
+                Ok(Some(metadata)) if metadata.key_slot.is_none() => {
+                    if let Err(error) = ensure_key_slot(&client, current, &account.app_password).await {
+                        log::warn!("[WebDAV] 补写密钥槽失败：{error}");
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -320,7 +455,14 @@ pub async fn connect_account(
         std::time::Duration::from_secs(1),
     )?;
     client.test_connection().await?;
-    account::save_account(&endpoint, &username, Some(password))
+    let view = account::save_account(&endpoint, &username, Some(password.clone()))?;
+    // 密码变更后立即重写密钥槽，让其他设备继续能用新密码加入。
+    if let Some(identity) = identity::load_identity().ok().flatten() {
+        if let Err(error) = ensure_key_slot(&client, &identity, &password).await {
+            log::warn!("[WebDAV] 更新密钥槽失败：{error}");
+        }
+    }
+    Ok(view)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -429,8 +571,24 @@ pub async fn create_space(device_name: &str) -> Result<SpaceCreatedView, String>
         return Err("当前设备已经在同步空间中；如需更换请先退出".to_string());
     }
     let client = client_for(&account)?;
+    // 云端已有空间时绝不能再建一个：否则两台设备各有一个 vault，
+    // 六位码永远对不上，用户只能清数据重来。
+    match has_existing_space(&client).await {
+        Ok(true) => {
+            return Err("这个 WebDAV 目录里已经有同步空间了，不要重复建立。\n\
+                 请让已有空间的设备点「显示配对码」，本机在「输入并加入」里填六位码。\n\
+                 如果确实要新建，请换一个空的 WebDAV 子目录。"
+                .to_string())
+        }
+        Ok(false) => {}
+        Err(error) => {
+            return Err(format!(
+                "无法确认云端是否已有空间，请稍后重试或先测试连接：{error}"
+            ))
+        }
+    }
     let identity = identity::create_identity(device_name)?;
-    ensure_space_metadata(&client, &identity).await?;
+    ensure_space_metadata(&client, &identity, Some(account.app_password.as_str())).await?;
     identity::save_identity(&identity)?;
     if let Err(error) = prepare_binding(&identity, true, None) {
         let _ = identity::delete_identity();
@@ -570,9 +728,15 @@ pub async fn join_status(pairing_id: &str) -> Result<PairingStatusView, String> 
         }
     };
 
-    let floor = sync::remote_max_lamport(&client, &pending.identity.vault_id)
-        .await
-        .map_err(|error| format!("读取远端 Lamport 水位失败，请重新配对：{error}"))?;
+    let floor = match sync::remote_lamport_floor(&client, &pending.identity.vault_id).await {
+        Ok(floor) => floor,
+        Err(error) => {
+            // 网络/限流失败不能丢掉整个配对：会话仍在，前端下一轮会重试。
+            log::warn!("[WebDAV] 读取 Lamport 水位失败，稍后重试：{error}");
+            view.message = Some(format!("已收到批准，但读取远端数据失败，正在自动重试…（{error}）"));
+            return Ok(view);
+        }
+    };
 
     if pending.adopt_peer {
         // 防止旧身份继续同步旧空间；任务此时仍然保留，失败可重试。
@@ -593,10 +757,19 @@ pub async fn join_status(pairing_id: &str) -> Result<PairingStatusView, String> 
         identity::discard_staged_identity();
         return Err(error);
     }
-    pairing::finish_join(pairing_id, &client, &DbObservations).await?;
+    // 清理远端配对文件是尽力而为：身份已落盘，不能因为 DELETE 失败就让
+    // 前端以为加入失败并停掉轮询。
+    if let Err(error) = pairing::finish_join(pairing_id, &client, &DbObservations).await {
+        log::warn!("[WebDAV] 清理配对文件失败（不影响加入）：{error}");
+    }
     view.configured = true;
     view.status = "configured".to_string();
     view.message = Some("已加入同步空间，正在拉取远端数据…".to_string());
+    log::info!(
+        "[WebDAV] 新设备加入完成：vault={} device={}",
+        pending.identity.vault_id,
+        pending.identity.device_id
+    );
     Ok(view)
 }
 

@@ -1619,7 +1619,7 @@ pub fn apply_deferred_document(
     Ok(outcome != ApplyOutcome::Deferred)
 }
 
-fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+pub(crate) fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO sync_meta(key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1629,7 +1629,7 @@ fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn get_meta(conn: &Connection, key: &str) -> Option<String> {
+pub(crate) fn get_meta(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row(
         "SELECT value FROM sync_meta WHERE key = ?1",
         params![key],

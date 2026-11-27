@@ -26,6 +26,65 @@ const PUSH_BATCH: usize = 30;
 const PREPARE_BATCH: usize = 100;
 const PUSH_ROUNDS: usize = 5;
 const MAX_PULL_PER_SYNC: usize = 1000;
+/// 设备心跳只用于展示，没必要每轮同步都写。
+const HEARTBEAT_INTERVAL_MS: i64 = 6 * 60 * 60 * 1000;
+/// 旧版本设备不会更新 state.json，定期做一次全量扫描兼容。
+const FULL_SCAN_INTERVAL_MS: i64 = 10 * 60 * 1000;
+const META_REMOTE_SEQ: &str = "woo_remote_state_seq";
+const META_FULL_SCAN: &str = "woo_full_scan_at";
+const META_HEARTBEAT: &str = "woo_heartbeat_at";
+
+/// 空间级变更门闩：任何设备推送后递增 seq，其他设备先看它再决定要不要列举操作。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RemoteState {
+    pub protocol_version: u32,
+    pub vault_id: String,
+    pub seq: i64,
+    pub max_lamport: i64,
+    pub updated_at: i64,
+}
+
+fn state_path(vault_id: &str) -> String {
+    format!("v1/{vault_id}/state.json")
+}
+
+pub async fn read_remote_state(
+    store: &dyn RemoteStore,
+    vault_id: &str,
+) -> Result<Option<RemoteState>, String> {
+    let Some(bytes) = store
+        .get(&state_path(vault_id))
+        .await
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    Ok(serde_json::from_slice(&bytes).ok())
+}
+
+async fn write_remote_state(
+    store: &dyn RemoteStore,
+    identity: &WebDavIdentity,
+    existing: Option<&RemoteState>,
+    local_max_lamport: i64,
+) -> Result<RemoteState, String> {
+    let existing = existing.cloned().unwrap_or_default();
+    let state = RemoteState {
+        protocol_version: 1,
+        vault_id: identity.vault_id.clone(),
+        seq: existing.seq.saturating_add(1).max(1),
+        max_lamport: existing.max_lamport.max(local_max_lamport),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+    };
+    let bytes = serde_json::to_vec(&state)
+        .map_err(|error| format!("序列化空间状态失败：{error}"))?;
+    store
+        .put(&state_path(&identity.vault_id), &bytes, false)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(state)
+}
 
 /// 目录创建成功后在进程内缓存，避免每次同步都重复 MKCOL。
 /// WebDAV 供应商通常按请求数限速，重复 MKCOL 会白白消耗额度。
@@ -323,6 +382,17 @@ pub async fn remote_max_lamport(
     Ok(max_lamport)
 }
 
+/// 加入空间时的 Lamport 水位：优先读 state.json，旧空间才回退逐条扫描。
+pub async fn remote_lamport_floor(
+    store: &dyn RemoteStore,
+    vault_id: &str,
+) -> Result<i64, String> {
+    if let Some(state) = read_remote_state(store, vault_id).await? {
+        return Ok(state.max_lamport);
+    }
+    remote_max_lamport(store, vault_id).await
+}
+
 async fn pull_remote_ops(
     store: &dyn RemoteStore,
     identity: &WebDavIdentity,
@@ -421,6 +491,29 @@ pub async fn sync_now(
         store::load_state(conn).map(|state| state.last_success_at.is_none())
     })?;
 
+    // 先看门口牌子：没有变化就不列举 ops，省掉每轮的多次 PROPFIND。
+    let remote_state = read_remote_state(store, &identity.vault_id).await?;
+    let last_remote_seq = db::with_db(|conn| {
+        store::get_meta(conn, META_REMOTE_SEQ).and_then(|value| value.parse::<i64>().ok())
+    })
+    .ok()
+    .flatten();
+    let last_full_scan = db::with_db(|conn| {
+        store::get_meta(conn, META_FULL_SCAN).and_then(|value| value.parse::<i64>().ok())
+    })
+    .ok()
+    .flatten();
+    let now = chrono::Utc::now().timestamp_millis();
+    let remote_changed = match &remote_state {
+        Some(state) => last_remote_seq != Some(state.seq),
+        None => true,
+    };
+    // 旧版本设备不会写 state.json，每 10 分钟做一次全量扫描兼容。
+    let full_scan_due = first_success
+        || last_full_scan
+            .map(|at| now.saturating_sub(at) >= FULL_SCAN_INTERVAL_MS)
+            .unwrap_or(true);
+
     let mut pushed = 0i64;
     for _ in 0..PUSH_ROUNDS {
         let count = push_round(store, identity).await?;
@@ -430,7 +523,18 @@ pub async fn sync_now(
         }
     }
 
-    let pulled = pull_remote_ops(store, identity).await?;
+    let pulled = if remote_changed || full_scan_due {
+        let count = pull_remote_ops(store, identity).await? as i64;
+        if let Some(state) = remote_state.as_ref() {
+            db::with_db(|conn| store::set_meta(conn, META_REMOTE_SEQ, &state.seq.to_string()))?;
+        }
+        if full_scan_due {
+            db::with_db(|conn| store::set_meta(conn, META_FULL_SCAN, &now.to_string()))?;
+        }
+        count
+    } else {
+        0
+    };
     resolve_deferred(identity)?;
 
     // 新设备首次拉取完成后，把远端没有的本机独有文稿补传上去。
@@ -447,11 +551,43 @@ pub async fn sync_now(
         }
     }
 
+    // 推送后更新门口牌子，让其他设备知道有新内容；旧空间第一次同步时也补上。
+    if pushed > 0 || remote_state.is_none() {
+        let local_max = db::with_db(|conn| store::load_state(conn).map(|state| state.lamport).unwrap_or(0))?;
+        match write_remote_state(store, identity, remote_state.as_ref(), local_max).await {
+            Ok(state) => {
+                let _ = db::with_db(|conn| {
+                    store::set_meta(conn, META_REMOTE_SEQ, &state.seq.to_string())
+                });
+            }
+            Err(error) => log::warn!("[WebDAV] 更新空间状态失败：{error}"),
+        }
+    }
+
+    // 心跳只用于设备列表展示，6 小时写一次足够。
+    let last_heartbeat = db::with_db(|conn| {
+        store::get_meta(conn, META_HEARTBEAT).and_then(|value| value.parse::<i64>().ok())
+    })
+    .ok()
+    .flatten();
+    if last_heartbeat
+        .map(|at| now.saturating_sub(at) >= HEARTBEAT_INTERVAL_MS)
+        .unwrap_or(true)
+    {
+        match devices::write_heartbeat(store, identity).await {
+            Ok(()) => {
+                if let Err(error) =
+                    db::with_db(|conn| store::set_meta(conn, META_HEARTBEAT, &now.to_string()))
+                {
+                    log::warn!("[WebDAV] 记录心跳时间失败：{error}");
+                }
+            }
+            Err(error) => log::warn!("[WebDAV] 写入设备心跳失败：{}", error),
+        }
+    }
+
     let finished_at = now_str();
     db::with_db(|conn| store::set_last_success(conn, &finished_at))?;
-    if let Err(error) = devices::write_heartbeat(store, identity).await {
-        log::warn!("[WebDAV] 写入设备心跳失败：{}", error);
-    }
     Ok(SyncResult {
         pushed_count: pushed as i32,
         pulled_count: pulled as i32,
@@ -579,6 +715,8 @@ mod integration_tests {
             &format!("v1/{vault_id}/ops/00/bad-op.json"),
             b"{not valid json",
         );
+        // 模拟旧版本设备直接写入操作（不会更新 state.json），触发一次全量扫描。
+        crate::db::with_db(|conn| sync_store::set_meta(conn, META_FULL_SCAN, "0")).unwrap();
         let result = sync_now(&remote, &id_a).await.unwrap();
         assert_eq!(result.pulled_count, 0);
         crate::db::with_db(|conn| {
@@ -590,6 +728,26 @@ mod integration_tests {
         let _ = std::fs::remove_dir_all(dir_a);
         let _ = std::fs::remove_dir_all(dir_b);
         let _ = identity::space_fingerprint(&vault_id);
+    }
+
+    #[tokio::test]
+    async fn remote_state_keeps_max_lamport_and_increments_seq() {
+        let vault_id = uuid::Uuid::new_v4().to_string();
+        let device_id = uuid::Uuid::new_v4().to_string();
+        let key = base64url_encode(&random_vault_key().unwrap());
+        let id = identity(&vault_id, &device_id, &key);
+        let remote = MemoryRemote::new();
+
+        let state = write_remote_state(&remote, &id, None, 10).await.unwrap();
+        assert_eq!(state.seq, 1);
+        assert_eq!(state.max_lamport, 10);
+
+        let read = read_remote_state(&remote, &vault_id).await.unwrap().unwrap();
+        assert_eq!(read.max_lamport, 10);
+
+        let state = write_remote_state(&remote, &id, Some(&read), 5).await.unwrap();
+        assert_eq!(state.seq, 2);
+        assert_eq!(state.max_lamport, 10);
     }
 }
 

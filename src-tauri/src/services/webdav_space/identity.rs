@@ -86,6 +86,21 @@ pub fn create_identity(device_name: &str) -> Result<WebDavIdentity, String> {
     })
 }
 
+/// 用已有空间的 vaultKey 建立本机身份（无需配对）。
+pub fn join_identity(vault_id: &str, vault_key: &[u8; 32]) -> Result<WebDavIdentity, String> {
+    if vault_id.is_empty() {
+        return Err("同步空间 ID 为空".to_string());
+    }
+    Ok(WebDavIdentity {
+        vault_id: vault_id.to_string(),
+        device_id: uuid::Uuid::new_v4().to_string(),
+        vault_key: base64url_encode(vault_key),
+        device_name: sanitize_device_name(&default_device_name()),
+        platform: platform_name().to_string(),
+        bound_user: db::current_user_key(),
+    })
+}
+
 pub fn decode_vault_key(identity: &WebDavIdentity) -> Result<[u8; 32], String> {
     let bytes = base64url_decode(&identity.vault_key)
         .map_err(|_| "同步空间密钥编码无效".to_string())?;

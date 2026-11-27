@@ -23,7 +23,9 @@ use super::identity::{
 };
 
 pub const PAIRING_ROOT: &str = "v1/pairing";
-pub const PAIRING_TTL_SECONDS: i64 = 300;
+// 首次配对要填账号、切设备、核对设备名，5 分钟太容易过期；
+// 15 分钟仍短于 approval 泄漏窗口，且失败时两端都会明确提示重新生成。
+pub const PAIRING_TTL_SECONDS: i64 = 900;
 const MIN_TTL_SECONDS: i64 = 60;
 const MAX_TTL_SECONDS: i64 = 3600;
 
@@ -585,11 +587,13 @@ async fn find_unique_pairing_file(
     if !is_six_digits(code) {
         return Err("请输入六位配对码".to_string());
     }
+    log::info!("[WebDAV] 查找配对码 {}（{}）", code, kind.as_str());
     let entries = store
         .list(PAIRING_ROOT)
         .await
         .map_err(|error| error.to_string())?;
     let now = now_ms();
+    let listed_count = entries.len();
     let mut candidates = Vec::new();
     for entry in entries {
         if entry.is_dir {
@@ -623,10 +627,41 @@ async fn find_unique_pairing_file(
         candidates.push((file, expires_at));
     }
     match candidates.len() {
-        0 => Err("没有找到对应的配对码；请确认六位码，或让对端重新生成".to_string()),
-        1 => Ok(candidates.remove(0)),
+        0 => Err(no_candidate_message(code, kind, listed_count)),
+        1 => {
+            log::info!(
+                "[WebDAV] 配对码 {}（{}）匹配成功，pairingId={}",
+                code,
+                kind.as_str(),
+                candidates[0].0.pairing_id
+            );
+            Ok(candidates.remove(0))
+        }
         _ => Err("配对码冲突：同一六位码对应多个配对请求，请重新生成配对码".to_string()),
     }
+}
+
+/// 找不到配对码时给出可执行的排查方向，而不是只回一句“没有找到”。
+fn no_candidate_message(code: &str, kind: PairingKind, listed_count: usize) -> String {
+    let remote_hint = if listed_count == 0 {
+        "远端 v1/pairing 目录是空的：两端很可能没有连到同一个 WebDAV 地址，\
+         请核对「测试连接并保存」时填写的地址完全相同（含子目录）"
+            .to_string()
+    } else {
+        format!(
+            "远端 v1/pairing 目录里没有这个码（已列出 {listed_count} 个文件）：\
+             请确认六位码没有输错，且对端没有重新生成新的配对码"
+        )
+    };
+    format!(
+        "没有找到六位码 {code} 对应的配对请求。{}。配对码有效期 15 分钟，过期后需要在对端重新点「显示配对码」。{}",
+        if kind == PairingKind::Offer {
+            "已有空间的设备需要点「显示配对码」"
+        } else {
+            "新设备需要点「显示我的配对码」"
+        },
+        remote_hint
+    )
 }
 
 async fn observe_single_file(

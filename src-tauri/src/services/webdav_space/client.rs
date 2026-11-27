@@ -1,13 +1,91 @@
 //! 最小 WebDAV 客户端：Basic Auth、HTTPS、禁止重定向、退避重试、
 //! PROPFIND/MKCOL/GET/PUT/DELETE。
 
+use std::collections::HashMap;
 use std::fmt;
-use std::time::Duration;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use reqwest::{Method, StatusCode};
 
 use super::account::normalize_endpoint_with_options;
+
+/// 同一账号相邻请求的最小间隔，避免突发流量触发供应商限流。
+const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(120);
+/// 429 冷却上限：超过这个时间本轮直接结束，交给下一轮同步重试。
+const MAX_COOLDOWN: Duration = Duration::from_secs(120);
+
+struct Throttle {
+    /// 同一账号的请求串行执行，避免并发打满供应商配额。
+    gate: tokio::sync::Mutex<()>,
+    last: StdMutex<Option<Instant>>,
+    cooldown_until: StdMutex<Option<Instant>>,
+}
+
+impl Throttle {
+    fn new() -> Self {
+        Self {
+            gate: tokio::sync::Mutex::new(()),
+            last: StdMutex::new(None),
+            cooldown_until: StdMutex::new(None),
+        }
+    }
+
+    async fn wait_turn(&self) {
+        loop {
+            let now = Instant::now();
+            let cooldown = *self.cooldown_until.lock().unwrap();
+            if let Some(until) = cooldown {
+                if now < until {
+                    tokio::time::sleep(until - now).await;
+                    continue;
+                }
+            }
+            let last = *self.last.lock().unwrap();
+            if let Some(last) = last {
+                let elapsed = now.saturating_duration_since(last);
+                if elapsed < MIN_REQUEST_INTERVAL {
+                    tokio::time::sleep(MIN_REQUEST_INTERVAL - elapsed).await;
+                    continue;
+                }
+            }
+            *self.last.lock().unwrap() = Some(Instant::now());
+            return;
+        }
+    }
+
+    fn cooldown(&self, duration: Duration) {
+        let duration = duration.min(MAX_COOLDOWN);
+        let until = Instant::now() + duration;
+        let mut guard = self.cooldown_until.lock().unwrap();
+        if guard.map(|current| current < until).unwrap_or(true) {
+            *guard = Some(until);
+        }
+    }
+}
+
+static THROTTLES: Lazy<StdMutex<HashMap<String, Arc<Throttle>>>> =
+    Lazy::new(|| StdMutex::new(HashMap::new()));
+
+fn throttle_for(key: &str) -> Arc<Throttle> {
+    let mut guard = THROTTLES.lock().unwrap();
+    guard
+        .entry(key.to_string())
+        .or_insert_with(|| Arc::new(Throttle::new()))
+        .clone()
+}
+
+fn retry_after(response: &reqwest::Response) -> Option<Duration> {
+    let value = response.headers().get("retry-after")?.to_str().ok()?;
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+        .map(|duration| duration.min(MAX_COOLDOWN))
+}
 
 const PROPFIND_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:">
@@ -146,6 +224,11 @@ impl WebdavClient {
         collection: bool,
     ) -> Result<(StatusCode, Vec<u8>, String), RemoteError> {
         let url = self.url_for(path, collection)?;
+        // 同一账号串行请求：WebDAV 供应商通常按并发/请求数限流，
+        // 后台同步、设置页和设备列表同时请求很容易触发 429。
+        let throttle = throttle_for(&format!("{}|{}", self.base, self.username));
+        let _gate = throttle.gate.lock().await;
+        throttle.wait_turn().await;
         let mut last_error: Option<RemoteError> = None;
         for attempt in 0..4u32 {
             if attempt > 0 {
@@ -177,13 +260,16 @@ impl WebdavClient {
                         return Err(RemoteError::Redirect);
                     }
                     if status == StatusCode::TOO_MANY_REQUESTS {
-                        last_error = Some(RemoteError::Other(
-                            "云盘请求过于频繁，请稍后再试；部分供应商有 30 分钟请求配额"
-                                .to_string(),
-                        ));
-                        continue;
+                        // 不在本次同步里硬等：记录冷却时间，让本轮失败并在下一轮自动重试。
+                        let wait = retry_after(&response).unwrap_or(Duration::from_secs(30));
+                        throttle.cooldown(wait);
+                        return Err(RemoteError::Other(format!(
+                            "云盘请求过于频繁，已暂停本轮同步，约 {} 秒后自动重试",
+                            wait.as_secs().max(1)
+                        )));
                     }
                     if status.is_server_error() {
+                        throttle.cooldown(Duration::from_secs(2));
                         last_error = Some(RemoteError::Other(format!(
                             "WebDAV 暂时不可用（HTTP {}）",
                             status.as_u16()
@@ -204,6 +290,7 @@ impl WebdavClient {
                     return Ok((status, body, location));
                 }
                 Err(error) => {
+                    throttle.cooldown(Duration::from_secs(3));
                     last_error = Some(RemoteError::Other(format!("网络错误：{error}")));
                 }
             }
