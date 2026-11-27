@@ -3,6 +3,7 @@ pub mod folder_service;
 pub mod lan_sync;
 #[cfg(desktop)]
 pub mod mcp;
+pub mod markdown_vault;
 pub mod sync_engine;
 pub mod utils;
 pub mod vault_sync;

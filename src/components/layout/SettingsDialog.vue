@@ -10,6 +10,7 @@
         </div>
         <div class="settings-body">
           <SyncSpaceSettings v-if="section === 'all' || section === 'sync'" />
+          <MarkdownVaultSettings v-if="section === 'all' || section === 'sync'" />
           <div v-if="section === 'all' || section === 'mcp'" class="settings-section mcp-section">
             <div class="settings-section-title-row">
               <h3>MCP 服务</h3>
@@ -199,6 +200,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { SettingsSection } from '../../config/menus'
 import IconClose from '../icons/IconClose.vue'
 import SyncSpaceSettings from '../settings/SyncSpaceSettings.vue'
+import MarkdownVaultSettings from '../settings/MarkdownVaultSettings.vue'
 import { getAssetLinkSettings, saveAssetLinkSettings } from '../../services/assetLink'
 import { useThemeStore } from '../../stores/theme'
 import { editorFontId, editorFontOptions, setEditorFontId } from '../../config/editorFonts'

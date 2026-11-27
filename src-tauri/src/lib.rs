@@ -514,6 +514,15 @@ pub fn run() {
             commands::document::document_empty_trash,
             commands::document::document_reorder,
             commands::document::document_move,
+            // 原生 Markdown 文件库
+            commands::markdown_vault::markdown_vault_scan,
+            commands::markdown_vault::markdown_vault_list,
+            commands::markdown_vault::markdown_vault_read,
+            commands::markdown_vault::markdown_vault_save,
+            #[cfg(desktop)]
+            commands::markdown_vault::markdown_vault_migrate_preview,
+            #[cfg(desktop)]
+            commands::markdown_vault::markdown_vault_migrate,
             // Version
             commands::version::version_list,
             commands::version::version_get,
