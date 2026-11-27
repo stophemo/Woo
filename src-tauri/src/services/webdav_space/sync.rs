@@ -495,14 +495,10 @@ pub async fn sync_now(
     let remote_state = read_remote_state(store, &identity.vault_id).await?;
     let last_remote_seq = db::with_db(|conn| {
         store::get_meta(conn, META_REMOTE_SEQ).and_then(|value| value.parse::<i64>().ok())
-    })
-    .ok()
-    .flatten();
+    });
     let last_full_scan = db::with_db(|conn| {
         store::get_meta(conn, META_FULL_SCAN).and_then(|value| value.parse::<i64>().ok())
-    })
-    .ok()
-    .flatten();
+    });
     let now = chrono::Utc::now().timestamp_millis();
     let remote_changed = match &remote_state {
         Some(state) => last_remote_seq != Some(state.seq),
@@ -553,7 +549,7 @@ pub async fn sync_now(
 
     // 推送后更新门口牌子，让其他设备知道有新内容；旧空间第一次同步时也补上。
     if pushed > 0 || remote_state.is_none() {
-        let local_max = db::with_db(|conn| store::load_state(conn).map(|state| state.lamport).unwrap_or(0))?;
+        let local_max = db::with_db(|conn| store::load_state(conn).map(|state| state.lamport).unwrap_or(0));
         match write_remote_state(store, identity, remote_state.as_ref(), local_max).await {
             Ok(state) => {
                 let _ = db::with_db(|conn| {
@@ -567,9 +563,7 @@ pub async fn sync_now(
     // 心跳只用于设备列表展示，6 小时写一次足够。
     let last_heartbeat = db::with_db(|conn| {
         store::get_meta(conn, META_HEARTBEAT).and_then(|value| value.parse::<i64>().ok())
-    })
-    .ok()
-    .flatten();
+    });
     if last_heartbeat
         .map(|at| now.saturating_sub(at) >= HEARTBEAT_INTERVAL_MS)
         .unwrap_or(true)
