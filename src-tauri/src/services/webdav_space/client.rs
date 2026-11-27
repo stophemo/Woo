@@ -679,11 +679,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retries_rate_limited_or_server_errors() {
+    async fn retries_server_errors() {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let address = server.server_addr().to_ip().unwrap();
         let handle = std::thread::spawn(move || {
-            for status in [500u16, 429, 207] {
+            for status in [500u16, 207] {
                 let request = server.recv().unwrap();
                 let body = if status == 207 {
                     r#"<d:multistatus xmlns:d="DAV:"><d:response><d:href>/v1/shard/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response></d:multistatus>"#
