@@ -232,14 +232,42 @@ pub fn diff_block_hashes(old: &[String], new: &[String]) -> Vec<BlockChange> {
         return changes;
     }
 
-    let count = old_mid.len().max(new_mid.len());
-    for offset in 0..count {
-        changes.push(BlockChange {
-            kind: "replace".to_string(),
-            index: prefix + offset,
-            old_hash: old_mid.get(offset).cloned(),
-            new_hash: new_mid.get(offset).cloned(),
-        });
+    let mut left = 0usize;
+    let mut right = 0usize;
+    while left < old_mid.len() || right < new_mid.len() {
+        if left < old_mid.len() && right < new_mid.len() && old_mid[left] == new_mid[right] {
+            left += 1;
+            right += 1;
+            continue;
+        }
+        if left < old_mid.len() && right < new_mid.len() {
+            changes.push(BlockChange {
+                kind: "replace".to_string(),
+                index: prefix + right,
+                old_hash: Some(old_mid[left].clone()),
+                new_hash: Some(new_mid[right].clone()),
+            });
+            left += 1;
+            right += 1;
+            continue;
+        }
+        if left < old_mid.len() {
+            changes.push(BlockChange {
+                kind: "delete".to_string(),
+                index: prefix + right,
+                old_hash: Some(old_mid[left].clone()),
+                new_hash: None,
+            });
+            left += 1;
+        } else {
+            changes.push(BlockChange {
+                kind: "insert".to_string(),
+                index: prefix + right,
+                old_hash: None,
+                new_hash: Some(new_mid[right].clone()),
+            });
+            right += 1;
+        }
     }
     changes
 }
