@@ -560,6 +560,8 @@ pub fn run() {
             // WebDAV 同步空间（账号 + 六位码配对）
             commands::webdav_space::webdav_space_get_config,
             commands::webdav_space::webdav_space_connect_account,
+            commands::webdav_space::webdav_space_export_config,
+            commands::webdav_space::webdav_space_parse_config,
             commands::webdav_space::webdav_space_join_state,
             commands::webdav_space::webdav_space_create,
             commands::webdav_space::webdav_space_leave,

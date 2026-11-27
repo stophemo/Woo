@@ -94,6 +94,13 @@ export interface SpaceCreatedView {
   spaceFingerprint: string
 }
 
+export interface ImportConfigView {
+  endpoint: string
+  username: string
+  password: string | null
+  vaultId: string | null
+}
+
 export interface SyncResultView {
   pushedCount: number
   pulledCount: number
@@ -117,6 +124,16 @@ export function connectAccount(
     username,
     password: password || null,
   })
+}
+
+/** 生成“配置卡”：新设备粘贴后自动填好账号。 */
+export function exportConfig(includePassword: boolean): Promise<string> {
+  return invoke<string>('webdavSpace:exportConfig', { includePassword })
+}
+
+/** 解析配置卡，不保存、不发请求。 */
+export function parseConfig(payload: string): Promise<ImportConfigView> {
+  return invoke<ImportConfigView>('webdavSpace:parseConfig', { payload })
 }
 
 export function getJoinState(): Promise<JoinLocalStateView> {
@@ -186,6 +203,8 @@ export function cancelPairing(): Promise<void> {
 export default {
   getConfig,
   connectAccount,
+  exportConfig,
+  parseConfig,
   joinState: getJoinState,
   createSpace,
   leaveSpace,

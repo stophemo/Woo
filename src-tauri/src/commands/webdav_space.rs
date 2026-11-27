@@ -23,6 +23,24 @@ pub async fn webdav_space_connect_account(
     }
 }
 
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceExportConfig")]
+pub fn webdav_space_export_config(include_password: bool) -> CommandResult<String> {
+    match webdav_space::export_config(include_password) {
+        Ok(payload) => CommandResult::success(payload),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
+#[tauri::command(rename_all = "camelCase", rename = "webdavSpaceParseConfig")]
+pub fn webdav_space_parse_config(
+    payload: String,
+) -> CommandResult<webdav_space::ImportConfigView> {
+    match webdav_space::parse_config(&payload) {
+        Ok(view) => CommandResult::success(view),
+        Err(message) => CommandResult::error(&message),
+    }
+}
+
 #[tauri::command(rename_all = "camelCase", rename = "webdavSpaceJoinState")]
 pub fn webdav_space_join_state() -> CommandResult<webdav_space::JoinLocalStateView> {
     match webdav_space::join_local_state() {

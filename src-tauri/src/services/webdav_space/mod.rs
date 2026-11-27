@@ -57,6 +57,15 @@ pub struct SpaceCreatedView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportConfigView {
+    pub endpoint: String,
+    pub username: String,
+    pub password: Option<String>,
+    pub vault_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JoinLocalStateView {
     pub has_identity: bool,
     pub vault_id: Option<String>,
@@ -361,13 +370,13 @@ pub async fn get_config() -> Result<WebdavSpaceConfigView, String> {
                             }
                             Err(error) => {
                                 notice = Some(format!(
-                                    "云端已有同步空间，但当前应用密码无法解锁（{error}）。请确认密码；旧空间可以用一次六位配对码加入。"
+                                    "云端已有同步空间，但当前应用密码无法解锁（{error}）。请确认密码；如果这是旧空间，先在已加入的设备上打开一次「跨设备」设置。"
                                 ));
                             }
                         }
                     } else {
                         notice = Some(
-                            "云端已有同步空间，但还没有密钥槽。用一次六位配对码加入后，其他设备就能直接填密码同步。"
+                            "云端已有同步空间，但还没有密钥槽。请在一台已加入该空间的设备上打开一次「跨设备」设置，然后回到这里重试。"
                                 .to_string(),
                         );
                     }
@@ -562,6 +571,67 @@ fn prepare_join_binding(
         tx.commit()
             .map_err(|error| format!("提交加入空间事务失败：{error}"))?;
         Ok::<(), String>(())
+    })
+}
+
+/// 生成一张“配置卡”：新设备粘贴后自动填好账号。
+/// 默认不带应用密码，需要真正零输入时才显式包含。
+pub fn export_config(include_password: bool) -> Result<String, String> {
+    let account = account::configured_account()?
+        .ok_or_else(|| "请先保存 WebDAV 账号".to_string())?;
+    let identity = identity::load_identity()?;
+    let payload = serde_json::json!({
+        "v": 1,
+        "endpoint": account.endpoint,
+        "username": account.username,
+        "password": include_password.then_some(account.app_password),
+        "vaultId": identity.map(|value| value.vault_id),
+    });
+    let bytes =
+        serde_json::to_vec(&payload).map_err(|error| format!("生成配置串失败：{error}"))?;
+    Ok(format!(
+        "WOO-SYNC:1:{}",
+        woo_sync_core::crypto::base64url_encode(&bytes)
+    ))
+}
+
+/// 解析另一台设备生成的配置串，不保存、不发请求。
+pub fn parse_config(payload: &str) -> Result<ImportConfigView, String> {
+    let raw = payload.trim();
+    let encoded = raw
+        .strip_prefix("WOO-SYNC:1:")
+        .ok_or_else(|| "配置串格式不正确，应以 WOO-SYNC:1: 开头".to_string())?;
+    let bytes = woo_sync_core::crypto::base64url_decode(encoded)
+        .map_err(|_| "配置串内容损坏".to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "配置串内容损坏".to_string())?;
+    let endpoint = value
+        .get("endpoint")
+        .and_then(|item| item.as_str())
+        .unwrap_or_default();
+    let username = value
+        .get("username")
+        .and_then(|item| item.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if username.is_empty() {
+        return Err("配置串缺少账户".to_string());
+    }
+    let password = value
+        .get("password")
+        .and_then(|item| item.as_str())
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let vault_id = value
+        .get("vaultId")
+        .and_then(|item| item.as_str())
+        .map(str::to_string);
+    Ok(ImportConfigView {
+        endpoint: account::normalize_endpoint(endpoint)?,
+        username,
+        password,
+        vault_id,
     })
 }
 
